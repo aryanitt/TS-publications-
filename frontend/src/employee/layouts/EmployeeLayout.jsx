@@ -1,0 +1,82 @@
+import { useState } from "react";
+import { Outlet, useOutletContext, useNavigate } from "react-router-dom";
+import toast, { Toaster } from "react-hot-toast";
+import { Plus, Phone, Calendar, CheckSquare, MessageSquare } from "lucide-react";
+import { EmployeeProvider } from "../../context/EmployeeContext.jsx";
+import EmployeeSidebar from "../components/EmployeeSidebar.jsx";
+import EmployeeTopbar from "../components/EmployeeTopbar.jsx";
+import EmployeeMobileNav from "../components/EmployeeMobileNav.jsx";
+import { EMP_TOAST_OPTIONS } from "../utils/empToast.jsx";
+
+export default function EmployeeLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [fabOpen, setFabOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const quickActions = [
+    { label: "Add Lead", to: "/employee/leads?action=add", icon: Plus },
+    { label: "Add Task", to: "/employee/tasks?action=add", icon: CheckSquare },
+    { label: "Schedule Follow-up", to: "/employee/follow-ups?action=add", icon: MessageSquare },
+    { label: "Log Call", to: "/employee/calls", icon: Phone },
+    { label: "Book Meeting", to: "/employee/meetings?action=add", icon: Calendar },
+  ];
+
+  return (
+    <EmployeeProvider>
+      <div className="flex min-h-screen w-full max-w-[100vw] overflow-x-clip">
+        <Toaster position="top-right" gutter={12} containerStyle={{ top: 16, right: 16 }} toastOptions={EMP_TOAST_OPTIONS} />
+        <EmployeeSidebar
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((c) => !c)}
+        />
+
+        <div className="flex-1 min-w-0 flex flex-col w-full max-w-full overflow-x-clip">
+          <EmployeeTopbar onMenu={() => setSidebarOpen(true)} />
+
+          <main className="flex-1 bg-white text-slate-900 p-3 sm:p-4 md:p-6 lg:p-8 xl:px-10 pb-28 lg:pb-8 page-shell overflow-x-clip relative">
+            <Outlet context={{ toast: (msg, type = "success") => (type === "error" ? toast.error(msg) : toast.success(msg)) }} />
+          </main>
+
+          <EmployeeMobileNav />
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setFabOpen(!fabOpen)}
+              className="lg:hidden fixed bottom-[4.25rem] right-3 sm:right-4 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full gradient-primary text-primary-foreground shadow-glow grid place-items-center hover:opacity-90 transition"
+              aria-label="Quick actions"
+            >
+              <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+            {fabOpen && (
+              <div className="lg:hidden fixed bottom-[7.5rem] sm:bottom-32 right-3 sm:right-4 z-40 w-52 sm:w-56 glass-strong rounded-xl border border-border shadow-elegant p-1 space-y-0.5 animate-fade-in">
+                {quickActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <button
+                      key={action.label}
+                      type="button"
+                      onClick={() => { setFabOpen(false); navigate(action.to); }}
+                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-foreground hover:bg-secondary/60 transition"
+                    >
+                      <Icon className="w-4 h-4 text-primary shrink-0" />
+                      <span className="font-medium">{action.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </EmployeeProvider>
+  );
+}
+
+export function useEmpToast() {
+  const ctx = useOutletContext();
+  return ctx?.toast || ((msg) => toast.success(msg));
+}

@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+.dev.vars
+
+# Build output
+dist/
+dist-ssr/
+.output/
+.vinxi/
+.tanstack/
+.nitro/
+
+# Logs
+*.log
+logs/
+
+# Uploads (keep folder structure)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Cloudflare
+.wrangler/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Binaries
+*.exe
+ngrok.exe
