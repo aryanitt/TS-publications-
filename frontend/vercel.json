@@ -1,3 +1,5 @@
 {
-  "framework": "tanstack-start"
+  "rewrites": [
+    { "source": "/((?!api/|assets/).*)", "destination": "/" }
+  ]
 }
