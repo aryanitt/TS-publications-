@@ -1,0 +1,11 @@
+{
+  "name": "ts-publications",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node backend/server.js",
+    "build": "npm install --prefix backend"
+  }
+}
