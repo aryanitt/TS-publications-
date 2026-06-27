@@ -9,6 +9,7 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
 // @cloudflare/vite-plugin builds from this — wrangler.jsonc main alone is insufficient.
 export default defineConfig({
+  cloudflare: false,
   tanstackStart: {
     server: { entry: "server" },
   },
@@ -24,11 +25,26 @@ export default defineConfig({
     build: {
       rollupOptions: {
         output: {
-          manualChunks: {
-            vendor: ["react", "react-dom", "react-router-dom"],
-            charts: ["recharts"],
-            motion: ["framer-motion"],
-            query: ["@tanstack/react-query"],
+          manualChunks(id) {
+            if (id.includes("node_modules")) {
+              const path = id.replace(/\\/g, "/");
+              if (
+                path.includes("node_modules/react/") ||
+                path.includes("node_modules/react-dom/") ||
+                path.includes("node_modules/react-router-dom/")
+              ) {
+                return "vendor";
+              }
+              if (path.includes("node_modules/recharts/")) {
+                return "charts";
+              }
+              if (path.includes("node_modules/framer-motion/")) {
+                return "motion";
+              }
+              if (path.includes("node_modules/@tanstack/react-query/")) {
+                return "query";
+              }
+            }
           },
         },
       },
