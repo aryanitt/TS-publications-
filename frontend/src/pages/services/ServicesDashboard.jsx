@@ -15,6 +15,7 @@ import {
   SALES_DISTRIBUTION, SALES_TOTAL, REVENUE_TRAJECTORY,
   formatServiceMoney, serviceBadgeTone, registerService,
 } from "../../data/servicesMock.js";
+import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
 import AddServiceDrawer from "./AddServiceDrawer.jsx";
 
 const ICON_MAP = {
@@ -43,6 +44,17 @@ export default function ServicesDashboard() {
   const [priceSort, setPriceSort] = useState("high");
   const [addOpen, setAddOpen] = useState(false);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
+        if (data.services?.length) setCatalog(data.services);
+      } catch {
+        // keep getAllServices mock
+      }
+    })();
+  }, []);
+
   const topSalesLine = useMemo(
     () => [...SALES_DISTRIBUTION].sort((a, b) => b.sales - a.sales)[0],
     [],
@@ -67,11 +79,23 @@ export default function ServicesDashboard() {
 
   const openAddService = () => setAddOpen(true);
 
-  const handleAddClose = (newService) => {
+  const handleAddClose = async (newService) => {
     if (newService) {
-      registerService(newService);
-      setCatalog(getAllServices());
-      toast.success(`${newService.name} added to catalog`);
+      try {
+        await apiPost("/api/services", newService);
+        invalidateCache("/api/services");
+        const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
+        if (data.services?.length) setCatalog(data.services);
+        else {
+          registerService(newService);
+          setCatalog(getAllServices());
+        }
+        toast.success(`${newService.name} saved to catalog`);
+      } catch {
+        registerService(newService);
+        setCatalog(getAllServices());
+        toast.success(`${newService.name} added locally (API unavailable)`);
+      }
     }
     setAddOpen(false);
     if (searchParams.get("action")) {

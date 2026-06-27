@@ -65,6 +65,33 @@ export function EmployeeProvider({ children }) {
     }
   }, [employee.id]);
 
+  const [tasks, setTasksState] = useState(() => createInitialTasks());
+  const [followUps, setFollowUpsState] = useState(() =>
+    EMP_FOLLOWUPS.map((f) => ({ ...f, done: false })),
+  );
+  const [calls, setCalls] = useState(EMP_CALLS);
+  const [activities, setActivities] = useState(EMP_LEAD_CALL_ACTIVITY);
+  const [sops, setSopsState] = useState(ALL_EMP_SOPS);
+
+  const loadEmployeeWorkspace = useCallback(async (empId) => {
+    try {
+      const res = await apiGet(`/api/v1/employee/${empId}/dashboard`, {
+        headers: getCrmHeaders(),
+        skipCache: true,
+        cacheTtl: 0,
+      });
+      const data = unwrapApiData(res) || res.data || res;
+      if (data.tasks?.length) setTasksState(normalizeTasksMap(data.tasks));
+      if (data.followups?.length) {
+        setFollowUpsState(data.followups.map((f) => ({ ...f, done: f.status === "completed" })));
+      }
+      if (data.calls?.length) setCalls(data.calls);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -83,6 +110,20 @@ export function EmployeeProvider({ children }) {
           setEmployee(mapped);
           storeEmployee(mapped);
           const ok = await refreshLeads(mapped.id);
+          await loadEmployeeWorkspace(mapped.id);
+          try {
+            const sopRes = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
+            if (sopRes.success && sopRes.sops?.length) {
+              setSopsState(sopRes.sops.map((s) => ({
+                id: s.id,
+                title: s.title,
+                category: s.category,
+                steps: s.instruction_steps || s.steps || [],
+              })));
+            }
+          } catch {
+            /* keep ALL_EMP_SOPS fallback */
+          }
           if (ok && !cancelled) {
             setLoading(false);
             return;
@@ -100,26 +141,13 @@ export function EmployeeProvider({ children }) {
 
     bootstrap();
     return () => { cancelled = true; };
-  }, [refreshLeads]);
-
-  const [tasks, setTasksState] = useState(() =>
-    normalizeTasksMap(readJsonStorage("emp_tasks_map", createInitialTasks)),
-  );
-
-  const [followUps, setFollowUpsState] = useState(() => {
-    const saved = readJsonStorage("emp_followups_list", () => null);
-    if (Array.isArray(saved)) return saved;
-    return EMP_FOLLOWUPS.map((f) => ({ ...f, done: false }));
-  });
+  }, [refreshLeads, loadEmployeeWorkspace]);
 
   const setTasks = useCallback((updater) => {
     setTasksState((prev) => {
       const next = normalizeTasksMap(
         typeof updater === "function" ? updater(prev) : updater,
       );
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("emp_tasks_map", JSON.stringify(next));
-      }
       return next;
     });
   }, []);
@@ -127,61 +155,29 @@ export function EmployeeProvider({ children }) {
   const setFollowUps = useCallback((updater) => {
     setFollowUpsState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem("emp_followups_list", JSON.stringify(next));
       return next;
     });
   }, []);
 
-  const [calls, setCalls] = useState(() => {
-    const saved = localStorage.getItem("emp_calls_list");
-    return saved ? JSON.parse(saved) : EMP_CALLS;
-  });
-
-  const [activities, setActivities] = useState(() => {
-    const saved = localStorage.getItem("emp_activities_map");
-    return saved ? JSON.parse(saved) : EMP_LEAD_CALL_ACTIVITY;
-  });
-
-  const [sops, setSopsState] = useState(() => {
-    const saved = localStorage.getItem("emp_sops_list");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const ids = new Set(parsed.map((s) => s.id));
-          const merged = [...parsed, ...ALL_EMP_SOPS.filter((s) => !ids.has(s.id))];
-          return merged.length > parsed.length ? merged : parsed;
-        }
-      } catch {
-        /* fall through */
-      }
-    }
-    return ALL_EMP_SOPS;
-  });
-
   const setSops = useCallback((updater) => {
     setSopsState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem("emp_sops_list", JSON.stringify(next));
       return next;
     });
   }, []);
 
   const addCallRecord = useCallback((newCall) => {
-    setCalls((prev) => {
-      const updated = [newCall, ...prev];
-      localStorage.setItem("emp_calls_list", JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
+    setCalls((prev) => [newCall, ...prev]);
+    if (usingApi) {
+      apiPost("/api/v1/employee/calls", newCall, { headers: getCrmHeaders() }).catch(() => {});
+    }
+  }, [usingApi]);
 
   const addActivityRecord = useCallback((leadId, newEvent) => {
     setActivities((prev) => {
       const existing = prev[leadId] || [];
       const updated = [newEvent, ...existing];
-      const newMap = { ...prev, [leadId]: updated };
-      localStorage.setItem("emp_activities_map", JSON.stringify(newMap));
-      return newMap;
+      return { ...prev, [leadId]: updated };
     });
   }, []);
 

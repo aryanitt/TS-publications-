@@ -17,6 +17,7 @@ import {
   patchLead,
   timeAgoShort,
 } from "../data/pipelineMock.js";
+import { apiGet, apiPatch, invalidateCache } from "../lib/api.js";
 
 function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
   return (
@@ -84,6 +85,20 @@ export default function Pipeline() {
     }
   }, [location.search]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiGet("/api/dashboard/pipeline/leads", { skipCache: true, cacheTtl: 0 });
+        if (cancelled || !data.leads?.length) return;
+        setLeads(data.leads);
+      } catch {
+        // keep PIPELINE_LEADS mock
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const showToast = (message, type = "success") => {
     if (type === "error") toast.error(message);
     else toast.success(message);
@@ -136,6 +151,12 @@ export default function Pipeline() {
       stageId === "closed_won" ? "won" : "note",
     );
     handleUpdateLead(updated);
+    const dbId = lead._dbId || leadId;
+    if (dbId && String(dbId).match(/^\d+$/)) {
+      apiPatch(`/api/dashboard/pipeline/leads/${dbId}`, { stage: stageId })
+        .then(() => invalidateCache("/api/dashboard"))
+        .catch(() => {});
+    }
     if (scroll) scrollToStage(stageId);
     toast.success(`Moved to ${target.label}`);
   };

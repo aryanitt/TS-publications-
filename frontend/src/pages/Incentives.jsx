@@ -15,6 +15,7 @@ import {
 } from "../data/pipelineMock.js";
 import { useIsMobile } from "../hooks/use-mobile.tsx";
 import toast, { Toaster } from "react-hot-toast";
+import { apiGet } from "../lib/api.js";
 
 const MONTH_OPTIONS = [
   { value: "2026-06", label: "June, 2026" },
@@ -590,7 +591,7 @@ function buildDraftFromEmployee(emp) {
 
 export default function Incentives() {
   const isMobile = useIsMobile();
-  const [teammates] = useState(INITIAL_TEAMMATES);
+  const [teammates, setTeammates] = useState(INITIAL_TEAMMATES);
   const [selectedId, setSelectedId] = useState(1);
   const [selectedMonth, setSelectedMonth] = useState("2026-06");
   const [leadTab, setLeadTab] = useState("Converted");
@@ -599,6 +600,26 @@ export default function Incentives() {
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcDraft, setCalcDraft] = useState(null);
   const [calcResult, setCalcResult] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGet("/api/incentives/dashboard", { skipCache: true, cacheTtl: 0 });
+        if (data.teammates?.length) {
+          setTeammates((prev) => data.teammates.map((t, i) => ({
+            ...(prev[i] || prev[0]),
+            id: t.id,
+            name: t.name,
+            role: t.role || prev[i]?.role,
+            department: t.department || prev[i]?.department,
+          })));
+          setSelectedId(data.teammates[0].id);
+        }
+      } catch {
+        // keep INITIAL_TEAMMATES
+      }
+    })();
+  }, []);
 
   const selected = useMemo(
     () => teammates.find((t) => t.id === selectedId) || teammates[0],

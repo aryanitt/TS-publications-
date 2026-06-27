@@ -186,6 +186,19 @@ function TeamTooltip({ active, payload, label }) {
 }
 export default function Reports() {
   const [exportFormat, setExportFormat] = useState("PDF");
+  const [chartRevenue, setChartRevenue] = useState(revenueSeries);
+  const [leadSources, setLeadSources] = useState([
+    { name: "Facebook Ads", value: 38 },
+    { name: "Google Ads", value: 24 },
+    { name: "Website", value: 18 },
+    { name: "LinkedIn", value: 12 },
+    { name: "Referrals", value: 8 },
+  ]);
+  const [reportKpis, setReportKpis] = useState(kpiCards);
+  const [aiSummaryLines, setAiSummaryLines] = useState([
+    "Revenue increased by 18.4% compared to last month.",
+    "Qualified leads conversion improved by 3.1%.",
+  ]);
   const [teamMembers,  setTeamMembers]  = useState(() => {
     const cached = readCachedJson("/api/team/employees");
     return cached?.success
@@ -220,11 +233,46 @@ export default function Reports() {
     fetchEmployees();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const [dash, analytics] = await Promise.all([
+          apiGet("/api/reports/dashboard", { skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/reports/analytics", { skipCache: true, cacheTtl: 0 }),
+        ]);
+        if (dash.kpis) {
+          setReportKpis([
+            { label: "Total Revenue", value: dash.kpis.totalRevenue?.value || kpiCards[0].value, Icon: DollarSign },
+            { label: "Conversion Rate", value: dash.kpis.conversionRate?.value || kpiCards[1].value, Icon: Activity },
+            { label: "MoM Growth", value: dash.kpis.momGrowth?.value || kpiCards[2].value, Icon: TrendingUp },
+            { label: "Forecast Q3", value: dash.kpis.forecastQ3?.value || kpiCards[3].value, Icon: FileText },
+          ]);
+        }
+        if (dash.aiSummary?.length) setAiSummaryLines(dash.aiSummary);
+        if (analytics.leadSources?.length) {
+          setLeadSources(analytics.leadSources.map((s) => ({
+            name: s.source,
+            value: Number(s.leads) || 0,
+          })));
+        }
+        if (analytics.revenueAnalytics?.length) {
+          setChartRevenue(analytics.revenueAnalytics.map((r) => ({
+            month: r.month,
+            revenue: Math.round(Number(r.revenue) / 10000),
+            forecast: Math.round(Number(r.revenue) / 12000),
+          })));
+        }
+      } catch {
+        // keep mock defaults
+      }
+    })();
+  }, []);
+
   const downloadReport = (format) => {
     setExportFormat(format);
     if (format === "CSV") {
       const header = ["Month", "Revenue", "Forecast"];
-      const rows = revenueSeries.map((row) => [row.month, row.revenue, row.forecast]);
+      const rows = chartRevenue.map((row) => [row.month, row.revenue, row.forecast]);
       const csv = [header, ...rows].map((r) => r.join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
@@ -270,7 +318,7 @@ export default function Reports() {
 
       {/* ── KPI cards ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpiCards.map(({ label, value, Icon }, i) => (
+        {reportKpis.map(({ label, value, Icon }, i) => (
           <motion.div
             key={i}
             whileHover={{ y: -3 }}
@@ -345,7 +393,7 @@ export default function Reports() {
   <div className="rev-analytics-scroll" style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
     <div style={{ minWidth:600, height:336 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueSeries} margin={{ top: 10, right: 25, left: 5, bottom: 0 }}>
+              <AreaChart data={chartRevenue} margin={{ top: 10, right: 25, left: 5, bottom: 0 }}>
                 <defs>
                   <linearGradient id="r1" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="oklch(0.58 0.22 18)" stopOpacity={0.65} />
@@ -382,13 +430,7 @@ export default function Reports() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={[
-                      { name: "Facebook Ads", value: 38 },
-                      { name: "Google Ads",   value: 24 },
-                      { name: "Website",      value: 18 },
-                      { name: "LinkedIn",     value: 12 },
-                      { name: "Referrals",    value: 8  },
-                    ]}
+                    data={leadSources}
                     dataKey="value"
                     cx="50%" cy="45%"
                     innerRadius={52} outerRadius={78} paddingAngle={3}

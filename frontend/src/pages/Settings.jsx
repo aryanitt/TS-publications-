@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Target, Scale, Percent, FileSliders,
   Search, AlertTriangle, RefreshCw,
@@ -7,6 +7,7 @@ import { Badge } from "../components/Primitives.jsx";
 import toast, { Toaster } from "react-hot-toast";
 import AdminProfileHeader, { DashboardScrollbarStyles } from "../components/AdminProfileHeader.jsx";
 import { SettingsSidebar, SettingsMobileTabs, SettingsPanel, PanelFooter } from "../components/SettingsLayout.jsx";
+import { apiGet, apiPut } from "../lib/api.js";
 
 // ─── TABS DEFINITION ──────────────────────────────────────────────────────────
 const tabs = [
@@ -68,6 +69,24 @@ export default function Settings() {
     { id: 2, action: "Bulk updated call targets for Sales & Growth", admin: "Alex Chen", timestamp: "2026-06-18 16:02" },
   ]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGet("/api/settings", { skipCache: true, cacheTtl: 0 });
+        if (data.employeeTargets?.length) setEmployeeTargets(data.employeeTargets);
+        if (data.kpiWeights?.length) setKpiWeights(data.kpiWeights);
+        if (data.incentiveSlabs?.length) setIncentiveSlabs(data.incentiveSlabs);
+        if (data.baseIncentiveRate != null) setBaseIncentiveRate(data.baseIncentiveRate);
+        if (data.targetBonusAmount != null) setTargetBonusAmount(data.targetBonusAmount);
+        if (data.formulaType) setFormulaType(data.formulaType);
+        if (data.ratingThresholds) setRatingThresholds(data.ratingThresholds);
+        if (data.currentVersion) setCurrentVersion(data.currentVersion);
+      } catch {
+        // keep local defaults (mock fallback)
+      }
+    })();
+  }, []);
+
   // ─── Live Validation: Sum of Weights ───
   const totalKpiWeight = useMemo(() => {
     return kpiWeights.reduce((sum, item) => sum + (item.enabled ? Number(item.weight) : 0), 0);
@@ -86,15 +105,30 @@ export default function Settings() {
     toast.success("Draft version saved successfully!");
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!isWeightValid) {
       toast.error("Cannot publish: KPI Weightages must sum to 100%. Current: " + totalKpiWeight + "%");
       return;
     }
     const nextVerNum = "v2." + (Number(currentVersion.split(".")[1]) + 1);
-    setCurrentVersion(nextVerNum);
-    setDraftCount(0);
-    toast.success(`Published rule configs successfully! Rule Engine upgraded to ${nextVerNum}`);
+    const payload = {
+      employeeTargets,
+      kpiWeights,
+      incentiveSlabs,
+      baseIncentiveRate,
+      targetBonusAmount,
+      formulaType,
+      ratingThresholds,
+      currentVersion: nextVerNum,
+    };
+    try {
+      await apiPut("/api/settings", payload);
+      setCurrentVersion(nextVerNum);
+      setDraftCount(0);
+      toast.success(`Published to database! Rule Engine upgraded to ${nextVerNum}`);
+    } catch (err) {
+      toast.error(err.message || "Failed to save settings");
+    }
   };
 
   // Bulk target assignment logic

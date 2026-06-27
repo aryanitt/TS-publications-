@@ -23,6 +23,8 @@ import {
   kpis, recentLeads, aiInsights, performers, revenueSeries
 } from "../data/mock.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
+import { apiGet } from "../lib/api.js";
+import { mergeFilterData } from "../lib/fetchWithFallback.js";
 
 // ─── Icon maps ────────────────────────────────────────────────────────────────
 const iconMap = { DollarSign, Users, Activity, FileText };
@@ -2127,9 +2129,27 @@ export default function Dashboard() {
   const [lead,            setLead]           = useState(null);
   const { preset } = useDateRange();
   const [selectedService, setSelectedService] = useState("All Services");
+  const [apiFilterData, setApiFilterData] = useState(null);
+  const [chartRevenue, setChartRevenue] = useState(revenueSeries);
 
   const filterKey = preset === "custom" ? "week" : preset;
-  const fd        = FILTER_DATA[filterKey];
+  const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
+  const fd        = mergedFilter[filterKey];
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiGet("/api/dashboard", { skipCache: true, cacheTtl: 0 });
+        if (cancelled) return;
+        if (data.filterData) setApiFilterData(data.filterData);
+        if (data.revenueSeries?.length) setChartRevenue(data.revenueSeries);
+      } catch {
+        // keep inline mock fallback
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Reset service filter when time filter changes
   useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
@@ -2158,7 +2178,7 @@ export default function Dashboard() {
             onServiceChange={setSelectedService}
           />
 
-          <RevenueTrajectory data={revenueSeries} />
+          <RevenueTrajectory data={chartRevenue} />
         </div>
 
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0 w-full">

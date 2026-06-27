@@ -11,6 +11,7 @@ import {
   FORMS, FORM_SOURCES, FORM_STATUSES, FORM_SERVICES,
   formatFormRevenue, getFormsSummary,
 } from "../../data/formsMock.js";
+import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
 import FormBuilderDrawer from "./FormBuilder.jsx";
 
 const SOURCE_ICONS = {
@@ -36,6 +37,17 @@ export default function FormsDashboard() {
   const [serviceFilter, setServiceFilter] = useState("all");
   const [builderOpen, setBuilderOpen] = useState(false);
   const [builderFormId, setBuilderFormId] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGet("/api/forms", { skipCache: true, cacheTtl: 0 });
+        if (data.forms?.length) setForms(data.forms);
+      } catch {
+        // keep FORMS mock
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const action = searchParams.get("action");

@@ -883,12 +883,8 @@ function loadLocalSops() {
   }
 }
 
-function persistLocalSops(list) {
-  try {
-    localStorage.setItem(SOP_STORAGE_KEY, JSON.stringify(list));
-  } catch (error) {
-    console.error("Failed to persist SOPs locally:", error);
-  }
+function persistLocalSops(_list) {
+  // Business data persists via /api/sop only (localStorage disabled)
 }
 
 function buildLocalSop(formData, asDraft, existing = null) {
@@ -1689,32 +1685,26 @@ export default function SOP() {
 
   useEffect(() => {
     const fetchSops = async () => {
-      const local = loadLocalSops();
-      if (local.length > 0) setSops(local);
-
       const cached = readCachedJson("/api/sop/all");
       if (cached?.success) {
         const normalized = cached.sops.map(normalizeApiSop);
         setSops(normalized);
-        persistLocalSops(normalized);
       }
 
       try {
-        const data = await apiGet("/api/sop/all");
+        const data = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
 
         if (data.success) {
           const normalized = data.sops.map(normalizeApiSop);
           setSops(normalized);
-          persistLocalSops(normalized);
           return;
         }
       } catch (error) {
         console.error("Failed to fetch SOPs:", error);
       }
 
-      if (local.length > 0) {
-        setSops(local);
-      }
+      const local = loadLocalSops();
+      if (local.length > 0) setSops(local);
     };
 
     fetchSops();

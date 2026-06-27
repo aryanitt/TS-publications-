@@ -14,6 +14,7 @@ import {
 } from "../../data/employeeMock.js";
 import { AvatarCircle, EmployeeDoodleAvatar } from "../components/EmpUI.jsx";
 import useIsMobile from "../../lib/useIsMobile.js";
+import { formatGreeting } from "../../lib/greeting.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 
 const PANEL = "rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]";
@@ -139,7 +140,7 @@ export default function EmployeeDashboard() {
                 {period === "This Week" ? "Week" : period === "This Month" ? "Month" : period} · {dateLabel}
               </p>
               <h1 className="font-display text-base sm:text-2xl font-bold text-slate-900 tracking-tight mt-0.5 leading-tight">
-                Good morning, {employee.name.split(" ")[0]}
+                {formatGreeting(employee.name)}
               </h1>
               <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-none -mx-0.5 px-0.5 pb-0.5">
                 {[
