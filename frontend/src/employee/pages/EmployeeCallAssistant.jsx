@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { GlassCard, Badge, Drawer } from "../../components/Primitives.jsx";
-import { EMP_SOP_CHECKLIST, EMP_LEAD_TEMPERATURES } from "../../data/employeeMock.js";
+import { EMP_SOP_CHECKLIST, EMP_LEAD_TEMPERATURES, normalizeCallSop } from "../../data/employeeMock.js";
 import useIsMobile from "../../lib/useIsMobile.js";
 import { RoseHero, EmpModal, ChooseLeadPanel, BtnSecondary } from "../components/EmpUI.jsx";
 import { notifyCallStarted } from "../utils/empToast.jsx";
@@ -190,7 +190,9 @@ export default function EmployeeCallAssistant() {
   const [sopPickerOpen, setSopPickerOpen] = useState(false);
 
   const matchedLead = useMemo(() => {
-    return leads.find(l => l.name.toLowerCase() === leadName.toLowerCase());
+    const q = String(leadName || "").trim().toLowerCase();
+    if (!q) return null;
+    return leads.find((l) => String(l?.name || "").trim().toLowerCase() === q) || null;
   }, [leads, leadName]);
 
   const companyName = matchedLead ? matchedLead.company : "TechSales Lead";
@@ -204,8 +206,9 @@ export default function EmployeeCallAssistant() {
     
     // Simulate OpenAI API transcription & minutes of meeting extraction
     setTimeout(() => {
-      const completedQuestionsText = activeSop.steps
-        .flatMap((step) => step.questions)
+      const steps = activeSop?.steps || [];
+      const completedQuestionsText = steps
+        .flatMap((step) => step.questions || [])
         .filter((q) => checkedQuestions[`${selectedSopId}-${q.id}`])
         .map((q) => `• Verified Checklist: ${q.text}`)
         .join("\n");
@@ -239,14 +242,14 @@ Budget Bracket Assessment:
 
 AI Insights & Follow-up Actions:
 • Pitch Urgency: ${completionPercentage > 60 ? "HIGH" : completionPercentage > 20 ? "MODERATE" : "LOW"} (Target checklist completed: ${completionPercentage}%)
-• Next Steps: ${activeStepIndex === activeSop.steps.length - 1 ? "Schedule kickoff call." : "Schedule follow-up to address subsequent checklist stages."}`;
+• Next Steps: ${activeStepIndex === steps.length - 1 ? "Schedule kickoff call." : "Schedule follow-up to address subsequent checklist stages."}`;
 
       setAiMoM(summaryText);
       setIsGeneratingSummary(false);
     }, 2500);
   };
 
-  const handleSaveCallToLogs = () => {
+  const handleSaveCallToLogs = async () => {
     if (!matchedLead?.id) {
       toast.error("Select a lead from your pipeline before saving this call");
       return;
@@ -268,11 +271,15 @@ AI Insights & Follow-up Actions:
       mood: callLeadTemp,
       phone: matchedLead.phone || "",
       note: aiMoM,
+      aiMoM,
       sopId: selectedSopId,
       checkedQuestions: checkedQuestions,
     };
 
-    addCallRecord(newCallLog);
+    const saved = await addCallRecord(newCallLog);
+    if (saved === null) {
+      return;
+    }
 
     if (matchedLead?.status !== callLeadTemp) {
       updateLeadTemperature(matchedLead.id, callLeadTemp);
@@ -293,15 +300,15 @@ AI Insights & Follow-up Actions:
 
     toast.success("Call saved to Reporting database!");
     setIsEndingCall(false);
-    
-    // Redirect to calls reporting page
+
     navigate("/employee/calls");
   };
 
   // Active SOP calculations
   const activeSop = useMemo(() => {
     if (!sops.length) return null;
-    return sops.find((s) => s.id === selectedSopId) || sops[0];
+    const sop = sops.find((s) => s.id === selectedSopId) || sops[0];
+    return normalizeCallSop(sop);
   }, [selectedSopId, sops]);
 
   useEffect(() => {
@@ -323,14 +330,14 @@ AI Insights & Follow-up Actions:
   );
 
   const activeStep = useMemo(() => {
-    if (!activeSop || !activeSop.steps) return null;
+    if (!activeSop?.steps?.length) return null;
     return activeSop.steps[activeStepIndex] || activeSop.steps[0];
   }, [activeSop, activeStepIndex]);
 
   // Overall checklist progress of active SOP
   const completionPercentage = useMemo(() => {
-    if (!activeSop || !activeSop.steps) return 0;
-    const allQs = activeSop.steps.reduce((acc, step) => [...acc, ...step.questions], []);
+    if (!activeSop?.steps?.length) return 0;
+    const allQs = activeSop.steps.flatMap((step) => step.questions || []);
     if (allQs.length === 0) return 0;
     const checkedCount = allQs.filter((q) => !!checkedQuestions[`${selectedSopId}-${q.id}`]).length;
     return Math.round((checkedCount / allQs.length) * 100);
@@ -766,7 +773,7 @@ AI Insights & Follow-up Actions:
                   </div>
 
                   <div className="grid grid-cols-1 gap-1.5 sm:gap-2.5">
-                    {activeStep.questions.map((q) => {
+                    {(activeStep.questions || []).map((q) => {
                       const isChecked = !!checkedQuestions[`${selectedSopId}-${q.id}`];
                       return (
                         <div
@@ -799,7 +806,7 @@ AI Insights & Follow-up Actions:
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {activeStep.discovery.map((f) => (
+                    {(activeStep.discovery || []).map((f) => (
                       <div key={f.key} className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
                           {f.label}
@@ -867,7 +874,7 @@ AI Insights & Follow-up Actions:
                   </h3>
                   
                   <div className="space-y-2">
-                    {activeStep.checklist.map((cText, i) => (
+                    {(activeStep.checklist || []).map((cText, i) => (
                       <div key={i} className="flex items-start gap-2.5 text-xs text-slate-700 font-semibold bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
                         <span>{cText}</span>
@@ -984,7 +991,7 @@ AI Insights & Follow-up Actions:
 
                 <div className="p-3 bg-white border border-rose-100 rounded-xl">
                   <p className="text-xs text-slate-700 leading-relaxed font-semibold italic">
-                    "{formatScriptText(activeStep.scripts.opening)}"
+                    "{formatScriptText(activeStep.scripts?.opening || "")}"
                   </p>
                 </div>
 
@@ -993,7 +1000,7 @@ AI Insights & Follow-up Actions:
                     Important Talking Points
                   </span>
                   <ul className="space-y-1 pl-1">
-                    {activeStep.scripts.talkingPoints.map((tp, idx) => (
+                    {(activeStep.scripts?.talkingPoints || []).map((tp, idx) => (
                       <li key={idx} className="text-[10px] text-slate-655 flex items-start gap-1 font-semibold">
                         <span className="text-rose-500">•</span>
                         <span>{tp}</span>
@@ -1005,7 +1012,7 @@ AI Insights & Follow-up Actions:
                 <div className="bg-rose-50 border border-rose-150 p-2.5 rounded-xl flex items-start gap-2">
                   <Info className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
                   <p className="text-[10px] text-rose-800 leading-snug font-bold">
-                    {activeStep.scripts.tips}
+                    {activeStep.scripts?.tips || ""}
                   </p>
                 </div>
               </GlassCard>

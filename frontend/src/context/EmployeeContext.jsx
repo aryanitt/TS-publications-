@@ -390,26 +390,43 @@ export function EmployeeProvider({ children }) {
     const optimistic = { ...newCall, id: tempId };
     setCalls((prev) => [optimistic, ...prev]);
 
-    if (!shouldPersistToApi(usingApi)) return;
+    if (!shouldPersistToApi(usingApi)) return optimistic;
 
     if (!newCall.leadId) {
       setCalls((prev) => prev.filter((c) => c.id !== tempId));
       toast.error("Could not save call — select a valid lead");
-      return;
+      return null;
     }
 
     try {
-      const payload = callToApiPayload(newCall, employee.id);
+      const employeeId = await resolveApiEmployeeId(employee.id, employee.name);
+      const payload = callToApiPayload(newCall, employeeId);
       const res = await apiPost("/api/v1/employee/calls", payload, { headers: getCrmHeaders() });
       const saved = unwrapApiData(res) || res.data || res;
       const mapped = callFromApi(saved, leads);
       setCalls((prev) => [mapped, ...prev.filter((c) => c.id !== tempId)]);
+
+      const momText = String(newCall.aiMoM || newCall.note || newCall.aiSummary || "").trim();
+      if (momText) {
+        try {
+          await apiPost(
+            `/api/v1/leads/${newCall.leadId}/notes`,
+            { body: `[Call MoM]\n${momText}` },
+            { headers: getCrmHeaders() },
+          );
+        } catch {
+          /* call row saved; lead note is supplementary */
+        }
+      }
+
       invalidateCache("/api/v1");
+      return mapped;
     } catch (err) {
       setCalls((prev) => prev.filter((c) => c.id !== tempId));
       toast.error(err.message || "Could not save call to server");
+      return null;
     }
-  }, [usingApi, employee.id, leads]);
+  }, [usingApi, employee, leads, resolveApiEmployeeId]);
 
   const addActivityRecord = useCallback((leadId, newEvent) => {
     setActivities((prev) => {

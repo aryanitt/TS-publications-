@@ -736,8 +736,8 @@ export function callToApiPayload(call, employeeId) {
     durationSec: durationSec || null,
     startedAt: call.startedAt || now.toISOString(),
     endedAt: call.endedAt || now.toISOString(),
-    notes: call.note || call.notes || null,
-    aiSummary: call.note || call.aiSummary || null,
+    notes: call.notes || (call.note ? String(call.note).slice(0, 500) : null),
+    aiSummary: call.aiMoM || call.note || call.aiSummary || null,
     sopId: call.sopId || null,
     checklistProgress,
   };
@@ -1338,6 +1338,15 @@ export function buildAllEmployeeSops() {
 
 export const ALL_EMP_SOPS = buildAllEmployeeSops();
 
+function normalizeSopScripts(scripts, fallbackOpening = "") {
+  const src = scripts && typeof scripts === "object" ? scripts : {};
+  return {
+    opening: src.opening || fallbackOpening || "",
+    talkingPoints: Array.isArray(src.talkingPoints) ? src.talkingPoints : [],
+    tips: src.tips || "",
+  };
+}
+
 function normalizeSopSteps(steps) {
   if (!Array.isArray(steps) || steps.length === 0) {
     return [{
@@ -1346,21 +1355,31 @@ function normalizeSopSteps(steps) {
       questions: [],
       discovery: [],
       checklist: [],
-      scripts: { opening: "", talkingPoints: [], tips: "" },
+      scripts: normalizeSopScripts(null),
     }];
   }
   return steps.map((step, idx) => ({
-    id: step.id || `step-${idx + 1}`,
-    label: step.label || step.title || step.name || `Step ${idx + 1}`,
-    questions: Array.isArray(step.questions) ? step.questions : [],
-    discovery: Array.isArray(step.discovery) ? step.discovery : [],
-    checklist: Array.isArray(step.checklist) ? step.checklist : [],
-    scripts: step.scripts || {
-      opening: step.script || "",
-      talkingPoints: [],
-      tips: "",
-    },
+    id: step?.id || `step-${idx + 1}`,
+    label: step?.label || step?.title || step?.name || `Step ${idx + 1}`,
+    questions: Array.isArray(step?.questions) ? step.questions : [],
+    discovery: Array.isArray(step?.discovery) ? step.discovery : [],
+    checklist: Array.isArray(step?.checklist) ? step.checklist : [],
+    scripts: normalizeSopScripts(step?.scripts, step?.script || ""),
   }));
+}
+
+/** Ensure Call Assistant always receives safe SOP shape (prevents runtime .map crashes). */
+export function normalizeCallSop(sop) {
+  if (!sop) return null;
+  return {
+    ...sop,
+    sub: sop.sub || sop.description?.slice?.(0, 80) || "",
+    budgetRange: sop.budgetRange || "—",
+    icon: sop.icon || "📋",
+    objections: Array.isArray(sop.objections) ? sop.objections : [],
+    crossSell: sop.crossSell || null,
+    steps: normalizeSopSteps(sop.steps),
+  };
 }
 
 function sopFromApiRow(api) {
