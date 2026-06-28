@@ -7,13 +7,32 @@ const CACHE_PREFIX = "crm_cache:";
 const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
 
+/** Hostinger backend — used when VITE_API_URL is missing from the Vercel build. */
+const PRODUCTION_API_BASE =
+  "https://mediumturquoise-capybara-737767.hostingersite.com";
+
 export function getApiBase() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl != null && String(envUrl).trim() !== "") {
     return String(envUrl).replace(/\/$/, "");
   }
-  // Dev: Vite proxy `/api` → backend. Production: relative `/api` on same domain.
-  return "";
+  // Browser: same-origin `/api` (Vercel rewrite in prod, Vite proxy in dev).
+  if (typeof window !== "undefined") {
+    return "";
+  }
+  // SSR / Node must use an absolute backend URL.
+  if (import.meta.env.PROD) {
+    return PRODUCTION_API_BASE;
+  }
+  return "http://localhost:5000";
+}
+
+/** True when writes should go to the backend (production API or live session). */
+export function shouldPersistToApi(usingApi = false) {
+  if (usingApi) return true;
+  if (getApiBase()) return true;
+  // Browser uses same-origin `/api` (Vercel rewrite or Vite dev proxy).
+  return typeof window !== "undefined";
 }
 
 export function apiUrl(path) {
@@ -131,15 +150,36 @@ export async function apiJson(path, options = {}) {
     }
   }
 
-  const response = await performFetch(url, { ...fetchOptions, method: httpMethod });
-
-  let data;
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    data = await response.json();
-  } else {
-    data = await response.text();
+  let response;
+  try {
+    response = await performFetch(url, { ...fetchOptions, method: httpMethod });
+  } catch (err) {
+    const isNetwork = err instanceof TypeError
+      || String(err?.message || "").toLowerCase().includes("failed to fetch");
+    if (!isNetwork) throw err;
+    const base = getApiBase();
+    const target = base || (typeof window !== "undefined" ? `${window.location.origin}/api` : PRODUCTION_API_BASE);
+    throw new Error(
+      `Cannot reach the API at ${target}. `
+      + (typeof window !== "undefined" && !base
+        ? "If testing locally, start the backend: cd backend && npm run dev"
+        : "Check your connection and redeploy the frontend if you recently changed API settings."),
+    );
   }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const preview = (await response.text()).slice(0, 80);
+    const err = new Error(
+      preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")
+        ? "API request hit the frontend instead of the backend. Check VITE_API_URL."
+        : `Expected JSON from API but got ${contentType || "unknown type"}`,
+    );
+    err.status = response.status;
+    throw err;
+  }
+
+  const data = await response.json();
 
   if (!response.ok) {
     const message = data?.message || data?.error || response.statusText || "Request failed";

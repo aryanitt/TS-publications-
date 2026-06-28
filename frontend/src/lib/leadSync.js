@@ -45,6 +45,7 @@ export function unwrapApiData(res) {
   if (Array.isArray(res?.items)) return res.items;
   if (Array.isArray(res?.leads)) return res.leads;
   if (Array.isArray(res?.employees)) return res.employees;
+  if (res?.data && typeof res.data === "object") return res.data;
   return res?.data ?? [];
 }
 
@@ -88,6 +89,11 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
 
 export function apiLeadToAdmin(lead) {
   const assignedTo = lead.assignedTo;
+  const employeeName =
+    (typeof assignedTo === "object" && assignedTo?.name) ||
+    lead.assigneeName ||
+    lead.assignee_name ||
+    "";
   return {
     id: lead.id,
     lead_name: lead.leadName || lead.lead_name,
@@ -107,6 +113,8 @@ export function apiLeadToAdmin(lead) {
     next_followup_date: lead.nextFollowUpAt || lead.next_follow_up_at,
     requirements: lead.requirements,
     assignedTo,
+    assignee_name: employeeName,
+    employeeName,
     assignment_status: lead.assignmentStatus || lead.assignment_status,
   };
 }
@@ -132,5 +140,58 @@ export function apiEmployeeToAdmin(emp) {
     role: emp.role,
     department: emp.department,
     status: emp.status,
+  };
+}
+
+const PIPELINE_STAGE_MAP = [
+  ["closed won", "closed_won"],
+  ["converted", "closed_won"],
+  ["won", "closed_won"],
+  ["negotiation", "negotiation"],
+  ["proposal", "proposal"],
+  ["qualified", "qualified"],
+  ["contacted", "contacted"],
+  ["new", "new"],
+];
+
+export function apiLeadToPipeline(lead) {
+  const stageRaw = String(
+    lead.pipelineStage || lead.pipeline_stage || lead.status || "new",
+  ).toLowerCase();
+  let stage = "new";
+  for (const [needle, id] of PIPELINE_STAGE_MAP) {
+    if (stageRaw.includes(needle)) {
+      stage = id;
+      break;
+    }
+  }
+  const temp = String(lead.temperature || "").toLowerCase();
+  const priority = temp.includes("hot") ? "HOT" : temp.includes("cold") ? "COLD" : "WARM";
+  const assignedTo = lead.assignedTo;
+  const owner = (typeof assignedTo === "object" && assignedTo?.name)
+    || lead.assigneeName
+    || lead.assignee_name
+    || lead.employeeName
+    || "";
+
+  return {
+    id: lead.id,
+    _dbId: lead.id,
+    stage,
+    name: lead.leadName || lead.lead_name || "Lead",
+    company: lead.companyName || lead.company_name || "—",
+    value: Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0),
+    priority,
+    updatedAt: lead.updatedAt || lead.updated_at || lead.createdAt || new Date().toISOString(),
+    phone: lead.phone || "",
+    email: lead.email || "",
+    city: lead.city || "",
+    source: lead.source || "Website",
+    owner,
+    assignee: owner,
+    employeeName: owner,
+    winProbability: lead.winProbability ?? lead.win_probability ?? 50,
+    activities: [],
+    tasks: [],
   };
 }

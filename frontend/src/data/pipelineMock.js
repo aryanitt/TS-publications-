@@ -254,6 +254,13 @@ const FORM_TEMP_TO_PRIORITY = {
 export function leadFromForm(raw) {
   const stage = FORM_STAGE_TO_PIPELINE[raw.pipeline_stage] || "new";
   const priority = FORM_TEMP_TO_PRIORITY[raw.temperature] || "WARM";
+  const assigneeName =
+    raw.assignee_name ||
+    raw.assigneeName ||
+    raw.assignee ||
+    (typeof raw.assignedTo === "object" ? raw.assignedTo?.name : "") ||
+    raw.owner ||
+    "";
   return {
     id: String(raw.id ?? raw._id ?? `p-${Date.now()}`),
     stage,
@@ -267,7 +274,12 @@ export function leadFromForm(raw) {
     city: raw.city || "",
     state: raw.state || "",
     source: raw.source || "Manual",
-    owner: raw.owner || "Priya Sharma",
+    owner: assigneeName,
+    assignee: assigneeName,
+    assignee_name: assigneeName,
+    employeeName: assigneeName,
+    assigneeId: raw.assigneeId || raw.assigned_to || raw.assignedTo?.id || null,
+    assignedTo: raw.assignedTo || (assigneeName ? { id: raw.assigneeId, name: assigneeName } : null),
     winProbability: raw.win_probability ?? 50,
     nextFollowUp: raw.next_followup_date || raw.nextFollowUp || "",
     notes: raw.notes || "",

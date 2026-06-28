@@ -1,7 +1,10 @@
 /** LRMS v7 employee panel mock data — mirrors lrms-v7.html */
 
+/** Mock-only id — never exists in MySQL; must be replaced after API bootstrap. */
+export const MOCK_EMPLOYEE_ID = 101;
+
 export const CURRENT_EMPLOYEE = {
-  id: 101,
+  id: MOCK_EMPLOYEE_ID,
   name: "Amit Kumar",
   role: "Sales Manager",
   initials: "AK",
@@ -275,6 +278,96 @@ export function generateGoogleMeetLink() {
   return `https://meet.google.com/${part()}-${part()}-${part()}`;
 }
 
+const MEETING_PLATFORM_LABELS = {
+  google_meet: "Google Meet",
+  zoom: "Zoom",
+  teams: "Teams",
+};
+
+export function meetingToApiPayload(form, employeeId) {
+  const platformLabel = MEETING_PLATFORM_LABELS[form.platform] || form.platform || "Google Meet";
+  return {
+    leadId: form.leadId,
+    employeeId,
+    title: form.title.trim(),
+    scheduledAt: `${form.date}T${form.time || "09:00"}:00`,
+    meetLink: form.meetLink || null,
+    location: platformLabel,
+    durationMin: 30,
+    agenda: form.agenda?.trim() || null,
+  };
+}
+
+export function partitionMeetings(apiMeetings, leads = []) {
+  const now = Date.now();
+  const mapped = (Array.isArray(apiMeetings) ? apiMeetings : []).map((m) => meetingFromApi(m, leads));
+  const upcoming = [];
+  const history = [];
+
+  for (const meeting of mapped) {
+    if (meeting.status === "cancelled") continue;
+    const at = new Date(meeting.scheduledAt).getTime();
+    if (meeting.status === "completed" || at < now) {
+      history.push({
+        ...meeting,
+        outcome: meeting.outcome || (meeting.status === "completed" ? "Completed" : "Held"),
+      });
+    } else {
+      upcoming.push(meeting);
+    }
+  }
+
+  upcoming.sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+  history.sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+  return { upcoming, history };
+}
+
+export function meetingFromApi(apiMeeting, leads = []) {
+  const lead = leads.find((l) => String(l.id) === String(apiMeeting.leadId));
+  const scheduled = apiMeeting.scheduledAt ? new Date(apiMeeting.scheduledAt) : new Date();
+  const today = getEmpAppToday();
+  const schedDay = Number.isNaN(scheduled.getTime())
+    ? today
+    : scheduled.toISOString().slice(0, 10);
+  const clock24 = Number.isNaN(scheduled.getTime())
+    ? "09:00"
+    : `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`;
+  const clock12 = Number.isNaN(scheduled.getTime())
+    ? clock24
+    : scheduled.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  let time;
+  if (schedDay === today) time = `Today, ${clock12}`;
+  else if (schedDay === tomorrowStr) time = `Tomorrow, ${clock12}`;
+  else {
+    time = `${scheduled.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}, ${clock12}`;
+  }
+
+  const platform = apiMeeting.location || "Google Meet";
+  const mom = typeof apiMeeting.mom === "object" && apiMeeting.mom ? apiMeeting.mom : {};
+
+  return {
+    id: apiMeeting.id,
+    leadId: apiMeeting.leadId,
+    title: apiMeeting.title || "Meeting",
+    time,
+    date: schedDay,
+    scheduledAt: apiMeeting.scheduledAt,
+    platform,
+    lead: lead?.name || "—",
+    company: lead?.company || "—",
+    color: lead?.color || "#e11d48",
+    meetLink: apiMeeting.meetLink || "",
+    status: apiMeeting.status || "scheduled",
+    outcome: mom.outcome || undefined,
+    agenda: mom.agenda || "",
+  };
+}
+
 export const EMP_TEAM_CALL = [
   { name: "Priya Singh", av: "PS", color: "#dc2626", calls: 142, score: 94 },
   { name: "Amit Kumar", av: "AK", color: "#2563eb", calls: 98, score: 88 },
@@ -484,7 +577,60 @@ export const LEAD_STATUS_CLASS = {
   hot: "b-hot", warm: "b-warm", cold: "b-cold", converted: "b-conv", notpick: "b-np", ni: "b-ni",
 };
 
-export const EMP_APP_TODAY = "2026-04-30";
+export function getEmpAppToday() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export const EMP_APP_TODAY = getEmpAppToday();
+
+export function priorityToApi(priority) {
+  const map = { high: "high", med: "medium", low: "low" };
+  return map[priority] || "medium";
+}
+
+export function priorityFromApi(priority) {
+  const v = String(priority || "").toLowerCase();
+  if (v.includes("high")) return "high";
+  if (v.includes("low")) return "low";
+  return "med";
+}
+
+export function tasksMapFromApi(apiTasks, employee) {
+  const map = {};
+  if (!Array.isArray(apiTasks)) return map;
+
+  for (const t of apiTasks) {
+    const due = t.dueAt ? new Date(t.dueAt) : new Date();
+    const date = Number.isNaN(due.getTime())
+      ? getEmpAppToday()
+      : due.toISOString().slice(0, 10);
+    const deadline = t.dueAt && !Number.isNaN(due.getTime())
+      ? `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`
+      : "17:00";
+
+    const item = {
+      id: t.id,
+      name: t.title || t.name || "Task",
+      done: t.status === "done" || t.status === "completed",
+      priority: priorityFromApi(t.priority),
+      assignee: employee?.name || "",
+      assigneeAv: employee?.initials || "?",
+      assigneeColor: employee?.avatarColor || "#64748b",
+      deadline,
+      source: t.followUpId ? "followup" : undefined,
+      followUpId: t.followUpId,
+    };
+
+    if (!map[date]) map[date] = [];
+    map[date].push(item);
+  }
+
+  return map;
+}
 
 export function getFollowUpUrgency(dateStr) {
   const d = new Date(`${dateStr}T00:00:00`);
@@ -550,9 +696,146 @@ export function findEmpTeamMember(name) {
   );
 }
 
-export function normalizeTasksMap(value) {
+function initialsFromLeadName(name) {
+  if (!name) return "?";
+  return String(name).split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
+export function parseDurationToSeconds(value) {
+  if (value == null || value === "" || value === "—") return 0;
+  if (typeof value === "number") return value;
+  const parts = String(value).split(":").map(Number);
+  if (parts.length === 2 && !Number.isNaN(parts[0])) {
+    return parts[0] * 60 + (parts[1] || 0);
+  }
+  return 0;
+}
+
+export function formatDurationFromSeconds(totalSecs) {
+  if (!totalSecs) return "—";
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+export function callToApiPayload(call, employeeId) {
+  const durationSec = call.durationSec ?? parseDurationToSeconds(call.duration);
+  const now = new Date();
+  const typeToDir = { in: "inbound", out: "outbound", miss: "outbound" };
+  const checklistProgress = call.checkedQuestions
+    ? Object.entries(call.checkedQuestions)
+      .filter(([, done]) => done)
+      .map(([stepId]) => ({ stepId, done: true, at: now.toISOString() }))
+    : call.checklistProgress;
+
+  return {
+    leadId: call.leadId,
+    employeeId,
+    direction: typeToDir[call.type] || call.direction || "outbound",
+    outcome: call.outcome || null,
+    durationSec: durationSec || null,
+    startedAt: call.startedAt || now.toISOString(),
+    endedAt: call.endedAt || now.toISOString(),
+    notes: call.note || call.notes || null,
+    aiSummary: call.note || call.aiSummary || null,
+    sopId: call.sopId || null,
+    checklistProgress,
+  };
+}
+
+export function callFromApi(apiCall, leads = []) {
+  const lead = leads.find((l) => String(l.id) === String(apiCall.leadId));
+  const created = apiCall.startedAt || apiCall.createdAt;
+  const createdDate = created ? new Date(created) : new Date();
+  const today = getEmpAppToday();
+  const callDay = Number.isNaN(createdDate.getTime())
+    ? today
+    : createdDate.toISOString().slice(0, 10);
+
+  let period = "month";
+  if (callDay === today) {
+    period = "today";
+  } else {
+    const diff = (new Date(`${today}T00:00:00`) - new Date(`${callDay}T00:00:00`)) / 86400000;
+    if (diff >= 0 && diff <= 7) period = "week";
+  }
+
+  const dateLabel = callDay === today
+    ? `Today ${createdDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    : `${createdDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${createdDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+
+  const dir = apiCall.direction === "inbound" ? "in" : "out";
+
+  return {
+    id: apiCall.id,
+    leadId: apiCall.leadId,
+    name: lead?.name || lead?.leadName || "Unknown Lead",
+    company: lead?.company || lead?.companyName || "—",
+    duration: formatDurationFromSeconds(apiCall.durationSec),
+    type: dir,
+    date: dateLabel,
+    period,
+    outcome: apiCall.outcome || "Call logged",
+    hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),
+    rating: 0,
+    mood: "neutral",
+    phone: lead?.phone || "",
+    note: apiCall.aiSummary || apiCall.notes || "",
+    sopId: apiCall.sopId,
+  };
+}
+
+export function followUpToApiPayload(params, employeeId, leads = []) {
+  const { leadName, type, date, time, note, leadId } = params;
+  const lead = leads.find((l) => l.id === leadId || l.name === leadName);
+  const resolvedLeadId = leadId ?? lead?.id;
+  if (!resolvedLeadId) {
+    throw new Error("Select a valid lead to schedule follow-up");
+  }
+
+  return {
+    leadId: resolvedLeadId,
+    employeeId,
+    scheduledAt: `${date}T${time || "09:00"}:00`,
+    note: note?.trim() || `${type} follow-up scheduled`,
+    title: buildFollowUpTaskName({ type, name: leadName, note }),
+    priority: priorityToApi(followUpPriority(getFollowUpUrgency(date))),
+  };
+}
+
+export function followUpFromApi(apiFollowup, leads = [], type = "Follow-up") {
+  const lead = leads.find((l) => String(l.id) === String(apiFollowup.leadId));
+  const scheduled = apiFollowup.scheduledAt ? new Date(apiFollowup.scheduledAt) : new Date();
+  const dateStr = Number.isNaN(scheduled.getTime())
+    ? getEmpAppToday()
+    : scheduled.toISOString().slice(0, 10);
+  const timeStr = Number.isNaN(scheduled.getTime())
+    ? "09:00"
+    : `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`;
+  const urgency = getFollowUpUrgency(dateStr);
+  const leadName = lead?.name || lead?.leadName || "Lead";
+
+  return {
+    id: apiFollowup.id,
+    name: leadName,
+    company: lead?.company || lead?.companyName || "—",
+    type,
+    urgency,
+    time: formatFollowUpSchedule(dateStr, timeStr),
+    av: lead?.av || initialsFromLeadName(leadName),
+    color: lead?.color || "#64748b",
+    note: apiFollowup.note || "",
+    scheduledDate: dateStr,
+    scheduledTime: timeStr,
+    done: apiFollowup.status === "completed",
+    taskId: apiFollowup.taskId,
+    leadId: apiFollowup.leadId,
+  };
+}
+
+export function normalizeTasksMap(value, { useMockFallback = true } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return createInitialTasks();
+    return useMockFallback ? createInitialTasks() : {};
   }
 
   const normalized = {};
@@ -562,7 +845,8 @@ export function normalizeTasksMap(value) {
     }
   });
 
-  return Object.keys(normalized).length ? normalized : createInitialTasks();
+  if (Object.keys(normalized).length) return normalized;
+  return useMockFallback ? createInitialTasks() : {};
 }
 
 export function createInitialTasks() {
@@ -1053,3 +1337,72 @@ export function buildAllEmployeeSops() {
 }
 
 export const ALL_EMP_SOPS = buildAllEmployeeSops();
+
+function normalizeSopSteps(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return [{
+      id: "step-1",
+      label: "Step 1",
+      questions: [],
+      discovery: [],
+      checklist: [],
+      scripts: { opening: "", talkingPoints: [], tips: "" },
+    }];
+  }
+  return steps.map((step, idx) => ({
+    id: step.id || `step-${idx + 1}`,
+    label: step.label || step.title || step.name || `Step ${idx + 1}`,
+    questions: Array.isArray(step.questions) ? step.questions : [],
+    discovery: Array.isArray(step.discovery) ? step.discovery : [],
+    checklist: Array.isArray(step.checklist) ? step.checklist : [],
+    scripts: step.scripts || {
+      opening: step.script || "",
+      talkingPoints: [],
+      tips: "",
+    },
+  }));
+}
+
+function sopFromApiRow(api) {
+  return {
+    id: api.id,
+    title: api.title || "SOP",
+    sub: api.sub || api.description?.slice(0, 80) || api.category || "",
+    category: api.category || "General",
+    budgetRange: api.budgetRange || "—",
+    duration: api.estimated_time || api.estimatedTime || "—",
+    icon: api.icon || "📋",
+    steps: normalizeSopSteps(api.instruction_steps || api.instructionSteps || api.steps),
+    objections: Array.isArray(api.objections) ? api.objections : [],
+    crossSell: api.crossSell || null,
+  };
+}
+
+/** Keep rich Call Assistant fields when hydrating SOPs from the API. */
+export function mergeApiSopsWithLocal(apiSops) {
+  if (!Array.isArray(apiSops) || apiSops.length === 0) return ALL_EMP_SOPS;
+
+  const localById = new Map(ALL_EMP_SOPS.map((s) => [Number(s.id), s]));
+  const apiIds = new Set();
+
+  const merged = apiSops.map((api) => {
+    const id = Number(api.id);
+    apiIds.add(id);
+    const local = localById.get(id);
+    if (local) {
+      return {
+        ...local,
+        title: api.title || local.title,
+        category: api.category || local.category,
+        sub: api.sub || api.description?.slice(0, 80) || local.sub,
+        steps: normalizeSopSteps(
+          api.instruction_steps || api.instructionSteps || api.steps || local.steps,
+        ),
+      };
+    }
+    return sopFromApiRow(api);
+  });
+
+  const extras = ALL_EMP_SOPS.filter((s) => !apiIds.has(Number(s.id)));
+  return [...merged, ...extras];
+}

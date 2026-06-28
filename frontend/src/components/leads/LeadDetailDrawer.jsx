@@ -1,6 +1,6 @@
 import { Phone, Mail, Calendar, User, History, ArrowRightLeft } from "lucide-react";
 import { Drawer, Badge } from "../Primitives.jsx";
-import { normalizeSource } from "../../lib/leadAssignment.js";
+import { normalizeSource, getLeadEmployeeName, getAssignmentState } from "../../lib/leadAssignment.js";
 
 const SOURCE_LABELS = {
   meta_ads: { label: "Meta Ads", tone: "info" },
@@ -28,6 +28,8 @@ export default function LeadDetailDrawer({
   auditEntries = [],
 }) {
   if (!lead) return null;
+
+  const employeeName = getLeadEmployeeName(lead, getAssignmentState()) || assignment?.employeeName || "";
 
   const field = (label, value, icon) => (
     <div className="flex items-start gap-3 py-2.5 border-b border-rose-50 last:border-0">
@@ -68,6 +70,8 @@ export default function LeadDetailDrawer({
           {field("Phone", lead.phone || lead.phone_number, <Phone size={14} />)}
           {field("Email", lead.email, <Mail size={14} />)}
           {field("City", lead.city, null)}
+          {field("Employee Name", employeeName, <User size={14} />)}
+          {field("Owner", employeeName, <User size={14} />)}
           {field("Follow-up", lead.next_followup_date, <Calendar size={14} />)}
           {field("Expected Revenue", lead.expected_revenue ? `₹${Number(lead.expected_revenue).toLocaleString("en-IN")}` : "—", null)}
           {field("Service / Requirements", lead.requirements || "—", null)}

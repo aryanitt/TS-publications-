@@ -309,14 +309,31 @@ const showToast = (message, type = "success") => {
     [assignState],
   );
 
-  const handleBulkAssign = (employee) => {
+  const handleBulkAssign = async (employee) => {
     const toAssign = filtered.filter((l) => selected.has(String(getLeadId(l))));
     if (!toAssign.length) return showToast("Select leads first", "error");
-    const next = bulkAssign(assignState, toAssign, employee, "bulk");
-    setAssignState(next);
-    setSelected(new Set());
-    setBulkOpen(false);
-    showToast(`${toAssign.length} leads assigned to ${employee.name}`);
+    const leadIds = toAssign.map((l) => getLeadId(l));
+
+    try {
+      await apiPost("/api/v1/assignment/bulk-assign", {
+        leadIds,
+        employeeId: employee.id,
+        method: "bulk",
+      }, { headers: getAdminCrmHeaders() });
+      invalidateCache("/api/v1");
+      const next = bulkAssign(assignState, toAssign, employee, "bulk");
+      setAssignState(next);
+      setLeads((prev) => prev.map((l) => (
+        leadIds.includes(String(getLeadId(l)))
+          ? { ...l, assignedTo: { id: employee.id, name: employee.name } }
+          : l
+      )));
+      setSelected(new Set());
+      setBulkOpen(false);
+      showToast(`${toAssign.length} leads assigned to ${employee.name}`);
+    } catch (err) {
+      showToast(err.message || "Bulk assign failed", "error");
+    }
   };
 
   const handleDropOnEmployee = (cardEmp, dragOverOnly, droppedEmployee) => {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   Plus, Search, CalendarDays, CheckCircle2, Clock, ListTodo, Trash2,
   CheckCircle, AlertCircle, Minus, Check, X, Sun, Moon, MessageSquare,
@@ -7,7 +7,8 @@ import {
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { EMP_SOP_CHECKLIST, EMP_APP_TODAY, EMP_TEAM, isTaskAssignedToEmployee, formatTaskDeadlineTime, findEmpTeamMember } from "../../data/employeeMock.js";
+import { EMP_SOP_CHECKLIST, getEmpAppToday, EMP_TEAM, isTaskAssignedToEmployee, formatTaskDeadlineTime, findEmpTeamMember } from "../../data/employeeMock.js";
+import { shouldPersistToApi } from "../../lib/api.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   EmpEmptyState, BtnPrimary, BtnSecondary, AvatarCircle,
@@ -74,7 +75,7 @@ function TaskCard({ task, onToggle, onDelete }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-1 sm:gap-2">
             <p className={`text-xs sm:text-sm font-bold leading-snug flex-1 min-w-0 line-clamp-2 ${task.done ? "line-through text-slate-400" : "text-slate-900"}`}>
-              {task.name}
+              {task.name || "Task"}
             </p>
             <button
               type="button"
@@ -152,7 +153,7 @@ function ChecklistItem({ label, checked, onToggle }) {
   );
 }
 
-function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, onClose, onSubmit, currentEmployee }) {
+function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, onClose, onSubmit, currentEmployee, submitting }) {
   return (
     <Drawer open={open} onClose={onClose} title="New Task" width="drawer-panel">
       <p className="text-xs text-slate-500 mb-4 pb-3 border-b border-slate-100">
@@ -220,8 +221,8 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
       </div>
 
       <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-4 mt-6 bg-white border-t border-slate-100 flex flex-wrap gap-2">
-        <BtnPrimary onClick={onSubmit} className="flex-1 sm:flex-initial">
-          <CheckCircle2 className="w-4 h-4" /> Create Task
+        <BtnPrimary onClick={onSubmit} disabled={submitting} className="flex-1 sm:flex-initial">
+          <CheckCircle2 className="w-4 h-4" /> {submitting ? "Saving…" : "Create Task"}
         </BtnPrimary>
         <BtnSecondary onClick={onClose} className="sm:ml-auto">
           <X className="w-4 h-4" /> Cancel
@@ -232,16 +233,18 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
 }
 
 export default function EmployeeTasks() {
-  const { tasks, setTasks, syncTaskWithFollowUp, employee } = useEmployee();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const { tasks, createTask, updateTaskStatus, removeTask, syncTaskWithFollowUp, employee, usingApi } = useEmployee();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [tab, setTab] = useState("upcoming");
-  const [dateFilter, setDateFilter] = useState(EMP_APP_TODAY);
+  const [dateFilter, setDateFilter] = useState(getEmpAppToday());
   const [search, setSearch] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(searchParams.get("action") === "add");
+  const [submitting, setSubmitting] = useState(false);
   const [newTask, setNewTask] = useState({
     name: "",
     priority: "med",
-    assignee: employee.name,
+    assignee: employee?.name || "",
     deadline: "17:00",
   });
   const [checklistChecks, setChecklistChecks] = useState(() => {
@@ -258,11 +261,25 @@ export default function EmployeeTasks() {
     toast.success("Checklist updated");
   };
 
-  const today = new Date(`${EMP_APP_TODAY}T00:00:00`);
+  const today = new Date(`${getEmpAppToday()}T00:00:00`);
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setDrawerOpen(true);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!employee?.name) return;
+    setNewTask((prev) => (
+      prev.assignee ? prev : { ...prev, assignee: employee.name }
+    ));
+  }, [employee?.name]);
+
+  const resetNewTask = useCallback(() => ({
+    name: "",
+    priority: "med",
+    assignee: employee?.name || "",
+    deadline: "17:00",
+  }), [employee?.name]);
 
   const allTasks = useMemo(() =>
     Object.entries(tasks || {}).flatMap(([date, items]) =>
@@ -274,7 +291,7 @@ export default function EmployeeTasks() {
 
   const stats = useMemo(() => {
     const pending = allTasks.filter((t) => !t.done).length;
-    const doneToday = allTasks.filter((t) => t.done && t.date === EMP_APP_TODAY).length;
+    const doneToday = allTasks.filter((t) => t.done && t.date === getEmpAppToday()).length;
     const highPriority = allTasks.filter((t) => !t.done && t.priority === "high").length;
     const upcomingDays = new Set(allTasks.filter((t) => !t.done && new Date(`${t.date}T00:00:00`) >= today).map((t) => t.date)).size;
     return { pending, doneToday, highPriority, upcomingDays };
@@ -295,7 +312,7 @@ export default function EmployeeTasks() {
     if (search.trim()) {
       const q = search.toLowerCase();
       entries = entries
-        .map(([date, items]) => [date, items.filter((t) => t.name.toLowerCase().includes(q))])
+        .map(([date, items]) => [date, items.filter((t) => (t.name || "").toLowerCase().includes(q))])
         .filter(([, items]) => items.length > 0);
     }
     return entries;
@@ -303,44 +320,30 @@ export default function EmployeeTasks() {
 
   const closeDrawer = () => {
     setDrawerOpen(false);
-    setNewTask({
-      name: "",
-      priority: "med",
-      assignee: employee.name,
-      deadline: "17:00",
-    });
+    setNewTask(resetNewTask());
     if (searchParams.get("action") === "add") {
-      setSearchParams({}, { replace: true });
+      navigate("/employee/tasks", { replace: true });
     }
   };
 
-  const toggleTask = (date, id) => {
+  const toggleTask = async (date, id) => {
     const task = tasks[date]?.find((t) => t.id === id);
     const nextDone = !task?.done;
     if (task?.followUpId) {
       syncTaskWithFollowUp(date, id, nextDone);
     } else {
-      setTasks((prev) => ({
-        ...prev,
-        [date]: (prev[date] || []).map((t) => (t.id === id ? { ...t, done: nextDone } : t)),
-      }));
+      await updateTaskStatus(date, id, nextDone);
     }
     toast.success("Task updated");
   };
 
-  const deleteTask = (date, id) => {
-    setTasks((prev) => ({ ...prev, [date]: (prev[date] || []).filter((t) => t.id !== id) }));
+  const deleteTask = async (date, id) => {
+    await removeTask(date, id);
     toast.success("Task removed");
   };
 
-  const resetNewTask = () => ({
-    name: "",
-    priority: "med",
-    assignee: employee.name,
-    deadline: "17:00",
-  });
-
-  const addTask = () => {
+  const addTask = async () => {
+    if (submitting) return;
     if (!newTask.name.trim()) {
       toast.error("Enter a task name");
       return;
@@ -349,29 +352,41 @@ export default function EmployeeTasks() {
       toast.error("Set a deadline time");
       return;
     }
-    const member = findEmpTeamMember(newTask.assignee) || findEmpTeamMember(employee.name);
-    const assigneeName = member?.name || employee.name;
-    setTasks((prev) => ({
-      ...prev,
-      [dateFilter]: [...(prev[dateFilter] || []), {
-        id: Date.now(),
-        name: newTask.name.trim(),
-        done: false,
-        priority: newTask.priority,
-        assignee: assigneeName,
-        assigneeAv: member?.av || employee.initials,
-        assigneeColor: member?.color || employee.avatarColor,
-        deadline: newTask.deadline,
-        createdBy: employee.name,
-      }],
-    }));
-    closeDrawer();
-    setNewTask(resetNewTask());
-    toast.success(
-      assigneeName === employee.name
-        ? "Task added to your list"
-        : `Task assigned to ${assigneeName}`,
-    );
+    if (typeof createTask !== "function") {
+      toast.error("Task saving is not available right now");
+      return;
+    }
+
+    const member = findEmpTeamMember(newTask.assignee) || findEmpTeamMember(employee?.name);
+    const assigneeName = member?.name || employee?.name || "You";
+    setSubmitting(true);
+    try {
+      const saved = await createTask({
+        date: dateFilter,
+        task: {
+          name: newTask.name.trim(),
+          done: false,
+          priority: newTask.priority,
+          assignee: assigneeName,
+          assigneeAv: member?.av || employee?.initials || "?",
+          assigneeColor: member?.color || employee?.avatarColor || "#475569",
+          deadline: newTask.deadline,
+          createdBy: employee?.name || assigneeName,
+        },
+      });
+      if (saved === null && shouldPersistToApi(usingApi)) return;
+      closeDrawer();
+      setNewTask(resetNewTask());
+      toast.success(
+        assigneeName === employee?.name
+          ? "Task added to your list"
+          : `Task assigned to ${assigneeName}`,
+      );
+    } catch {
+      // createTask already toasts on failure
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -571,7 +586,7 @@ export default function EmployeeTasks() {
             const d = new Date(`${date}T00:00:00`);
             const done = items.filter((t) => t.done).length;
             const pct = items.length ? Math.round((done / items.length) * 100) : 0;
-            const isToday = date === EMP_APP_TODAY;
+            const isToday = date === getEmpAppToday();
 
             return (
               <section key={date}>
@@ -637,6 +652,7 @@ export default function EmployeeTasks() {
         onClose={closeDrawer}
         onSubmit={addTask}
         currentEmployee={employee}
+        submitting={submitting}
       />
     </div>
   );

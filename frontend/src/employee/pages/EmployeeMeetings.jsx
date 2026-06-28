@@ -9,16 +9,14 @@ import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
-  EMP_MEETINGS_UPCOMING,
-  EMP_MEETINGS_HISTORY,
   MEETING_PLATFORMS,
   generateGoogleMeetLink,
+  getEmpAppToday,
 } from "../../data/employeeMock.js";
 import {
   BtnPrimary, BtnSecondary, EmpEmptyState, AvatarCircle,
 } from "../components/EmpUI.jsx";
 
-const PLATFORM_LABELS = { google_meet: "Google Meet", zoom: "Zoom", teams: "Teams" };
 
 const PLATFORM_TONE = {
   "Google Meet": "success",
@@ -30,7 +28,7 @@ const PANEL_HEIGHT = "min-h-[240px] max-h-[min(420px,calc(100dvh-280px))] sm:max
 
 const EMPTY_FORM = {
   title: "",
-  date: "2026-04-30",
+  date: getEmpAppToday(),
   time: "14:00",
   leadId: "",
   platform: "google_meet",
@@ -98,12 +96,15 @@ function BookMeetingDrawer({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Lead">
-            <select className={INPUT} value={form.leadId} onChange={(e) => setForm((f) => ({ ...f, leadId: e.target.value }))}>
+            <select className={INPUT} value={form.leadId} onChange={(e) => setForm((f) => ({ ...f, leadId: e.target.value }))} required>
               <option value="">Select lead…</option>
               {leads.map((l) => (
-                <option key={l.id} value={l.id}>{l.name}</option>
+                <option key={l.id} value={l.id}>{l.name}{l.company ? ` — ${l.company}` : ""}</option>
               ))}
             </select>
+            {leads.length === 0 && (
+              <p className="text-[10px] text-amber-600 mt-1">No leads loaded — add or assign leads first.</p>
+            )}
           </Field>
           <Field label="Platform">
             <select
@@ -319,47 +320,62 @@ function UpcomingCard({ meeting, onJoin, onCopyLink, onDelete }) {
 }
 
 export default function EmployeeMeetings() {
-  const { employee, leads } = useEmployee();
+  const {
+    employee,
+    leads,
+    meetingsUpcoming,
+    meetingsHistory,
+    createMeeting,
+    cancelMeeting,
+    refreshLeads,
+    refreshMeetings,
+    usingApi,
+  } = useEmployee();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState("upcoming");
   const [search, setSearch] = useState("");
-  const [upcoming, setUpcoming] = useState(EMP_MEETINGS_UPCOMING);
   const [form, setForm] = useState(EMPTY_FORM);
   const [drawerOpen, setDrawerOpen] = useState(searchParams.get("action") === "add");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setDrawerOpen(true);
   }, [searchParams]);
 
+  useEffect(() => {
+    refreshLeads();
+    refreshMeetings();
+  }, [refreshLeads, refreshMeetings]);
+
   const selectedPlatform = MEETING_PLATFORMS.find((p) => p.id === form.platform) || MEETING_PLATFORMS[0];
 
   const stats = useMemo(() => ({
-    today: upcoming.filter((m) => m.time.toLowerCase().includes("today")).length,
-    week: upcoming.length,
-    completed: EMP_MEETINGS_HISTORY.length,
-    googleMeet: upcoming.filter((m) => m.platform === "Google Meet").length,
-  }), [upcoming]);
+    today: meetingsUpcoming.filter((m) => m.time.toLowerCase().includes("today")).length,
+    week: meetingsUpcoming.length,
+    completed: meetingsHistory.length,
+    googleMeet: meetingsUpcoming.filter((m) => m.platform === "Google Meet").length,
+  }), [meetingsUpcoming, meetingsHistory]);
 
   const filteredUpcoming = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return upcoming;
-    return upcoming.filter(
+    if (!q) return meetingsUpcoming;
+    return meetingsUpcoming.filter(
       (m) =>
         m.title.toLowerCase().includes(q) ||
         m.lead.toLowerCase().includes(q) ||
         m.platform.toLowerCase().includes(q),
     );
-  }, [upcoming, search]);
+  }, [meetingsUpcoming, search]);
 
   const filteredHistory = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return EMP_MEETINGS_HISTORY;
-    return EMP_MEETINGS_HISTORY.filter(
+    if (!q) return meetingsHistory;
+    return meetingsHistory.filter(
       (m) =>
         m.title.toLowerCase().includes(q) ||
-        m.outcome.toLowerCase().includes(q),
+        (m.outcome || "").toLowerCase().includes(q),
     );
-  }, [search]);
+  }, [meetingsHistory, search]);
 
   const closeDrawer = () => {
     setDrawerOpen(false);
@@ -386,32 +402,31 @@ export default function EmployeeMeetings() {
     }
   };
 
-  const handleDelete = (meetingId) => {
-    setUpcoming((prev) => prev.filter((m) => m.id !== meetingId));
+  const handleDelete = async (meetingId) => {
+    await cancelMeeting(meetingId);
     toast.success("Meeting deleted");
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (submitting) return;
     if (!form.title.trim()) {
       toast.error("Meeting title is required");
       return;
     }
-    const lead = leads.find((l) => String(l.id) === form.leadId);
-    const newMeeting = {
-      id: Date.now(),
-      title: form.title.trim(),
-      time: `Scheduled, ${form.time}`,
-      date: form.date,
-      platform: PLATFORM_LABELS[form.platform] || "Google Meet",
-      lead: lead?.name || "—",
-      company: lead?.company || "—",
-      color: lead?.color || "#e11d48",
-      meetLink: form.meetLink || (form.platform === "google_meet" ? generateGoogleMeetLink() : ""),
-    };
-    setUpcoming((prev) => [newMeeting, ...prev]);
-    setForm(EMPTY_FORM);
-    closeDrawer();
-    toast.success("Meeting created & invites sent");
+    if (!form.leadId) {
+      toast.error("Select a lead for this meeting");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const saved = await createMeeting(form);
+      if (saved === null && usingApi) return;
+      setForm({ ...EMPTY_FORM, date: getEmpAppToday() });
+      closeDrawer();
+      toast.success("Meeting saved");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (

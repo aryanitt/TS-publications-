@@ -21,7 +21,7 @@ const TEMPERATURE_BTN_ACTIVE = {
 export default function EmployeeLeadDrawer({ lead, onClose }) {
   if (!lead) return null;
   const navigate = useNavigate();
-  const { calls = [], activities = {}, leads = [], setLeads, updateLeadTemperature, addActivityRecord } = useEmployee();
+  const { calls = [], activities = {}, leads = [], reassignLead, teamEmployees, updateLeadTemperature, addActivityRecord } = useEmployee();
 
   const liveLead = useMemo(
     () => leads.find((l) => l.id === lead.id) || lead,
@@ -38,10 +38,15 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
 
   const currentAssignee = liveLead.assignee || "Amit Kumar";
 
-  const handleManualReassign = (newAssignee) => {
-    setLeads((prev) =>
-      prev.map((l) => (l.id === liveLead.id ? { ...l, assignee: newAssignee } : l))
-    );
+  const handleManualReassign = async (newAssignee) => {
+    const emp = teamEmployees.find((e) => e.name === newAssignee)
+      || EMP_TEAM.find((t) => t.name === newAssignee);
+    if (!emp?.id) {
+      toast.error("Could not find employee to assign");
+      return;
+    }
+    const ok = await reassignLead(liveLead.id, emp.id, emp.name, "manual");
+    if (!ok) return;
     addActivityRecord(liveLead.id, {
       type: "meeting",
       text: `Lead manually reassigned to ${newAssignee} by Amit Kumar`,
@@ -50,14 +55,15 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
     toast.success(`Assigned to ${newAssignee}`);
   };
 
-  const handleAutoReassign = () => {
-    const candidates = EMP_TEAM.filter((t) => t.name !== currentAssignee);
-    if (candidates.length === 0) return;
-    const randomChoice = candidates[Math.floor(Math.random() * candidates.length)];
-    
-    setLeads((prev) =>
-      prev.map((l) => (l.id === liveLead.id ? { ...l, assignee: randomChoice.name, status: "notpick", stage: "Not Pick" } : l))
-    );
+  const handleAutoReassign = async () => {
+    const pool = teamEmployees.length
+      ? teamEmployees.filter((e) => e.name !== currentAssignee)
+      : EMP_TEAM.filter((t) => t.name !== currentAssignee);
+    if (pool.length === 0) return;
+    const randomChoice = pool[Math.floor(Math.random() * pool.length)];
+
+    const ok = await reassignLead(liveLead.id, randomChoice.id, randomChoice.name, "auto");
+    if (!ok) return;
     addActivityRecord(liveLead.id, {
       type: "meeting",
       text: `Lead automatically reassigned to ${randomChoice.name} due to no pickup (Not Answered)`,

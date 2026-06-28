@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { apiGet, apiPost, apiPut, apiDelete, readCachedJson } from "../lib/api.js";
+import { apiGet, apiPost, apiPut, apiDelete, invalidateCache } from "../lib/api.js";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import {
@@ -883,8 +883,12 @@ function loadLocalSops() {
   }
 }
 
-function persistLocalSops(_list) {
-  // Business data persists via /api/sop only (localStorage disabled)
+function persistLocalSops(list) {
+  try {
+    localStorage.setItem(SOP_STORAGE_KEY, JSON.stringify(list));
+  } catch (error) {
+    console.error("Failed to persist SOPs locally:", error);
+  }
 }
 
 function buildLocalSop(formData, asDraft, existing = null) {
@@ -1685,22 +1689,19 @@ export default function SOP() {
 
   useEffect(() => {
     const fetchSops = async () => {
-      const cached = readCachedJson("/api/sop/all");
-      if (cached?.success) {
-        const normalized = cached.sops.map(normalizeApiSop);
-        setSops(normalized);
-      }
-
       try {
         const data = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
 
         if (data.success) {
-          const normalized = data.sops.map(normalizeApiSop);
+          const normalized = (data.sops || []).map(normalizeApiSop);
           setSops(normalized);
+          if (normalized.length) persistLocalSops(normalized);
           return;
         }
+        addToast(data.message || "Could not load SOPs from server", "error");
       } catch (error) {
         console.error("Failed to fetch SOPs:", error);
+        addToast("Could not reach server — showing last saved copy", "error");
       }
 
       const local = loadLocalSops();
@@ -1708,7 +1709,7 @@ export default function SOP() {
     };
 
     fetchSops();
-  }, []);
+  }, [addToast]);
 
   const handleUpdateComment = async (sopId, commentId, newText) => {
     try {
@@ -1838,7 +1839,7 @@ export default function SOP() {
         const data = await apiPut(`/api/sop/update/${editSop.id}`, payload);
         console.log("Update SOP response:", data);
 
-        if (data.success && data.sop) {
+        if (data.success && data.sop?.id) {
           const normalized = normalizeApiSop({ ...data.sop, comments: editSop.comments || [], revisions: editSop.revisions || [], readCount: editSop.readCount || 0, acknowledgedCount: editSop.acknowledgedCount || 0 });
           setSops(prev => {
             const next = prev.map(s => s.id === editSop.id ? normalized : s);
@@ -1847,9 +1848,11 @@ export default function SOP() {
           });
           setDetailSop(d => d?.id === editSop.id ? normalized : d);
           setEditSop(null);
+          invalidateCache("/api/sop");
           addToast("SOP updated successfully");
         } else {
           console.error("Backend error:", data);
+          addToast(data.message || "Failed to save SOP to database", "error");
           saveSopLocally({ ...formData, status: finalStatus }, asDraft, editSop);
         }
       } catch (error) {
@@ -1862,7 +1865,7 @@ export default function SOP() {
         const data = await apiPost("/api/sop/create", payload);
         console.log("Create SOP response:", data);
 
-        if (data.success && data.sop) {
+        if (data.success && data.sop?.id) {
           const normalized = normalizeApiSop(data.sop);
           setSops(prev => {
             const next = [normalized, ...prev];
@@ -1870,9 +1873,11 @@ export default function SOP() {
             return next;
           });
           setAddOpen(false);
+          invalidateCache("/api/sop");
           addToast("SOP published successfully");
         } else {
           console.error("Backend error:", data);
+          addToast(data.message || "Failed to save SOP to database", "error");
           saveSopLocally({ ...formData, status: finalStatus }, asDraft);
         }
       } catch (error) {
@@ -1896,6 +1901,7 @@ export default function SOP() {
           return next;
         });
         if (detailSop?.id === deleteTarget.id) setDetailSop(null);
+        invalidateCache("/api/sop");
         addToast(`"${deleteTarget.title}" deleted`, "error");
       } else {
         setSops(prev => {

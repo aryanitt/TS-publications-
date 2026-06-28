@@ -440,7 +440,7 @@ function SalesPipelineStatus() {
   useEffect(() => {
     apiGet("/api/sales/emp-leads/pipeline-stats")
       .then(d => {
-        if (d.success && d.grid && Object.keys(d.grid).length > 0) {
+        if (d.success && d.grid && (d.source === "database" || d.source === "empty")) {
           setStats(d.grid);
           setStageTotals(d.stageTotals || {});
           setTempTotals(d.tempTotals  || {});

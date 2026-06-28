@@ -145,7 +145,7 @@ export default function EmployeeCallAssistant() {
   const urlLead = searchParams.get("lead");
   const urlSop = searchParams.get("sop");
   
-  const { leads, addCallRecord, addActivityRecord, sops } = useEmployee();
+  const { leads, addCallRecord, addActivityRecord, sops, updateLeadTemperature } = useEmployee();
 
   const [selectedSopId, setSelectedSopId] = useState(1);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -247,10 +247,15 @@ AI Insights & Follow-up Actions:
   };
 
   const handleSaveCallToLogs = () => {
+    if (!matchedLead?.id) {
+      toast.error("Select a lead from your pipeline before saving this call");
+      return;
+    }
+
     const callId = Date.now();
     const newCallLog = {
       id: callId,
-      leadId: matchedLead ? matchedLead.id : 1,
+      leadId: matchedLead.id,
       name: leadName,
       company: companyName,
       duration: formatDuration(callDuration),
@@ -261,7 +266,7 @@ AI Insights & Follow-up Actions:
       hasRec: true,
       rating: callRating,
       mood: callLeadTemp,
-      phone: matchedLead ? matchedLead.phone : `+91 ${Math.floor(6000000000 + Math.random() * 4000000000)}`,
+      phone: matchedLead.phone || "",
       note: aiMoM,
       sopId: selectedSopId,
       checkedQuestions: checkedQuestions,
@@ -269,7 +274,9 @@ AI Insights & Follow-up Actions:
 
     addCallRecord(newCallLog);
 
-    // Also add lead activity event
+    if (matchedLead?.status !== callLeadTemp) {
+      updateLeadTemperature(matchedLead.id, callLeadTemp);
+    }
     addActivityRecord(newCallLog.leadId, {
       type: "call",
       text: `Outbound Call — ${callOutcome} (${formatDuration(callDuration)})`,
@@ -332,8 +339,8 @@ AI Insights & Follow-up Actions:
   // Filtered SOPs list
   const filteredSops = useMemo(() => {
     return sops.filter((s) => {
-      const matchesSearch = s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            s.sub.toLowerCase().includes(searchQuery.toLowerCase());
+      const haystack = `${s.title || ""} ${s.sub || ""} ${s.category || ""}`.toLowerCase();
+      const matchesSearch = haystack.includes(searchQuery.toLowerCase());
       const matchesCategory = categoryFilter === "All" || s.category === categoryFilter;
       return matchesSearch && matchesCategory;
     });
@@ -376,7 +383,7 @@ AI Insights & Follow-up Actions:
   };
 
   const handleStepChange = (index) => {
-    if (index >= 0 && index < activeSop.steps.length) {
+    if (activeSop?.steps && index >= 0 && index < activeSop.steps.length) {
       setActiveStepIndex(index);
     }
   };
@@ -480,7 +487,7 @@ AI Insights & Follow-up Actions:
 
           <SopStepCTA
             embedded
-            steps={activeSop.steps}
+            steps={activeSop.steps || []}
             activeStepIndex={activeStepIndex}
             onStepChange={handleStepChange}
             isMobile={isMobile}
@@ -524,7 +531,7 @@ AI Insights & Follow-up Actions:
 
           <SopStepCTA
             desktopBar
-            steps={activeSop.steps}
+            steps={activeSop.steps || []}
             activeStepIndex={activeStepIndex}
             onStepChange={handleStepChange}
             isMobile={false}

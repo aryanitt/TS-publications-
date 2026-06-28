@@ -11,7 +11,7 @@ import {
   FORMS, FORM_SOURCES, FORM_STATUSES, FORM_SERVICES,
   formatFormRevenue, getFormsSummary,
 } from "../../data/formsMock.js";
-import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
+import { apiGet, apiPost, apiPut, invalidateCache } from "../../lib/api.js";
 import FormBuilderDrawer from "./FormBuilder.jsx";
 
 const SOURCE_ICONS = {
@@ -37,16 +37,22 @@ export default function FormsDashboard() {
   const [serviceFilter, setServiceFilter] = useState("all");
   const [builderOpen, setBuilderOpen] = useState(false);
   const [builderFormId, setBuilderFormId] = useState(null);
+  const [savingForm, setSavingForm] = useState(false);
+
+  const loadForms = async () => {
+    try {
+      const data = await apiGet("/api/forms", { skipCache: true, cacheTtl: 0 });
+      if (data.success && Array.isArray(data.forms)) {
+        setForms(data.forms);
+        return;
+      }
+    } catch {
+      // keep current list / mock fallback
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiGet("/api/forms", { skipCache: true, cacheTtl: 0 });
-        if (data.forms?.length) setForms(data.forms);
-      } catch {
-        // keep FORMS mock
-      }
-    })();
+    loadForms();
   }, []);
 
   useEffect(() => {
@@ -78,6 +84,52 @@ export default function FormsDashboard() {
     setBuilderFormId(formId);
     setBuilderOpen(true);
   };
+
+  const saveLocalForm = (payload, isDraft, existingId = null) => {
+    const id = existingId || `local-${Date.now()}`;
+    const form = { ...payload, id };
+    setForms((prev) => {
+      if (existingId) {
+        return prev.map((f) => (f.id === existingId ? { ...f, ...form } : f));
+      }
+      return [form, ...prev];
+    });
+    closeBuilder();
+    toast.success(isDraft ? "Draft saved locally (server unavailable)" : "Form saved locally (server unavailable)", { icon: "ℹ️" });
+  };
+
+  const handleSaveForm = async (payload, isDraft) => {
+    setSavingForm(true);
+    try {
+      const data = builderFormId
+        ? await apiPut(`/api/forms/${builderFormId}`, payload)
+        : await apiPost("/api/forms", payload);
+
+      if (data.success && data.form?.id) {
+        setForms((prev) => {
+          if (builderFormId) {
+            return prev.map((f) => (f.id === builderFormId ? data.form : f));
+          }
+          return [data.form, ...prev];
+        });
+        invalidateCache("/api/forms");
+        closeBuilder();
+        toast.success(isDraft ? "Draft saved" : builderFormId ? "Form updated" : "Form published");
+        return;
+      }
+
+      toast.error(data.message || "Failed to save form");
+      saveLocalForm(payload, isDraft, builderFormId);
+    } catch (error) {
+      console.error("Save form error:", error);
+      toast.error(error.message || "Could not reach server");
+      saveLocalForm(payload, isDraft, builderFormId);
+    } finally {
+      setSavingForm(false);
+    }
+  };
+
+  const editingForm = builderFormId ? forms.find((f) => f.id === builderFormId) || null : null;
 
   const filtered = useMemo(() => {
     return forms.filter((f) => {
@@ -221,7 +273,13 @@ export default function FormsDashboard() {
         </GlassCard>
       )}
 
-      <FormBuilderDrawer open={builderOpen} onClose={closeBuilder} formId={builderFormId} />
+      <FormBuilderDrawer
+        open={builderOpen}
+        onClose={closeBuilder}
+        existingForm={editingForm}
+        onSave={handleSaveForm}
+        saving={savingForm}
+      />
     </div>
   );
 }

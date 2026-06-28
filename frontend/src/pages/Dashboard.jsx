@@ -272,6 +272,13 @@ const fadeUp = {
   }),
 };
 
+const staggerContainer = {
+  hidden: {},
+  show: {
+    transition: { staggerChildren: 0.06 },
+  },
+};
+
 // ─── Tiny hook: track if viewport is mobile (< 640px) ─────────────────────────
 function useIsMobile(bp = 640) {
   const [isMobile, setIsMobile] = useState(
@@ -536,7 +543,7 @@ function KPICardsRow({ kpiData, filterKey }) {
         initial="hidden"
         animate="show"
         exit="hidden"
-        variants={{ show: { transition: { staggerChildren: 0.06 } } }}
+        variants={staggerContainer}
       >
         {kpiData.map((k, i) => {
           const Icon = iconMap[k.icon] || DollarSign;
@@ -738,6 +745,18 @@ const LEADERBOARD_RANKS = [
     colors: ["#fb923c", "#ea580c"],
     textColor: "#c2410c",
   },
+  {
+    badge: "bg-rose-50 text-rose-600 border-rose-200",
+    medal: "text-rose-400 fill-rose-100",
+    colors: ["#fb7185", "#e11d48"],
+    textColor: "#be123c",
+  },
+  {
+    badge: "bg-violet-50 text-violet-600 border-violet-200",
+    medal: "text-violet-400 fill-violet-100",
+    colors: ["#a78bfa", "#7c3aed"],
+    textColor: "#6d28d9",
+  },
 ];
 
 // ─── Leader Board Tooltip Portal ─────────────────────────────────────────────
@@ -830,41 +849,58 @@ function LeaderBoardTooltip({ emp, anchorRef, visible }) {
 }
 
 // ─── Leader Board ─────────────────────────────────────────────────────────────
-function LeaderBoard({ employees, filterKey }) {
+function buildLeaderboardFromEmployees(employees) {
+  if (!Array.isArray(employees) || !employees.length) return [];
+  return employees
+    .map((emp) => {
+      const leads = Number(emp.leads ?? emp.lead_count ?? emp.call_target ?? 0);
+      const conv = Number(emp.conv ?? emp.deals ?? 0);
+      const convPct = leads ? Math.round((conv / leads) * 100) : 0;
+      return {
+        name: emp.name,
+        leads,
+        conv,
+        convR: `${convPct}%`,
+        qualR: leads ? `${Math.min(99, 100 - convPct)}%` : "0%",
+        resp: "2h",
+        rev: emp.revenue ? `₹${emp.revenue}` : "₹0",
+      };
+    })
+    .sort((a, b) => b.conv - a.conv || b.leads - a.leads || a.name.localeCompare(b.name))
+    .slice(0, 3);
+}
+
+function LeaderBoard({ employees }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const cardRefs = useRef([]);
   const isMobile = useIsMobile(640);
+  const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 3);
 
   return (
     <div className={`${PANEL} p-3 sm:p-4 md:p-5 min-w-0`}>
       <SectionHead icon={Trophy} title="Leader Board" sub="Top performers by conversion rate" />
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={filterKey}
-          className="grid grid-cols-3 gap-1.5 sm:gap-3"
-          initial="hidden"
-          animate="show"
-          exit="hidden"
-          variants={{ show: { transition: { staggerChildren: 0.06 } } }}
-        >
-          {employees.map((emp, i) => {
+      {topPerformers.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 py-10 text-center">
+          <Trophy className="w-8 h-8 text-rose-300 mx-auto mb-2" />
+          <p className="text-sm font-semibold text-slate-600">No performance data yet</p>
+          <p className="text-xs text-slate-400 mt-1">Add team members and assign leads to populate the leaderboard.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
+          {topPerformers.map((emp, i) => {
             const rank = LEADERBOARD_RANKS[i] || LEADERBOARD_RANKS[2];
             const convPct = getConvPct(emp);
             const donutSize = isMobile ? 56 : 76;
             const donutStroke = isMobile ? 5 : 6;
 
             return (
-              <div key={emp.name} className="relative min-w-0">
-                <motion.div
+              <div key={`${emp.name}-${i}`} className="relative min-w-0">
+                <div
                   ref={(el) => { cardRefs.current[i] = el; }}
-                  variants={fadeUp}
-                  custom={i}
                   onMouseEnter={() => setHoveredIdx(i)}
                   onMouseLeave={() => setHoveredIdx(null)}
                   onClick={() => setHoveredIdx((prev) => (prev === i ? null : i))}
-                  animate={{ y: hoveredIdx === i ? -2 : 0 }}
-                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                   className="rounded-lg sm:rounded-xl bg-slate-50/60 border border-slate-200/80 hover:border-slate-300 hover:bg-white transition-all duration-200 cursor-default flex flex-col items-center justify-center py-2.5 sm:py-4 px-1 sm:px-3 gap-1.5 sm:gap-2.5 min-h-[128px] sm:min-h-[168px]"
                 >
                   <div className={`inline-flex items-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9px] font-bold uppercase tracking-wide sm:tracking-widest px-1.5 sm:px-2 py-0.5 rounded-full border ${rank.badge}`}>
@@ -877,7 +913,7 @@ function LeaderBoard({ employees, filterKey }) {
                     size={donutSize}
                     stroke={donutStroke}
                     fontSize={isMobile ? 11 : 16}
-                    gradientId={`leader-gradient-${filterKey}-${i}`}
+                    gradientId={`leader-gradient-${i}`}
                     colors={rank.colors}
                     textColor={rank.textColor}
                   />
@@ -888,7 +924,7 @@ function LeaderBoard({ employees, filterKey }) {
                       {emp.conv} conv · {emp.rev}
                     </p>
                   </div>
-                </motion.div>
+                </div>
 
                 <LeaderBoardTooltip
                   emp={emp}
@@ -898,8 +934,8 @@ function LeaderBoard({ employees, filterKey }) {
               </div>
             );
           })}
-        </motion.div>
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }
@@ -1220,44 +1256,67 @@ function PipelineRow({ rowKey, label, stops, data, bubbleRefs, hoveredBubble, se
   );
 }
 
-function LeadPipeline({ pipelineData, filterKey, selectedService, onServiceChange }) {
+function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChange, loading }) {
   const [hoveredBubble, setHoveredBubble] = useState(null);
   const bubbleRefs = useRef({});
 
-  const data = pipelineData[selectedService] || pipelineData["All Services"];
-  const total = data[0] ?? 0;
-  const closed = data[data.length - 1] ?? 0;
-  const overallConv = total > 0 ? Math.round((closed / total) * 100) : 0;
+  const resolved = useMemo(() => {
+    if (pipelineStats?.grid && (pipelineStats.source === "database" || pipelineStats.source === "empty")) {
+      return pipelineStats;
+    }
 
-  const contacted = data[1] ?? 0;
-  const qualified = data[2] ?? 0;
-  const meeting   = data[3] ?? 0;
-  const negotiation = data[4] ?? 0;
-  const conversion = data[5] ?? 0;
+    const data = SERVICE_PIPELINE[filterKey]?.[selectedService]
+      || SERVICE_PIPELINE[filterKey]?.["All Services"]
+      || [0, 0, 0, 0, 0, 0];
+    const contacted = data[1] ?? 0;
+    const qualified = data[2] ?? 0;
+    const meeting = data[3] ?? 0;
+    const negotiation = data[4] ?? 0;
+    const conversion = data[5] ?? 0;
 
-  const hotData = [
-    Math.round(contacted * 0.45),
-    Math.round(qualified * 0.55),
-    Math.round(meeting * 0.60),
-    Math.round(negotiation * 0.65),
-    Math.round(conversion * 0.70),
-  ];
+    const hot = [
+      Math.round(contacted * 0.45),
+      Math.round(qualified * 0.55),
+      Math.round(meeting * 0.60),
+      Math.round(negotiation * 0.65),
+      Math.round(conversion * 0.70),
+    ];
+    const warm = [
+      Math.round(contacted * 0.35),
+      Math.round(qualified * 0.30),
+      Math.round(meeting * 0.25),
+      Math.round(negotiation * 0.22),
+      Math.round(conversion * 0.20),
+    ];
+    const cold = SEGMENTED_STAGES.map((_, i) =>
+      Math.max(0, [contacted, qualified, meeting, negotiation, conversion][i] - hot[i] - warm[i]),
+    );
 
-  const warmData = [
-    Math.round(contacted * 0.35),
-    Math.round(qualified * 0.30),
-    Math.round(meeting * 0.25),
-    Math.round(negotiation * 0.22),
-    Math.round(conversion * 0.20),
-  ];
+    const grid = {
+      Hot: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, hot[i]])),
+      Warm: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, warm[i]])),
+      Cold: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, cold[i]])),
+    };
 
-  const coldData = [
-    Math.max(0, contacted - hotData[0] - warmData[0]),
-    Math.max(0, qualified - hotData[1] - warmData[1]),
-    Math.max(0, meeting - hotData[2] - warmData[2]),
-    Math.max(0, negotiation - hotData[3] - warmData[3]),
-    Math.max(0, conversion - hotData[4] - warmData[4]),
-  ];
+    const total = pipelineStats?.totalLeads ?? data[0] ?? 0;
+    const closed = pipelineStats?.conversions ?? conversion;
+    const overallConv = total > 0 ? Math.round((closed / total) * 100) : 0;
+
+    return {
+      grid,
+      totalLeads: total,
+      conversions: closed,
+      overallConv,
+      source: pipelineStats?.source || "mock",
+    };
+  }, [pipelineStats, filterKey, selectedService]);
+
+  const hotData = SEGMENTED_STAGES.map((s) => resolved.grid?.Hot?.[s] ?? 0);
+  const warmData = SEGMENTED_STAGES.map((s) => resolved.grid?.Warm?.[s] ?? 0);
+  const coldData = SEGMENTED_STAGES.map((s) => resolved.grid?.Cold?.[s] ?? 0);
+  const total = resolved.totalLeads ?? 0;
+  const closed = resolved.conversions ?? 0;
+  const overallConv = resolved.overallConv ?? 0;
 
   const hotStops = [
     { offset: "0%", color: "#9f1239" },
@@ -1746,7 +1805,7 @@ function RecentActivityPanel({ items, filterKey }) {
           initial="hidden"
           animate="show"
           exit="hidden"
-          variants={{ show: { transition: { staggerChildren: 0.04 } } }}
+          variants={staggerContainer}
         >
           {items.map((item, i) => {
             const config = getActivityIconConfig(item.text);
@@ -2130,11 +2189,24 @@ export default function Dashboard() {
   const { preset } = useDateRange();
   const [selectedService, setSelectedService] = useState("All Services");
   const [apiFilterData, setApiFilterData] = useState(null);
+  const [teamEmployees, setTeamEmployees] = useState([]);
   const [chartRevenue, setChartRevenue] = useState(revenueSeries);
+  const [pipelineStats, setPipelineStats] = useState(null);
+  const [pipelineLoading, setPipelineLoading] = useState(true);
 
   const filterKey = preset === "custom" ? "week" : preset;
   const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
   const fd        = mergedFilter[filterKey];
+
+  const leaderboardData = useMemo(() => {
+    const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
+    if (fromTeam.length) return fromTeam;
+    const fromFilter = fd?.leaderboard;
+    if (fromFilter?.length) return fromFilter.slice(0, 3);
+    const fromMock = FILTER_DATA[filterKey]?.leaderboard;
+    if (fromMock?.length) return fromMock.slice(0, 3);
+    return FILTER_DATA.week.leaderboard.slice(0, 3);
+  }, [fd?.leaderboard, filterKey, teamEmployees]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2147,9 +2219,34 @@ export default function Dashboard() {
       } catch {
         // keep inline mock fallback
       }
+      try {
+        const team = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+        if (!cancelled && team.success && team.employees?.length) {
+          setTeamEmployees(team.employees);
+        }
+      } catch {
+        // ignore
+      }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [filterKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPipelineLoading(true);
+    const params = new URLSearchParams({ range: filterKey, service: selectedService });
+    apiGet(`/api/dashboard/pipeline-status?${params.toString()}`, { skipCache: true, cacheTtl: 0 })
+      .then((data) => {
+        if (!cancelled && data?.success) setPipelineStats(data);
+      })
+      .catch(() => {
+        if (!cancelled) setPipelineStats(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPipelineLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [filterKey, selectedService]);
 
   // Reset service filter when time filter changes
   useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
@@ -2157,9 +2254,6 @@ export default function Dashboard() {
   // Resolve service breakdown for the current filter + service selection
   const serviceBreakdownData = SERVICE_BREAKDOWN[filterKey];
   const services = serviceBreakdownData[selectedService] || serviceBreakdownData["All Services"];
-
-  // Resolve pipeline data for the current filter + service selection
-  const pipelineData = SERVICE_PIPELINE[filterKey];
 
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0">
@@ -2169,13 +2263,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start min-w-0">
 
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0">
-          <LeaderBoard employees={fd.leaderboard} filterKey={filterKey} />
+          <LeaderBoard employees={leaderboardData} />
 
           <LeadPipeline
-            pipelineData={pipelineData}
+            pipelineStats={pipelineStats}
             filterKey={filterKey}
             selectedService={selectedService}
             onServiceChange={setSelectedService}
+            loading={pipelineLoading}
           />
 
           <RevenueTrajectory data={chartRevenue} />

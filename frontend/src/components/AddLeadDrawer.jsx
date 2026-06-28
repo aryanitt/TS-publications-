@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { Drawer } from "./Primitives.jsx";
 import { apiPost, invalidateCache } from "../lib/api.js";
+import { getAdminCrmHeaders } from "../lib/crmContext.js";
+import { apiLeadToAdmin, unwrapApiData } from "../lib/leadSync.js";
 import { createLocalLead } from "../data/leadManagementMock.js";
 
 const INDIAN_STATES = [
@@ -164,14 +166,27 @@ export function AddLead({ onClose, showToast }) {
           next_followup_date: formData.next_followup_date || null,
         };
         try {
-          const data = await apiPost("/api/sales/leads/create", payload);
-          if (data.success) {
-            invalidateCache("/api/sales/leads");
-            showToast("Lead created successfully!");
-            onClose(data.lead);
-          } else {
-            showToast(data.message || "Failed to create lead", "error");
-          }
+          const v1Payload = {
+            leadName: payload.lead_name,
+            companyName: payload.company_name,
+            phone: payload.phone,
+            email: payload.email || "",
+            city: payload.city,
+            source: payload.source || "Manual",
+            temperature: payload.temperature,
+            pipelineStage: payload.pipeline_stage,
+            status: payload.status,
+            winProbability: prob,
+            expectedRevenue: payload.expected_revenue || 0,
+            requirements: payload.interested_service || payload.service || "",
+            notes: payload.campaign_notes || "",
+          };
+          const res = await apiPost("/api/v1/leads", v1Payload, { headers: getAdminCrmHeaders() });
+          const saved = unwrapApiData(res) || res?.data || res;
+          if (!saved?.id) throw new Error("Lead was not saved — no id returned");
+          invalidateCache("/api/v1");
+          showToast("Lead created successfully!");
+          onClose(apiLeadToAdmin(saved));
         } catch (error) {
           console.error("Create lead error:", error);
           const useLocal =

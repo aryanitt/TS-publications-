@@ -334,11 +334,15 @@ function useEmployeeLeads(emp) {
   const [lastRefreshed,setLastRefreshed]= useState(null);
 
   const fetchLeads = useCallback((showLoader = true) => {
-    if (!emp?.name) return;
+    if (!emp?.id && !emp?.name) return;
     if (showLoader) setLoading(true);
 
+    const params = new URLSearchParams();
+    if (emp.id) params.set("employee_id", String(emp.id));
+    if (emp.name) params.set("employee_name", emp.name);
+
     apiGet(
-      `/api/team/employees/leads?employee_name=${encodeURIComponent(emp.name)}`,
+      `/api/team/employees/leads?${params.toString()}`,
       { cacheTtl: 60 * 1000 },
     )
       .then((data) => {
@@ -352,24 +356,72 @@ function useEmployeeLeads(emp) {
       })
       .catch(err => console.error("Leads fetch error:", err))
       .finally(() => { if (showLoader) setLoading(false); });
-  }, [emp?.name]);
+  }, [emp?.id, emp?.name]);
 
   useEffect(() => {
-    if (!emp?.name) return;
+    if (!emp?.id && !emp?.name) return;
     setLeads([]); setStats(null); setActivity([]); setFunnel([]);
     fetchLeads(true);
-  }, [emp?.id]);
+  }, [emp?.id, fetchLeads]);
 
   useEffect(() => {
-    if (!emp?.name) return;
+    if (!emp?.id && !emp?.name) return;
     const timer = setInterval(() => fetchLeads(false), 30000);
     return () => clearInterval(timer);
-  }, [emp?.name, fetchLeads]);
+  }, [emp?.id, emp?.name, fetchLeads]);
 
   return { 
     leads, stats, activity, funnel,
     loading, refresh: () => fetchLeads(true), lastRefreshed 
   };
+}
+
+function useEmployeeDetails(emp) {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!emp?.id) {
+      setDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    apiGet(`/api/team/employees/details/${emp.id}`, { skipCache: true, cacheTtl: 0 })
+      .then((data) => {
+        if (!cancelled && data.success && data.employee) {
+          setDetail(data.employee);
+        }
+      })
+      .catch((err) => console.error("Employee details fetch error:", err))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [emp?.id]);
+
+  const merged = useMemo(() => {
+    if (!emp) return null;
+    const normalized = normalizeEmployee(detail ? { ...emp, ...detail } : emp);
+    const perf = detail?.performance || {};
+    return {
+      ...normalized,
+      stats: detail?.stats || null,
+      achieved: detail?.achieved || null,
+      responseTimeMin: perf.responseTimeMin,
+      pickupRate: perf.pickupRate,
+      qualificationRate: perf.qualificationRate,
+      objectionHandling: perf.objectionHandling,
+      conversionRate: perf.conversionRate,
+      followUpQuality: perf.followUpQuality,
+      managerName: detail?.manager_name || normalized.managerName || "",
+    };
+  }, [emp, detail]);
+
+  return { employee: merged, loading };
 }
 
 
@@ -427,6 +479,51 @@ const fmtDate = (d) => {
   }
 };
 const fmt$ = (v) => `$${(v / 1000).toFixed(0)}k`;
+const fmtINR = (v) => {
+  const n = Number(v) || 0;
+  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
+  return `₹${Math.round(n)}`;
+};
+
+function normalizeEmployee(emp) {
+  const leads = Number(emp.leads) || 0;
+  const conv = Number(emp.conv) || 0;
+  const revenue = Number(emp.revenue) || 0;
+  const contacted = Number(emp.contacted) || 0;
+  const conversionPct = leads > 0 ? Math.round((conv / leads) * 100) : 0;
+
+  return {
+    ...emp,
+    avatar: initials(emp.name || "?"),
+    productivity: conversionPct,
+    deals: conv,
+    revenue,
+    leads,
+    conv,
+    contacted,
+    status: emp.status || "active",
+    workLocation: emp.work_location || "Office",
+    accessLevel: emp.access_level || "Member",
+    employeeId: emp.emp_id || "",
+    callyserId: emp.callyser_id || "",
+    joiningDate: emp.joining_date || "",
+    department: emp.department || "",
+    territory: emp.territory || "",
+    managerName: emp.manager_name || "",
+    notes: emp.notes || "",
+    salary: emp.salary != null ? String(emp.salary) : "",
+    callTarget: Number(emp.call_target) || 0,
+    callWeightage: Number(emp.call_weightage) || 0,
+    qualifiedLeadTarget: Number(emp.qualified_lead_target) || 0,
+    qualifiedLeadWeightage: Number(emp.qualified_lead_weightage) || 0,
+    meetingTarget: Number(emp.meeting_target) || 0,
+    meetingWeightage: Number(emp.meeting_weightage) || 0,
+    cashTarget: Number(emp.cash_target) || 0,
+    cashWeightage: Number(emp.cash_weightage) || 0,
+    incentiveKRA: Boolean(emp.incentive_kra),
+  };
+}
 
 const COUNTRY_CODES = [
   { code: "+91", flag: "🇮🇳", label: "IN" },
@@ -1492,6 +1589,8 @@ function DeleteModal({ open, emp, onConfirm, onCancel, busy }) {
 }
 
 function EmpDetail({ emp, onEdit, onDelete }) {
+  const { employee: profile, loading: detailLoading } = useEmployeeDetails(emp);
+  const activeEmp = profile || emp;
   const [leadDrawerOpen, setLeadDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("All Leads");
   const [search, setSearch] = useState("");
@@ -1507,7 +1606,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  const { leads, stats, activity, funnel, loading, refresh, lastRefreshed } = useEmployeeLeads(emp);
+  const { leads, stats, activity, funnel, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
 
   // KRA & Remuneration Calculator States
   const [baseSalary, setBaseSalary] = useState(12000);
@@ -1530,28 +1629,28 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   const [cashW, setCashW] = useState(25);
 
   useEffect(() => {
-    if (emp) {
-      setBaseSalary(parseFloat(emp.salary) || 12000);
-      setIncRate(6);
-      
-      setCallT(parseFloat(emp.callTarget || emp.call_target) || 250);
-      setCallW(parseFloat(emp.callWeightage || emp.call_weightage) || 25);
-      
-      setLeadT(parseFloat(emp.qualifiedLeadTarget || emp.qualified_lead_target) || 50);
-      setLeadW(parseFloat(emp.qualifiedLeadWeightage || emp.qualified_lead_weightage) || 25);
-      
-      setMeetT(parseFloat(emp.meetingTarget || emp.meeting_target) || 25);
-      setMeetW(parseFloat(emp.meetingWeightage || emp.meeting_weightage) || 25);
-      
-      setCashT(parseFloat(emp.cashTarget || emp.cash_target) || 40000);
-      setCashW(parseFloat(emp.cashWeightage || emp.cash_weightage) || 25);
-      
-      setCallA(200);
-      setLeadA(stats?.qualified ?? 40);
-      setMeetA(stats?.totalMeetings ?? 20);
-      setCashA(20000);
-    }
-  }, [emp, stats]);
+    if (!activeEmp) return;
+    setBaseSalary(parseFloat(activeEmp.salary) || 0);
+    setIncRate(6);
+
+    setCallT(parseFloat(activeEmp.callTarget || activeEmp.call_target) || 0);
+    setCallW(parseFloat(activeEmp.callWeightage || activeEmp.call_weightage) || 0);
+
+    setLeadT(parseFloat(activeEmp.qualifiedLeadTarget || activeEmp.qualified_lead_target) || 0);
+    setLeadW(parseFloat(activeEmp.qualifiedLeadWeightage || activeEmp.qualified_lead_weightage) || 0);
+
+    setMeetT(parseFloat(activeEmp.meetingTarget || activeEmp.meeting_target) || 0);
+    setMeetW(parseFloat(activeEmp.meetingWeightage || activeEmp.meeting_weightage) || 0);
+
+    setCashT(parseFloat(activeEmp.cashTarget || activeEmp.cash_target) || 0);
+    setCashW(parseFloat(activeEmp.cashWeightage || activeEmp.cash_weightage) || 0);
+
+    const achieved = activeEmp.achieved || {};
+    setCallA(achieved.calls ?? stats?.contacted ?? activeEmp.leads ?? 0);
+    setLeadA(achieved.qualifiedLeads ?? stats?.qualified ?? 0);
+    setMeetA(achieved.meetings ?? stats?.totalMeetings ?? 0);
+    setCashA(achieved.cash ?? stats?.revenue ?? 0);
+  }, [activeEmp, stats]);
 
   const parseVal = (val) => {
     const parsed = parseFloat(val);
@@ -1621,46 +1720,34 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     return result;
   }, [leads, search]);
 
-  const calls     = emp.call_target  || 0;
-  const meetings  = stats?.totalMeetings  ?? 12;
-  const assigned  = stats?.totalLeads     ?? 42;
-  const qualified = stats?.qualified      ?? 38;
-  const followups = stats?.followUps      ?? 2;
-  const converted = stats?.converted      ?? 6;
-  const revenue   = emp.revenue           ?? 240000;
+  const calls     = stats?.contacted ?? activeEmp.leads ?? 0;
+  const meetings  = stats?.totalMeetings ?? 0;
+  const assigned  = stats?.totalLeads ?? activeEmp.leads ?? 0;
+  const qualified = stats?.qualified ?? 0;
+  const followups = stats?.followUps ?? 0;
+  const converted = stats?.converted ?? activeEmp.conv ?? 0;
+  const revenue   = stats?.revenue ?? activeEmp.revenue ?? 0;
 
-  // Funnel details (Dynamic calculation based on API stats + fallback)
-  const funnelData = funnel && funnel.length === 4 ? funnel.map((f, idx) => ({
-    label: f.name,
-    value: `${f.value} ${f.name}`,
-    sub: idx === 0 ? "Top Funnel" : `${Math.round((f.value / (funnel[idx-1].value || 1)) * 100)}% Conversion`,
-    width: `${100 - idx * 15}%`,
-    opacity: 1 - idx * 0.15
-  })) : [
-    { label: "Prospects", value: "156 Prospects", sub: "Top Funnel", width: "100%", opacity: 1 },
-    { label: "Qualified", value: "42 Qualified", sub: "27% Conversion", width: "85%", opacity: 0.85 },
-    { label: "Proposing", value: "18 Proposing", sub: "43% Conversion", width: "70%", opacity: 0.70 },
-    { label: "Won", value: "6 Won", sub: "33% Conversion", width: "55%", opacity: 0.55 },
-  ];
+  const funnelData = funnel?.length
+    ? funnel.map((f, idx) => ({
+        label: f.name,
+        value: `${f.value} ${f.name}`,
+        sub: idx === 0 ? "Top Funnel" : `${Math.round((f.value / (funnel[idx - 1].value || 1)) * 100)}% Conversion`,
+        width: `${Math.max(40, 100 - idx * 12)}%`,
+        opacity: Math.max(0.45, 1 - idx * 0.12),
+      }))
+    : [];
 
-  // Active Lead Workspace Details
-  const defaultLeads = [
-    { name: "Alex Rivera", company: "NexGen Bank", status: "Proposal", priority: "Hot", temp: 4, next: "Today, 4 PM", potential: "$85,000", prob: "88%" },
-    { name: "Elena Vance", company: "AeroDynamics", status: "Qualified", priority: "Warm", temp: 2, next: "Tomorrow", potential: "$120,000", prob: "65%" },
-    { name: "Jordan Sykes", company: "CyberScale", status: "Won", priority: "Won", temp: 5, next: "Closed", potential: "$45,000", prob: "100%" },
-    { name: "David Miller", company: "Veridian Tech", status: "Proposal", priority: "Hot", temp: 4, next: "Overdue 2h", potential: "$210,000", prob: "92%" },
-  ];
-
-  const leadsList = leads && leads.length > 0 ? leads.map(l => ({
+  const leadsList = leads.map((l) => ({
     name: l.lead_name || "Unknown",
-    company: l.business_name || "Unknown",
-    status: l.status || "Qualified",
-    priority: l.priority || "Medium",
-    temp: l.priority === "Critical" || l.priority === "High" ? 4 : l.priority === "Medium" ? 3 : 2,
-    next: l.follow_up ? new Date(l.follow_up).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
-    potential: l.revenue ? `$${(l.revenue / 1000).toFixed(0)}k` : "$0",
-    prob: l.win_probability ? `${l.win_probability}%` : "50%",
-  })) : defaultLeads;
+    company: l.business_name || "—",
+    status: l.status || l.pipeline_stage || "New Lead",
+    priority: l.priority || l.temperature || "Medium",
+    temp: l.priority === "Critical" || l.priority === "High" || l.temperature === "hot" ? 4 : l.priority === "Medium" || l.temperature === "warm" ? 3 : 2,
+    next: l.follow_up ? new Date(l.follow_up).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—",
+    potential: l.revenue || l.expected_revenue ? fmtINR(l.revenue || l.expected_revenue) : "₹0",
+    prob: l.win_probability ? `${l.win_probability}%` : "—",
+  }));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? 10 : 16, color: "#1e293b", padding: compact ? "4px 0" : "8px 0" }}>
@@ -1679,10 +1766,10 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 18, minWidth: 0, width: compact ? "100%" : undefined }}>
           <div style={{ position: "relative", flexShrink: 0 }}>
-            {emp.avatarImage ? (
+            {activeEmp.avatarImage ? (
               <img
-                src={emp.avatarImage}
-                alt={emp.name}
+                src={activeEmp.avatarImage}
+                alt={activeEmp.name}
                 style={{
                   width: compact ? 52 : 72,
                   height: compact ? 52 : 72,
@@ -1719,14 +1806,14 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <h1 style={{ fontSize: compact ? 16 : 22, fontWeight: 800, color: "#be123c", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {emp.name}
+                {activeEmp.name}
               </h1>
               <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 20, background: "#f1f5f9", color: "#64748b", border: "1px solid #ffe4e6", textTransform: "capitalize" }}>
-                {emp.status}
+                {activeEmp.status}
               </span>
             </div>
             <p style={{ fontSize: compact ? 11 : 13, color: "#475569", marginTop: 2, fontWeight: 500 }}>
-              {emp.role} {emp.department ? ` · ${emp.department}` : ""}
+              {activeEmp.role} {activeEmp.department ? ` · ${activeEmp.department}` : ""}
             </p>
           </div>
         </div>
@@ -1741,10 +1828,10 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           minWidth: compact ? 0 : 320,
         }}>
           {[
-            { label: "Joining Date", value: emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "March 12, 2022" },
-            { label: "Direct Manager", value: "Marcus Thorne" },
-            { label: "Territory", value: emp.city || "North America Enterprise" },
-            { label: "Lead Focus", value: emp.department || "Fintech & SaaS" },
+            { label: "Joining Date", value: activeEmp.joiningDate ? fmtDate(activeEmp.joiningDate) : "—" },
+            { label: "Direct Manager", value: activeEmp.managerName || "—" },
+            { label: "Territory", value: activeEmp.territory || activeEmp.city || "—" },
+            { label: "Lead Focus", value: activeEmp.notes || activeEmp.department || "—" },
           ].map(({ label, value }) => (
             <div key={label} style={{ minWidth: 0 }}>
               <p style={{ fontSize: 8, textTransform: "uppercase", letterSpacing: ".08em", color: "#64748b", margin: 0 }}>
@@ -1817,12 +1904,12 @@ function EmpDetail({ emp, onEdit, onDelete }) {
         gap: compact ? 8 : 12,
       }}>
         {[
-          { label: "Response Time", value: `${emp.responseTimeMin ?? 1.8} min`, sub: "Avg first reply", icon: Clock },
-          { label: "Pickup Rate", value: `${emp.pickupRate ?? Math.min(99, Math.round((qualified / (assigned || 1)) * 100))}%`, sub: "Calls answered", icon: PhoneCall },
-          { label: "Qualification Rate", value: `${emp.qualificationRate ?? Math.min(99, Math.round((qualified / (assigned || 1)) * 100))}%`, sub: "Qualified vs total", icon: Target },
-          { label: "Objection Handling", value: `${emp.objectionHandling ?? 85}%`, sub: "Handling score", icon: MessageSquare },
-          { label: "Conversion Rate", value: `${emp.conversionRate ?? ((converted / (assigned || 1)) * 100).toFixed(1)}%`, sub: "Closed vs assigned", icon: TrendingUp },
-          { label: "Follow-up Quality", value: `${emp.followUpQuality ?? 82}%`, sub: "On-time follow-ups", icon: Repeat },
+          { label: "Response Time", value: `${activeEmp.responseTimeMin ?? 1.8} min`, sub: "Avg first reply", icon: Clock },
+          { label: "Pickup Rate", value: `${activeEmp.pickupRate ?? (assigned ? Math.round((calls / assigned) * 100) : 0)}%`, sub: "Calls answered", icon: PhoneCall },
+          { label: "Qualification Rate", value: `${activeEmp.qualificationRate ?? (assigned ? Math.round((qualified / assigned) * 100) : 0)}%`, sub: "Qualified vs total", icon: Target },
+          { label: "Objection Handling", value: `${activeEmp.objectionHandling ?? (assigned ? Math.min(99, Math.round((qualified / assigned) * 95)) : 0)}%`, sub: "Handling score", icon: MessageSquare },
+          { label: "Conversion Rate", value: `${activeEmp.conversionRate ?? (assigned ? ((converted / assigned) * 100).toFixed(1) : "0.0")}%`, sub: "Closed vs assigned", icon: TrendingUp },
+          { label: "Follow-up Quality", value: `${activeEmp.followUpQuality ?? (assigned ? Math.max(0, 100 - Math.round((followups / assigned) * 100)) : 0)}%`, sub: "On-time follow-ups", icon: Repeat },
         ].map(({ label, value, sub, icon: Icon }) => (
           <div
             key={label}
@@ -2285,10 +2372,10 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
               <div style={{ background: "#fff1f2", padding: compact ? "8px 9px" : "10px 12px", borderRadius: compact ? 8 : 10, borderLeft: "3px solid #e11d48", fontSize: compact ? 10 : 11.5, color: "#1e293b", lineHeight: 1.35 }}>
-                {emp.name.split(" ")[0]} performs <strong>18% better</strong> with Fintech leads vs avg.
+                {activeEmp.name.split(" ")[0]} has <strong>{assigned} assigned leads</strong> with <strong>{converted} conversions</strong>.
               </div>
               <div style={{ background: "#fff1f2", padding: compact ? "8px 9px" : "10px 12px", borderRadius: compact ? 8 : 10, borderLeft: "3px solid #e11d48", fontSize: compact ? 10 : 11.5, color: "#1e293b", lineHeight: 1.35 }}>
-                <strong>Next:</strong> Follow up with Veridian Tech (92%).
+                <strong>KRA progress:</strong> {Math.round(overallPerfClamped)}% overall · {fmtINR(revenue)} collected.
               </div>
             </div>
           </div>
@@ -2306,36 +2393,32 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             </h3>
             <div style={{ position: "relative", paddingLeft: compact ? 14 : 18 }}>
               <div style={{ position: "absolute", left: 4, top: 4, bottom: 4, width: 1.5, background: "#f1f5f9" }} />
-              {[
-                { icon: PhoneCall, label: "Outbound Call - Neotech Systems", time: "9:15 AM · 12 mins" },
-                { icon: Mail, label: "Follow-up Sent - Stellar Cloud", time: "10:45 AM" },
-                { icon: Video, label: "Proposal Review Meeting", time: "1:00 PM · 45 mins" },
-              ].map((act, idx) => {
-                const Icon = act.icon;
-                return (
-                  <div key={idx} style={{ position: "relative", paddingBottom: idx < 2 ? (compact ? 10 : 14) : 0 }}>
-                    <div style={{
-                      position: "absolute",
-                      left: -18,
-                      top: 2,
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      background: "#e11d48",
-                      border: "2px solid #ffffff",
-                    }} />
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <Icon style={{ width: 12, height: 12, color: "#be123c", opacity: 0.8 }} />
-                      <p style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", margin: 0 }}>
-                        {act.label}
-                      </p>
-                    </div>
-                    <p style={{ fontSize: 10, color: "#64748b", margin: "3px 0 0 20px" }}>
-                      {act.time}
+              {(activity?.length ? activity : []).slice(0, 3).map((act, idx, arr) => (
+                <div key={`${act.lead_name}-${idx}`} style={{ position: "relative", paddingBottom: idx < arr.length - 1 ? (compact ? 10 : 14) : 0 }}>
+                  <div style={{
+                    position: "absolute",
+                    left: -18,
+                    top: 2,
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    background: "#e11d48",
+                    border: "2px solid #ffffff",
+                  }} />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <PhoneCall style={{ width: 12, height: 12, color: "#be123c", opacity: 0.8 }} />
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", margin: 0 }}>
+                      {act.lead_name} · {act.status}
                     </p>
                   </div>
-                );
-              })}
+                  <p style={{ fontSize: 10, color: "#64748b", margin: "3px 0 0 20px" }}>
+                    {act.business || "Lead update"} · {act.time ? fmtDate(act.time) : "Recently"}
+                  </p>
+                </div>
+              ))}
+              {!activity?.length && (
+                <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>No recent lead activity yet.</p>
+              )}
             </div>
           </div>
         </div>
@@ -2392,7 +2475,13 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               </tr>
             </thead>
             <tbody>
-              {leadsList.map((lead, idx) => (
+              {leadsList.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ padding: "24px 8px", textAlign: "center", color: "#64748b" }}>
+                    {loading || detailLoading ? "Loading assigned leads..." : "No leads assigned to this employee yet."}
+                  </td>
+                </tr>
+              ) : leadsList.map((lead, idx) => (
                 <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9", color: "#334155" }}>
                   <td style={{ padding: "12px 8px", fontWeight: 600 }}>{lead.name}</td>
                   <td style={{ padding: "12px 8px" }}>{lead.company}</td>
@@ -2656,17 +2745,19 @@ function MemberCard({ p, onClick, compact = false }) {
   const statusBorder = { active: "#bbf7d0", remote: "#bfdbfe", "on-leave": "#fde68a", inactive: "#e2e8f0" };
   const statusLabel = { active: "Active", remote: "Remote", "on-leave": "On leave", inactive: "Inactive" };
 
-  const totalLeads = (p.call_target || 0) > 0 ? Math.floor(p.call_target * 0.8) : Math.floor((p.deals || 0) * 2.4 + 10);
-  const contacted = Math.floor(totalLeads * 0.72);
-  const workload = Math.min(100, Math.round(((p.call_target || totalLeads) / 60) * 100));
-  const revenue = p.revenue || 0;
-  const fmtRev = revenue >= 1000 ? `$${Math.round(revenue / 1000)}k` : `$${revenue}`;
-  const avgDeal = p.deals > 0 ? `$${Math.round(revenue / p.deals / 1000)}k` : "$0";
+  const totalLeads = Number(p.leads) || 0;
+  const converted = Number(p.conv) || 0;
+  const contacted = Number(p.contacted) || 0;
+  const conversionPct = totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
+  const workload = Math.min(100, Math.round(((p.current_active_leads ?? totalLeads) / (p.max_active_leads || 40)) * 100));
+  const revenue = Number(p.revenue) || 0;
+  const fmtRev = fmtINR(revenue);
+  const avgDeal = converted > 0 ? fmtINR(revenue / converted) : "₹0";
 
   const perfTag =
-    p.productivity >= 95 ? "Top Performer"
-    : p.productivity >= 85 ? "Consistent"
-    : p.productivity >= 75 ? "Rising Star"
+    conversionPct >= 25 ? "Top Performer"
+    : conversionPct >= 15 ? "Consistent"
+    : conversionPct >= 8 ? "Rising Star"
     : "Developing";
 
   const [hovered, setHovered] = useState(false);
@@ -2764,7 +2855,7 @@ function MemberCard({ p, onClick, compact = false }) {
             </p>
           </div>
           <div style={{ minWidth: 0, textAlign: "center" }}>
-            <p style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)", margin: 0, lineHeight: 1 }}>{p.productivity}%</p>
+            <p style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)", margin: 0, lineHeight: 1 }}>{conversionPct}%</p>
             <p style={{ fontSize: 8, color: "var(--primary)", margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {perfTag}
             </p>
@@ -2836,7 +2927,7 @@ function MemberCard({ p, onClick, compact = false }) {
 
       {/* Conversion */}
       <div style={colStyle}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: "var(--primary)", lineHeight: 1 }}>{p.productivity}%</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: "var(--primary)", lineHeight: 1 }}>{conversionPct}%</span>
         <span style={{ fontSize: 7, fontWeight: 700, color: "var(--primary)", background: "#fff1f2", padding: "1px 5px", borderRadius: 5, border: "1px solid #fecdd3", marginTop: 2, alignSelf: "flex-start", textTransform: "uppercase", letterSpacing: ".03em", whiteSpace: "nowrap" }}>
           {perfTag}
         </span>
@@ -2938,46 +3029,14 @@ export default function Team() {
   useEffect(() => {
     const cached = readCachedJson("/api/team/employees");
     if (cached?.success) {
-      setMembers(
-        cached.employees.map((emp) => ({
-          ...emp,
-          avatar: initials(emp.name || "?"),
-          productivity: emp.productivity || Math.floor(Math.random() * 30) + 70,
-          deals: emp.deals || 0,
-          revenue: emp.revenue || 0,
-          status: emp.status || "active",
-          workLocation: emp.work_location || "Office",
-          accessLevel: emp.access_level || "Member",
-          employeeId: emp.emp_id || "",
-          callyserId: emp.callyser_id || "",
-          joiningDate: emp.joining_date || "",
-          department: emp.department || "",
-          salary: emp.salary != null ? String(emp.salary) : "",
-        })),
-      );
+      setMembers(cached.employees.map(normalizeEmployee));
     }
 
     const fetchEmployees = async () => {
       try {
         const data = await apiGet("/api/team/employees");
         if (data.success) {
-          setMembers(
-            data.employees.map((emp) => ({
-              ...emp,
-              avatar: initials(emp.name || "?"),
-              productivity: emp.productivity || Math.floor(Math.random() * 30) + 70,
-              deals: emp.deals || 0,
-              revenue: emp.revenue || 0,
-              status: emp.status || "active",
-              workLocation: emp.work_location || "Office",
-              accessLevel: emp.access_level || "Member",
-              employeeId: emp.emp_id || "",
-              callyserId: emp.callyser_id || "",
-              joiningDate: emp.joining_date || "",
-              department: emp.department || "",
-              salary: emp.salary != null ? String(emp.salary) : "",
-            })),
-          );
+          setMembers(data.employees.map(normalizeEmployee));
         }
       } catch (error) {
         console.error("Failed to fetch employees:", error);
@@ -3112,21 +3171,7 @@ export default function Team() {
       throw new Error(msg);
     }
 
-    const emp = data.employee;
-    const normalized = {
-      ...emp,
-      avatar: initials(emp.name || "?"),
-      productivity: 70,
-      deals: 0,
-      revenue: 0,
-      status: emp.status || "active",
-      workLocation: emp.work_location || "Office",
-      accessLevel: emp.access_level || "Member",
-      employeeId: emp.emp_id || "",
-      callyserId: emp.callyser_id || "",
-      joiningDate: emp.joining_date || "",
-      salary: emp.salary != null ? String(emp.salary) : formFields.salary || "",
-    };
+    const normalized = normalizeEmployee(data.employee);
     setMembers((prev) => [normalized, ...prev]);
     fetchKPIs();
   };
@@ -3162,21 +3207,7 @@ export default function Team() {
     try {
       const data = await apiPost("/api/team/employees/update", { id: u.id, ...payload });
       const emp = data?.employee ? data.employee : u;
-      const normalized = {
-        ...u,
-        ...emp,
-        avatar: initials(emp.name || u.name || "?"),
-        productivity: emp.productivity || u.productivity || 70,
-        deals: emp.deals || u.deals || 0,
-        revenue: emp.revenue || u.revenue || 0,
-        status: emp.status || u.status || "active",
-        workLocation: emp.work_location || emp.workLocation || u.workLocation || "Office",
-        accessLevel: emp.access_level || emp.accessLevel || u.accessLevel || "Member",
-        employeeId: emp.emp_id || emp.employeeId || u.employeeId || "",
-        callyserId: emp.callyser_id || emp.callyserId || u.callyserId || "",
-        joiningDate: emp.joining_date || emp.joiningDate || u.joiningDate || "",
-        salary: emp.salary != null ? String(emp.salary) : u.salary != null ? String(u.salary) : "",
-      };
+      const normalized = normalizeEmployee({ ...u, ...emp });
       setMembers((p) => p.map((m) => (m.id === normalized.id ? normalized : m)));
       setActiveEmp(normalized);
     } catch (error) {

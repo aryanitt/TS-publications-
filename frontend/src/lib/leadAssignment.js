@@ -383,5 +383,38 @@ export function getAssignmentForLead(state, lead) {
     };
   }
 
+  const employeeName =
+    lead.assignee_name ||
+    lead.assigneeName ||
+    lead.assignee ||
+    lead.employeeName ||
+    lead.owner;
+  if (employeeName) {
+    return {
+      employeeId: String(lead.assigneeId || lead.assigned_to || lead.assignedTo || ""),
+      employeeName,
+      assignedAt: lead.assigned_at || lead.assignedAt,
+      method: lead.assignment_method || lead.assignmentMethod || "api",
+    };
+  }
+
   return null;
+}
+
+/** Resolve the sales employee assigned to a lead (API, DB, or local assignment). */
+export function getLeadEmployeeName(lead, assignmentState = null) {
+  if (!lead) return "";
+  if (assignmentState) {
+    const assignment = getAssignmentForLead(assignmentState, lead);
+    if (assignment?.employeeName) return assignment.employeeName;
+  }
+  if (typeof lead.assignedTo === "object" && lead.assignedTo?.name) return lead.assignedTo.name;
+  return (
+    lead.assignee_name ||
+    lead.assigneeName ||
+    lead.assignee ||
+    lead.employeeName ||
+    lead.owner ||
+    ""
+  );
 }

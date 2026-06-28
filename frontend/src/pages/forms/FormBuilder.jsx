@@ -5,7 +5,7 @@ import {
 import toast from "react-hot-toast";
 import { Drawer } from "../../components/Primitives.jsx";
 import {
-  getFormById, DEFAULT_FORM_FIELDS,
+  DEFAULT_FORM_FIELDS, FORM_SOURCES, FORM_SERVICES,
 } from "../../data/formsMock.js";
 
 const FIELD_TYPES = ["INPUT", "EMAIL", "PHONE", "DROPDOWN", "TEXTAREA", "NUMBER"];
@@ -16,11 +16,12 @@ function fieldMeta(field) {
   return `${field.type} • ${req}`;
 }
 
-export default function FormBuilderDrawer({ open, onClose, formId }) {
-  const existing = formId ? getFormById(formId) : null;
-  const isEdit = Boolean(existing);
+export default function FormBuilderDrawer({ open, onClose, existingForm, onSave, saving = false }) {
+  const isEdit = Boolean(existingForm);
 
   const [formName, setFormName] = useState("");
+  const [sourceKey, setSourceKey] = useState("website");
+  const [service, setService] = useState("Lead Gen");
   const [fields, setFields] = useState([]);
   const [dragIdx, setDragIdx] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -30,9 +31,11 @@ export default function FormBuilderDrawer({ open, onClose, formId }) {
 
   useEffect(() => {
     if (!open) return;
-    setFormName(existing?.name || "");
+    setFormName(existingForm?.name || "");
+    setSourceKey(existingForm?.sourceKey || "website");
+    setService(existingForm?.service || "Lead Gen");
     setFields(
-      existing?.fields?.map((f) => ({ ...f }))
+      existingForm?.fields?.map((f) => ({ ...f }))
         || DEFAULT_FORM_FIELDS.map((f) => ({ ...f })),
     );
     setDragIdx(null);
@@ -40,7 +43,42 @@ export default function FormBuilderDrawer({ open, onClose, formId }) {
     setAddOpen(false);
     setEditField(null);
     setNewField({ label: "", type: "INPUT", required: false });
-  }, [open, formId, existing?.name, existing?.fields]);
+  }, [open, existingForm?.id, existingForm?.name, existingForm?.fields, existingForm?.sourceKey, existingForm?.service]);
+
+  const buildPayload = (status) => {
+    const sourceOpt = FORM_SOURCES.find((s) => s.id === sourceKey);
+    return {
+      name: formName.trim(),
+      sourceKey,
+      source: sourceOpt?.label || "Website",
+      service,
+      status,
+      fields,
+      leads: existingForm?.leads ?? 0,
+      revenue: existingForm?.revenue ?? 0,
+      conversion: existingForm?.conversion ?? 0,
+    };
+  };
+
+  const handleSaveDraft = async () => {
+    if (!formName.trim()) {
+      toast.error("Enter a form name");
+      return;
+    }
+    await onSave?.(buildPayload("DRAFT"), true);
+  };
+
+  const handlePublish = async () => {
+    if (!formName.trim()) {
+      toast.error("Enter a form name");
+      return;
+    }
+    if (fields.length === 0) {
+      toast.error("Add at least one field");
+      return;
+    }
+    await onSave?.(buildPayload("ACTIVE"), false);
+  };
 
   const moveField = (from, to) => {
     if (to < 0 || to >= fields.length) return;
@@ -81,20 +119,7 @@ export default function FormBuilderDrawer({ open, onClose, formId }) {
     toast.success("Field added");
   };
 
-  const handleSaveDraft = () => {
-    toast.success(isEdit ? "Draft saved" : "Form saved as draft");
-  };
-
-  const handlePublish = () => {
-    if (!formName.trim()) {
-      toast.error("Enter a form name");
-      return;
-    }
-    toast.success(isEdit ? "Form updated" : "Form published");
-    onClose?.(true);
-  };
-
-  const drawerTitle = isEdit ? `Edit · ${existing?.name || "Form"}` : "Create Form";
+  const drawerTitle = isEdit ? `Edit · ${existingForm?.name || "Form"}` : "Create Form";
 
   return (
     <>
@@ -107,16 +132,18 @@ export default function FormBuilderDrawer({ open, onClose, formId }) {
           <button
             type="button"
             onClick={handleSaveDraft}
-            className="flex-1 sm:flex-initial px-4 py-2 rounded-xl border border-rose-200 bg-white text-slate-700 text-xs font-bold hover:bg-rose-50 transition"
+            disabled={saving}
+            className="flex-1 sm:flex-initial px-4 py-2 rounded-xl border border-rose-200 bg-white text-slate-700 text-xs font-bold hover:bg-rose-50 transition disabled:opacity-50"
           >
             Save Draft
           </button>
           <button
             type="button"
             onClick={handlePublish}
-            className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-rose-700 text-white text-xs font-bold hover:bg-rose-800 shadow-sm transition"
+            disabled={saving}
+            className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-rose-700 text-white text-xs font-bold hover:bg-rose-800 shadow-sm transition disabled:opacity-50"
           >
-            Publish Form
+            {saving ? "Saving…" : "Publish Form"}
           </button>
         </div>
 
@@ -131,6 +158,36 @@ export default function FormBuilderDrawer({ open, onClose, formId }) {
             placeholder="e.g. Google Ads Form"
             className="w-full px-4 py-2.5 rounded-xl border border-rose-100 bg-white text-slate-900 text-sm font-semibold outline-none focus:border-rose-400"
           />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                Source
+              </label>
+              <select
+                value={sourceKey}
+                onChange={(e) => setSourceKey(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-rose-100 bg-white text-slate-900 text-sm font-semibold outline-none focus:border-rose-400"
+              >
+                {FORM_SOURCES.filter((s) => s.id !== "all").map((s) => (
+                  <option key={s.id} value={s.id}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                Service
+              </label>
+              <select
+                value={service}
+                onChange={(e) => setService(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-rose-100 bg-white text-slate-900 text-sm font-semibold outline-none focus:border-rose-400"
+              >
+                {FORM_SERVICES.filter((s) => s.id !== "all").map((s) => (
+                  <option key={s.id} value={s.id}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         <div className="rounded-xl border border-rose-100 bg-[#fffbfb] p-4">

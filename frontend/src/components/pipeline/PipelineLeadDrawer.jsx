@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Drawer, Badge } from "../Primitives.jsx";
+import { apiGet, apiPost, apiPatch, invalidateCache } from "../../lib/api.js";
 import { EMP_CALLS } from "../../data/employeeMock.js";
 import {
   PIPELINE_STAGES,
@@ -16,6 +17,7 @@ import {
   patchLead,
   timeAgoShort,
 } from "../../data/pipelineMock.js";
+import { getAssignmentState, getLeadEmployeeName } from "../../lib/leadAssignment.js";
 
 const ACTIVITY_ICONS = {
   created: StickyNote,
@@ -38,12 +40,16 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
   const [tab, setTab] = useState("details");
   const [newTask, setNewTask] = useState("");
   const [calls, setCalls] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+
+  const dbLeadId = lead?._dbId || lead?.id;
+  const hasDbLead = dbLeadId && String(dbLeadId).match(/^\d+$/);
 
   useEffect(() => {
     if (open) {
       setTab("details");
       setNewTask("");
-      
+
       const saved = localStorage.getItem("emp_calls_list");
       if (saved) {
         setCalls(JSON.parse(saved));
@@ -52,6 +58,26 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
       }
     }
   }, [open, lead?.id]);
+
+  useEffect(() => {
+    if (!open || !lead || !hasDbLead) return;
+
+    let cancelled = false;
+    setTasksLoading(true);
+    apiGet(`/api/dashboard/pipeline/leads/${dbLeadId}/tasks`, { skipCache: true, cacheTtl: 0 })
+      .then((data) => {
+        if (cancelled || !data?.success || !Array.isArray(data.tasks)) return;
+        onUpdateLead({ ...lead, tasks: data.tasks });
+      })
+      .catch(() => {
+        // keep tasks already on the lead object
+      })
+      .finally(() => {
+        if (!cancelled) setTasksLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [open, lead?.id, dbLeadId, hasDbLead]);
 
   const leadCalls = useMemo(() => {
     if (!lead) return [];
@@ -64,6 +90,7 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
 
   if (!lead) return null;
 
+  const employeeName = getLeadEmployeeName(lead, getAssignmentState());
   const stage = getStageMeta(lead.stage);
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
 
@@ -88,29 +115,87 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
     toast.success(`Moved to ${target.label}`);
   };
 
-  const toggleTask = (taskId) => {
+  const leadTasks = lead.tasks || [];
+
+  const toggleTask = async (taskId) => {
+    const task = leadTasks.find((t) => t.id === taskId);
+    const nextDone = !task?.done;
+
     onUpdateLead({
       ...lead,
-      tasks: lead.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t)),
+      tasks: leadTasks.map((t) => (t.id === taskId ? { ...t, done: nextDone } : t)),
     });
+
+    if (!hasDbLead) return;
+
+    try {
+      await apiPatch(`/api/dashboard/pipeline/leads/${dbLeadId}/tasks/${taskId}`, {
+        status: nextDone ? "done" : "pending",
+      });
+      invalidateCache("/api/dashboard");
+    } catch {
+      toast.error("Could not update task");
+    }
   };
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTask.trim()) return;
+
+    const assigneeId = lead.assigneeId || lead.assignedTo?.id;
+    if (hasDbLead && !assigneeId) {
+      toast.error("Assign this lead to an employee before adding tasks");
+      return;
+    }
+
+    if (hasDbLead && assigneeId) {
+      try {
+        const data = await apiPost(`/api/dashboard/pipeline/leads/${dbLeadId}/tasks`, {
+          title: newTask.trim(),
+          assigneeId,
+        });
+        if (data?.success && data.task) {
+          onUpdateLead({
+            ...lead,
+            tasks: [...leadTasks, data.task],
+          });
+          setNewTask("");
+          setTab("tasks");
+          invalidateCache("/api/dashboard");
+          toast.success("Task saved");
+          return;
+        }
+      } catch {
+        toast.error("Could not save task to server");
+        return;
+      }
+    }
+
     onUpdateLead({
       ...lead,
-      tasks: [...lead.tasks, { id: Date.now(), text: newTask.trim(), done: false }],
+      tasks: [...leadTasks, { id: Date.now(), text: newTask.trim(), done: false }],
     });
     setNewTask("");
     setTab("tasks");
     toast.success("Task added");
   };
 
-  const removeTask = (taskId) => {
+  const removeTask = async (taskId) => {
     onUpdateLead({
       ...lead,
-      tasks: lead.tasks.filter((t) => t.id !== taskId),
+      tasks: leadTasks.filter((t) => t.id !== taskId),
     });
+
+    if (!hasDbLead) return;
+
+    try {
+      await apiPatch(`/api/dashboard/pipeline/leads/${dbLeadId}/tasks/${taskId}`, {
+        status: "cancelled",
+      });
+      invalidateCache("/api/dashboard");
+      toast.success("Task removed");
+    } catch {
+      toast.error("Could not remove task");
+    }
   };
 
   return (
@@ -300,7 +385,17 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                 </div>
                 <div className="min-w-0">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Owner</p>
-                  <p className="text-xs font-semibold text-slate-800 mt-0.5 truncate">{lead.owner || "—"}</p>
+                  <p className="text-xs font-semibold text-slate-800 mt-0.5 truncate">{employeeName || "—"}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 grid place-items-center shrink-0">
+                  <User className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Employee Name</p>
+                  <p className="text-xs font-semibold text-slate-800 mt-0.5 truncate">{employeeName || "Unassigned"}</p>
                 </div>
               </div>
 
@@ -332,7 +427,7 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                   return (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-505 flex-wrap">
-                        <span>By: <span className="font-bold text-slate-800">Amit Kumar</span></span>
+                        <span>By: <span className="font-bold text-slate-800">{employeeName || "Unassigned"}</span></span>
                         <span>Date: <span className="font-bold text-slate-800">{latestCall.date}</span></span>
                       </div>
 
@@ -435,7 +530,7 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                       {/* Employee Contacting info */}
                       <div className="flex items-center gap-2 text-xs font-semibold text-slate-650">
                         <User className="w-4 h-4 text-rose-500 shrink-0" />
-                        <span>Contacted By: <span className="font-bold text-slate-800">Amit Kumar</span> <span className="text-[9.5px] text-slate-400 font-medium">(Sales Manager)</span></span>
+                        <span>Contacted By: <span className="font-bold text-slate-800">{employeeName || "Unassigned"}</span></span>
                       </div>
 
                       {/* Outcome and Mood */}
@@ -505,13 +600,17 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                 Add
               </button>
             </div>
-            {lead.tasks.length === 0 ? (
+            {tasksLoading ? (
+              <div className="rounded-xl border border-dashed border-rose-200 bg-[#fffbfb] p-6 text-center">
+                <p className="text-sm text-slate-400">Loading tasks...</p>
+              </div>
+            ) : leadTasks.length === 0 ? (
               <div className="rounded-xl border border-dashed border-rose-200 bg-[#fffbfb] p-6 text-center">
                 <p className="text-sm text-slate-400">No tasks yet.</p>
               </div>
             ) : (
               <ul className="space-y-2">
-                {lead.tasks.map((task) => (
+                {leadTasks.map((task) => (
                   <li
                     key={task.id}
                     className="flex items-center gap-2 rounded-xl border border-rose-100 bg-white px-3 py-2.5"
