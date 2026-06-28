@@ -121,9 +121,24 @@ export function EmployeeProvider({ children }) {
         setLeads(workspaceLeads);
       }
       if (Array.isArray(data.followups)) {
+        const leadSource = workspaceLeads.length ? workspaceLeads : leads;
         setFollowUpsState(
-          data.followups.map((f) => followUpFromApi(f, workspaceLeads)),
+          data.followups.map((f) => followUpFromApi(f, leadSource)),
         );
+      }
+      try {
+        const fuRes = await apiGet(`/api/v1/employee/${empId}/followups`, {
+          headers: getCrmHeaders(),
+          skipCache: true,
+          cacheTtl: 0,
+        });
+        const fuItems = unwrapApiData(fuRes);
+        if (Array.isArray(fuItems)) {
+          const leadSource = workspaceLeads.length ? workspaceLeads : leads;
+          setFollowUpsState(fuItems.map((f) => followUpFromApi(f, leadSource)));
+        }
+      } catch {
+        /* dashboard followups may already be set */
       }
       if (Array.isArray(data.calls)) {
         setCalls(data.calls.map((c) => callFromApi(c, workspaceLeads)));
@@ -138,7 +153,7 @@ export function EmployeeProvider({ children }) {
     } catch {
       return false;
     }
-  }, [employee]);
+  }, [employee, leads]);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,6 +215,7 @@ export function EmployeeProvider({ children }) {
           setUsingApi(shouldPersistToApi(false));
           try {
             await refreshLeads(stored.id);
+            await loadEmployeeWorkspace(stored.id, { ...CURRENT_EMPLOYEE, ...stored });
             await refreshMeetings(stored.id);
           } catch {
             /* partial reload ok */
@@ -255,6 +271,27 @@ export function EmployeeProvider({ children }) {
     setUsingApi(true);
     return matched.id;
   }, [employee]);
+
+  const refreshFollowUps = useCallback(async (empId = employee.id, leadList = leads) => {
+    try {
+      let resolvedId = empId;
+      if (isMockEmployeeId(empId)) {
+        resolvedId = await resolveApiEmployeeId(empId, employee.name);
+      }
+      const res = await apiGet(`/api/v1/employee/${resolvedId}/followups`, {
+        headers: getCrmHeaders(),
+        skipCache: true,
+        cacheTtl: 0,
+      });
+      const items = unwrapApiData(res);
+      if (!Array.isArray(items)) return false;
+      setFollowUpsState(items.map((f) => followUpFromApi(f, leadList)));
+      setUsingApi(true);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [employee, leads, resolveApiEmployeeId]);
 
   const resolveAssigneeId = useCallback(async (assigneeName) => {
     const name = String(assigneeName || "").trim();
@@ -451,9 +488,10 @@ export function EmployeeProvider({ children }) {
         return null;
       }
       try {
+        const employeeId = await resolveApiEmployeeId(employee.id, employee.name);
         const payload = followUpToApiPayload(
           { leadName, company, type, date, time, note, leadId: resolvedLeadId },
-          employee.id,
+          employeeId,
           leads,
         );
         const res = await apiPost("/api/v1/employee/followups", payload, { headers: getCrmHeaders() });
@@ -478,6 +516,7 @@ export function EmployeeProvider({ children }) {
           [date]: [...(prev[date] || []), task],
         }));
         invalidateCache("/api/v1");
+        await refreshFollowUps(employeeId, leads);
         return followUp;
       } catch (err) {
         toast.error(err.message || "Could not save follow-up to server");
@@ -525,7 +564,13 @@ export function EmployeeProvider({ children }) {
     }));
 
     return followUp;
-  }, [employee, leads, setFollowUps, setTasks, usingApi]);
+  }, [employee, leads, setFollowUps, setTasks, usingApi, resolveApiEmployeeId, refreshFollowUps]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!employee?.id) return;
+    refreshFollowUps(employee.id, leads);
+  }, [loading, employee?.id, refreshFollowUps, leads]);
 
   const completeFollowUp = useCallback(async (followUpId) => {
     setFollowUps((prev) => prev.map((f) => (f.id === followUpId ? { ...f, done: true } : f)));
@@ -806,6 +851,7 @@ export function EmployeeProvider({ children }) {
     setFollowUps,
     scheduleFollowUp,
     completeFollowUp,
+    refreshFollowUps,
     syncTaskWithFollowUp,
     leads,
     setLeads,
@@ -831,7 +877,7 @@ export function EmployeeProvider({ children }) {
     loading,
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
-    followUps, setFollowUps, scheduleFollowUp, completeFollowUp,
+    followUps, setFollowUps, scheduleFollowUp, completeFollowUp, refreshFollowUps,
     syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
     reassignLead, teamEmployees,
     usingApi, calls, addCallRecord, activities, addActivityRecord, sops, setSops,

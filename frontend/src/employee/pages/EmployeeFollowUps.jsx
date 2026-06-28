@@ -135,7 +135,7 @@ const EMPTY_SCHEDULE = {
 };
 
 export default function EmployeeFollowUps() {
-  const { leads, followUps, scheduleFollowUp, completeFollowUp } = useEmployee();
+  const { leads, followUps, scheduleFollowUp, completeFollowUp, refreshFollowUps, loading } = useEmployee();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
@@ -146,6 +146,11 @@ export default function EmployeeFollowUps() {
   useEffect(() => {
     if (searchParams.get("action") === "add") setModalOpen(true);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (loading) return;
+    refreshFollowUps(undefined, leads);
+  }, [loading, refreshFollowUps, leads]);
 
   const openFollowUps = useMemo(() => followUps.filter((f) => !f.done), [followUps]);
 

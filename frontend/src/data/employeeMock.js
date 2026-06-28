@@ -634,7 +634,7 @@ export function tasksMapFromApi(apiTasks, employee) {
 
 export function getFollowUpUrgency(dateStr) {
   const d = new Date(`${dateStr}T00:00:00`);
-  const today = new Date(`${EMP_APP_TODAY}T00:00:00`);
+  const today = new Date(`${getEmpAppToday()}T00:00:00`);
   if (d < today) return "overdue";
   if (d.getTime() === today.getTime()) return "today";
   return "upcoming";
@@ -642,7 +642,7 @@ export function getFollowUpUrgency(dateStr) {
 
 export function formatFollowUpSchedule(dateStr, timeStr) {
   const d = new Date(`${dateStr}T00:00:00`);
-  const today = new Date(`${EMP_APP_TODAY}T00:00:00`);
+  const today = new Date(`${getEmpAppToday()}T00:00:00`);
   const urgency = getFollowUpUrgency(dateStr);
   const [h, m] = (timeStr || "09:00").split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
@@ -803,23 +803,49 @@ export function followUpToApiPayload(params, employeeId, leads = []) {
   };
 }
 
-export function followUpFromApi(apiFollowup, leads = [], type = "Follow-up") {
+function parseFollowUpSchedule(raw) {
+  if (!raw) return { dateStr: getEmpAppToday(), timeStr: "09:00" };
+  const text = String(raw).trim();
+  const sqlMatch = text.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  if (sqlMatch) {
+    return { dateStr: sqlMatch[1], timeStr: sqlMatch[2] };
+  }
+  const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  if (isoMatch) {
+    return { dateStr: isoMatch[1], timeStr: isoMatch[2] };
+  }
+  const d = new Date(text);
+  if (!Number.isNaN(d.getTime())) {
+    return {
+      dateStr: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+      timeStr: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`,
+    };
+  }
+  return { dateStr: getEmpAppToday(), timeStr: "09:00" };
+}
+
+function inferFollowUpType(note, explicitType) {
+  if (explicitType && explicitType !== "Follow-up") return explicitType;
+  const n = String(note || "").toLowerCase();
+  if (n.includes("whatsapp")) return "WhatsApp";
+  if (n.includes("email")) return "Email";
+  if (n.includes("meeting")) return "Meeting";
+  return "Call";
+}
+
+export function followUpFromApi(apiFollowup, leads = [], type) {
   const lead = leads.find((l) => String(l.id) === String(apiFollowup.leadId));
-  const scheduled = apiFollowup.scheduledAt ? new Date(apiFollowup.scheduledAt) : new Date();
-  const dateStr = Number.isNaN(scheduled.getTime())
-    ? getEmpAppToday()
-    : scheduled.toISOString().slice(0, 10);
-  const timeStr = Number.isNaN(scheduled.getTime())
-    ? "09:00"
-    : `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`;
+  const { dateStr, timeStr } = parseFollowUpSchedule(apiFollowup.scheduledAt);
   const urgency = getFollowUpUrgency(dateStr);
-  const leadName = lead?.name || lead?.leadName || "Lead";
+  const leadName = lead?.name || lead?.leadName || apiFollowup.leadName || "Lead";
+  const resolvedType = inferFollowUpType(apiFollowup.note, type);
+  const status = String(apiFollowup.status || "pending").toLowerCase();
 
   return {
     id: apiFollowup.id,
     name: leadName,
     company: lead?.company || lead?.companyName || "—",
-    type,
+    type: resolvedType,
     urgency,
     time: formatFollowUpSchedule(dateStr, timeStr),
     av: lead?.av || initialsFromLeadName(leadName),
@@ -827,7 +853,7 @@ export function followUpFromApi(apiFollowup, leads = [], type = "Follow-up") {
     note: apiFollowup.note || "",
     scheduledDate: dateStr,
     scheduledTime: timeStr,
-    done: apiFollowup.status === "completed",
+    done: status === "completed" || status === "done",
     taskId: apiFollowup.taskId,
     leadId: apiFollowup.leadId,
   };
