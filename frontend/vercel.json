@@ -1,5 +1,10 @@
 {
   "framework": "tanstack-start",
+  "build": {
+    "env": {
+      "VITE_API_URL": ""
+    }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",

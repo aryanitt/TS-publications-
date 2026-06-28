@@ -38,6 +38,10 @@ export function shouldPersistToApi(usingApi = false) {
 
 export function apiUrl(path) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
+  // Never call Hostinger directly from the browser — always same-origin /api (proxy).
+  if (typeof window !== "undefined") {
+    return normalized;
+  }
   const base = getApiBase();
   return base ? `${base}${normalized}` : normalized;
 }
