@@ -3,6 +3,55 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
+const PRODUCTION_API_BASE =
+  "https://mediumturquoise-capybara-737767.hostingersite.com";
+
+async function proxyApiRequest(request: Request): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/")) return null;
+
+  const targetUrl = `${PRODUCTION_API_BASE}${url.pathname}${url.search}`;
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  headers.delete("connection");
+
+  const init: RequestInit & { duplex?: "half" } = {
+    method: request.method,
+    headers,
+    redirect: "manual",
+  };
+
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    init.body = request.body;
+    init.duplex = "half";
+  }
+
+  try {
+    const backendResponse = await fetch(targetUrl, init);
+    const responseHeaders = new Headers(backendResponse.headers);
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("transfer-encoding");
+
+    return new Response(backendResponse.body, {
+      status: backendResponse.status,
+      statusText: backendResponse.statusText,
+      headers: responseHeaders,
+    });
+  } catch (error) {
+    console.error("API proxy failed:", error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        message: "Backend API unreachable from frontend server",
+      }),
+      {
+        status: 502,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }
+}
+
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
@@ -69,6 +118,9 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const proxied = await proxyApiRequest(request);
+      if (proxied) return proxied;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

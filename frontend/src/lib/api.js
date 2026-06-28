@@ -12,13 +12,14 @@ const PRODUCTION_API_BASE =
   "https://mediumturquoise-capybara-737767.hostingersite.com";
 
 export function getApiBase() {
+  // Browser must always use same-origin `/api` (Vercel/Nitro proxy or Vite dev proxy).
+  // Direct Hostinger URLs fail in the browser due to CORS even when VITE_API_URL is set in Vercel.
+  if (typeof window !== "undefined") {
+    return "";
+  }
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl != null && String(envUrl).trim() !== "") {
     return String(envUrl).replace(/\/$/, "");
-  }
-  // Browser: same-origin `/api` (Vercel rewrite in prod, Vite proxy in dev).
-  if (typeof window !== "undefined") {
-    return "";
   }
   // SSR / Node must use an absolute backend URL.
   if (import.meta.env.PROD) {
@@ -157,13 +158,15 @@ export async function apiJson(path, options = {}) {
     const isNetwork = err instanceof TypeError
       || String(err?.message || "").toLowerCase().includes("failed to fetch");
     if (!isNetwork) throw err;
-    const base = getApiBase();
-    const target = base || (typeof window !== "undefined" ? `${window.location.origin}/api` : PRODUCTION_API_BASE);
+    const target = typeof window !== "undefined"
+      ? `${window.location.origin}${apiUrl(path).split("?")[0]}`
+      : apiUrl(path);
     throw new Error(
       `Cannot reach the API at ${target}. `
-      + (typeof window !== "undefined" && !base
-        ? "If testing locally, start the backend: cd backend && npm run dev"
-        : "Check your connection and redeploy the frontend if you recently changed API settings."),
+      + (typeof window !== "undefined"
+        ? "Redeploy the frontend and ensure VITE_API_URL is empty in Vercel (uses /api proxy). "
+          + "If testing locally, start the backend: cd backend && npm run dev"
+        : "Check your connection and backend deploy."),
     );
   }
 
