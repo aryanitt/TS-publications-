@@ -140,6 +140,22 @@ export function EmployeeProvider({ children }) {
       } catch {
         /* dashboard followups may already be set */
       }
+      try {
+        const meetRes = await apiGet(`/api/v1/employee/${empId}/meetings`, {
+          headers: getCrmHeaders(),
+          skipCache: true,
+          cacheTtl: 0,
+        });
+        const meetItems = unwrapApiData(meetRes);
+        if (Array.isArray(meetItems)) {
+          const leadSource = workspaceLeads.length ? workspaceLeads : leads;
+          const split = partitionMeetings(meetItems, leadSource);
+          setMeetingsUpcoming(split.upcoming);
+          setMeetingsHistory(split.history);
+        }
+      } catch {
+        /* keep existing meetings list */
+      }
       if (Array.isArray(data.calls)) {
         setCalls(data.calls.map((c) => callFromApi(c, workspaceLeads)));
       }
@@ -572,6 +588,12 @@ export function EmployeeProvider({ children }) {
     refreshFollowUps(employee.id, leads);
   }, [loading, employee?.id, refreshFollowUps, leads]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (!employee?.id) return;
+    refreshMeetings(employee.id, leads);
+  }, [loading, employee?.id, refreshMeetings, leads]);
+
   const completeFollowUp = useCallback(async (followUpId) => {
     setFollowUps((prev) => prev.map((f) => (f.id === followUpId ? { ...f, done: true } : f)));
     setTasks((prev) => {
@@ -756,7 +778,11 @@ export function EmployeeProvider({ children }) {
 
   const refreshMeetings = useCallback(async (empId = employee.id, leadList = leads) => {
     try {
-      const res = await apiGet(`/api/v1/employee/${empId}/meetings`, {
+      let resolvedId = empId;
+      if (isMockEmployeeId(empId)) {
+        resolvedId = await resolveApiEmployeeId(empId, employee.name);
+      }
+      const res = await apiGet(`/api/v1/employee/${resolvedId}/meetings`, {
         headers: getCrmHeaders(),
         skipCache: true,
         cacheTtl: 0,
@@ -765,11 +791,12 @@ export function EmployeeProvider({ children }) {
       const split = partitionMeetings(items, leadList);
       setMeetingsUpcoming(split.upcoming);
       setMeetingsHistory(split.history);
+      setUsingApi(true);
       return true;
     } catch {
       return false;
     }
-  }, [employee.id, leads]);
+  }, [employee, leads, resolveApiEmployeeId]);
 
   const createMeeting = useCallback(async (form) => {
     const lead = leads.find((l) => String(l.id) === String(form.leadId));

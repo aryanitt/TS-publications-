@@ -420,10 +420,10 @@ export default function EmployeeMeetings() {
     setSubmitting(true);
     try {
       const saved = await createMeeting(form);
-      if (saved === null && usingApi) return;
+      if (!saved) return;
       setForm({ ...EMPTY_FORM, date: getEmpAppToday() });
       closeDrawer();
-      toast.success("Meeting saved");
+      toast.success(usingApi ? "Meeting saved to database" : "Meeting scheduled");
     } finally {
       setSubmitting(false);
     }

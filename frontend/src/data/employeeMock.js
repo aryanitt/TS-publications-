@@ -287,8 +287,8 @@ const MEETING_PLATFORM_LABELS = {
 export function meetingToApiPayload(form, employeeId) {
   const platformLabel = MEETING_PLATFORM_LABELS[form.platform] || form.platform || "Google Meet";
   return {
-    leadId: form.leadId,
-    employeeId,
+    leadId: Number(form.leadId),
+    employeeId: Number(employeeId),
     title: form.title.trim(),
     scheduledAt: `${form.date}T${form.time || "09:00"}:00`,
     meetLink: form.meetLink || null,
