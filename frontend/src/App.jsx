@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout.jsx";
 import EmployeeLayout from "./employee/layouts/EmployeeLayout.jsx";
@@ -31,6 +31,38 @@ const EmployeeMeetings = lazy(() => import("./employee/pages/EmployeeMeetings.js
 const EmployeeProfile = lazy(() => import("./employee/pages/EmployeeProfile.jsx"));
 const EmployeePipeline = lazy(() => import("./employee/pages/EmployeePipeline.jsx"));
 
+class CallAssistantErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="page-shell min-w-0 p-6 text-center max-w-md mx-auto">
+          <h1 className="text-lg font-bold text-slate-800">Call Assistant couldn&apos;t load</h1>
+          <p className="text-sm text-slate-500 mt-2">
+            The call workspace hit an error. Refresh the page or return to your pipeline and try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-bold"
+          >
+            Refresh page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -61,7 +93,7 @@ export default function App() {
             <Route path="pipeline" element={<EmployeePipeline />} />
             <Route path="sales-process" element={<EmployeeSalesProcess />} />
             <Route path="sales-process/:sopId" element={<EmployeeSopDetail />} />
-            <Route path="call-assistant" element={<EmployeeCallAssistant />} />
+            <Route path="call-assistant" element={<CallAssistantErrorBoundary><EmployeeCallAssistant /></CallAssistantErrorBoundary>} />
             <Route path="assets" element={<EmployeeAssets />} />
             <Route path="meetings" element={<EmployeeMeetings />} />
             <Route path="profile" element={<EmployeeProfile />} />

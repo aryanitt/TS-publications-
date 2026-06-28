@@ -14,6 +14,7 @@ import {
   EMP_LEAD_CALL_ACTIVITY,
   ALL_EMP_SOPS,
   mergeApiSopsWithLocal,
+  normalizeCallSop,
   getFollowUpUrgency,
   formatFollowUpSchedule,
   buildFollowUpTaskName,
@@ -99,7 +100,7 @@ export function EmployeeProvider({ children }) {
   const [meetingsUpcoming, setMeetingsUpcoming] = useState(EMP_MEETINGS_UPCOMING);
   const [meetingsHistory, setMeetingsHistory] = useState(EMP_MEETINGS_HISTORY);
   const [activities, setActivities] = useState(EMP_LEAD_CALL_ACTIVITY);
-  const [sops, setSopsState] = useState(ALL_EMP_SOPS);
+  const [sops, setSopsState] = useState(() => ALL_EMP_SOPS.map(normalizeCallSop));
   const [teamEmployees, setTeamEmployees] = useState([]);
 
   const loadEmployeeWorkspace = useCallback(async (empId, empProfile = employee) => {
@@ -175,7 +176,7 @@ export function EmployeeProvider({ children }) {
               setSopsState(mergeApiSopsWithLocal(sopRes.sops));
             }
           } catch {
-            /* keep ALL_EMP_SOPS fallback */
+            setSopsState(ALL_EMP_SOPS.map(normalizeCallSop));
           }
           if (!cancelled) {
             setLoading(false);

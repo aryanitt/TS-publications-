@@ -1358,70 +1358,105 @@ function normalizeSopSteps(steps) {
       scripts: normalizeSopScripts(null),
     }];
   }
-  return steps.map((step, idx) => ({
-    id: step?.id || `step-${idx + 1}`,
-    label: step?.label || step?.title || step?.name || `Step ${idx + 1}`,
-    questions: Array.isArray(step?.questions) ? step.questions : [],
-    discovery: Array.isArray(step?.discovery) ? step.discovery : [],
-    checklist: Array.isArray(step?.checklist) ? step.checklist : [],
-    scripts: normalizeSopScripts(step?.scripts, step?.script || ""),
-  }));
+  return steps.map((step, idx) => {
+    if (typeof step === "string") {
+      return {
+        id: `step-${idx + 1}`,
+        label: step.trim() || `Step ${idx + 1}`,
+        questions: [],
+        discovery: [],
+        checklist: [],
+        scripts: normalizeSopScripts(null, step),
+      };
+    }
+    return {
+      id: step?.id || `step-${idx + 1}`,
+      label: step?.label || step?.title || step?.name || `Step ${idx + 1}`,
+      questions: Array.isArray(step?.questions) ? step.questions : [],
+      discovery: Array.isArray(step?.discovery) ? step.discovery : [],
+      checklist: Array.isArray(step?.checklist) ? step.checklist : [],
+      scripts: normalizeSopScripts(step?.scripts, step?.script || ""),
+    };
+  });
+}
+
+function sopSubtitle(source, fallback = "") {
+  if (source?.sub != null && String(source.sub).trim()) return String(source.sub).trim();
+  const desc = source?.description;
+  if (typeof desc === "string" && desc.trim()) return desc.trim().slice(0, 80);
+  if (source?.category != null && String(source.category).trim()) return String(source.category);
+  return fallback;
 }
 
 /** Ensure Call Assistant always receives safe SOP shape (prevents runtime .map crashes). */
 export function normalizeCallSop(sop) {
-  if (!sop) return null;
-  return {
-    ...sop,
-    sub: sop.sub || sop.description?.slice?.(0, 80) || "",
-    budgetRange: sop.budgetRange || "—",
-    icon: sop.icon || "📋",
-    objections: Array.isArray(sop.objections) ? sop.objections : [],
-    crossSell: sop.crossSell || null,
-    steps: normalizeSopSteps(sop.steps),
-  };
+  if (!sop || typeof sop !== "object") return null;
+  try {
+    return {
+      ...sop,
+      id: sop.id ?? sop.sopId ?? `sop-${sop.title || "unknown"}`,
+      title: sop.title || "SOP Guide",
+      category: sop.category || "General",
+      sub: sopSubtitle(sop, sop.sub || ""),
+      budgetRange: sop.budgetRange || "—",
+      icon: sop.icon || "📋",
+      objections: Array.isArray(sop.objections) ? sop.objections : [],
+      crossSell: sop.crossSell && typeof sop.crossSell === "object" ? sop.crossSell : null,
+      steps: normalizeSopSteps(sop.steps || sop.instruction_steps || sop.instructionSteps),
+    };
+  } catch {
+    return normalizeCallSop({
+      id: sop.id || "fallback",
+      title: String(sop.title || "SOP Guide"),
+      steps: [],
+    });
+  }
 }
 
 function sopFromApiRow(api) {
-  return {
+  return normalizeCallSop({
     id: api.id,
     title: api.title || "SOP",
-    sub: api.sub || api.description?.slice(0, 80) || api.category || "",
+    sub: sopSubtitle(api),
     category: api.category || "General",
     budgetRange: api.budgetRange || "—",
     duration: api.estimated_time || api.estimatedTime || "—",
     icon: api.icon || "📋",
-    steps: normalizeSopSteps(api.instruction_steps || api.instructionSteps || api.steps),
+    steps: api.instruction_steps || api.instructionSteps || api.steps,
     objections: Array.isArray(api.objections) ? api.objections : [],
     crossSell: api.crossSell || null,
-  };
+  });
 }
 
 /** Keep rich Call Assistant fields when hydrating SOPs from the API. */
 export function mergeApiSopsWithLocal(apiSops) {
-  if (!Array.isArray(apiSops) || apiSops.length === 0) return ALL_EMP_SOPS;
+  if (!Array.isArray(apiSops) || apiSops.length === 0) {
+    return ALL_EMP_SOPS.map(normalizeCallSop);
+  }
 
-  const localById = new Map(ALL_EMP_SOPS.map((s) => [Number(s.id), s]));
-  const apiIds = new Set();
+  try {
+    const localById = new Map(ALL_EMP_SOPS.map((s) => [Number(s.id), s]));
+    const apiIds = new Set();
 
-  const merged = apiSops.map((api) => {
-    const id = Number(api.id);
-    apiIds.add(id);
-    const local = localById.get(id);
-    if (local) {
-      return {
-        ...local,
-        title: api.title || local.title,
-        category: api.category || local.category,
-        sub: api.sub || api.description?.slice(0, 80) || local.sub,
-        steps: normalizeSopSteps(
-          api.instruction_steps || api.instructionSteps || api.steps || local.steps,
-        ),
-      };
-    }
-    return sopFromApiRow(api);
-  });
+    const merged = apiSops.map((api) => {
+      const id = Number(api.id);
+      apiIds.add(id);
+      const local = localById.get(id);
+      if (local) {
+        return normalizeCallSop({
+          ...local,
+          title: api.title || local.title,
+          category: api.category || local.category,
+          sub: sopSubtitle(api, local.sub),
+          steps: api.instruction_steps || api.instructionSteps || api.steps || local.steps,
+        });
+      }
+      return sopFromApiRow(api);
+    });
 
-  const extras = ALL_EMP_SOPS.filter((s) => !apiIds.has(Number(s.id)));
-  return [...merged, ...extras];
+    const extras = ALL_EMP_SOPS.filter((s) => !apiIds.has(Number(s.id)));
+    return [...merged, ...extras.map(normalizeCallSop)];
+  } catch {
+    return ALL_EMP_SOPS.map(normalizeCallSop);
+  }
 }

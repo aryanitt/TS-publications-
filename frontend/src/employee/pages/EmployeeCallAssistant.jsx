@@ -312,8 +312,8 @@ AI Insights & Follow-up Actions:
   }, [selectedSopId, sops]);
 
   useEffect(() => {
-    if (sops.length && !sops.some((s) => s.id === selectedSopId)) {
-      setSelectedSopId(sops[0].id);
+    if (sops.length && !sops.some((s) => Number(s.id) === Number(selectedSopId))) {
+      setSelectedSopId(Number(sops[0].id));
     }
   }, [sops, selectedSopId]);
 
@@ -981,7 +981,7 @@ AI Insights & Follow-up Actions:
                   </span>
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(formatScriptText(activeStep.scripts.opening))}
+                    onClick={() => copyToClipboard(formatScriptText(activeStep.scripts?.opening || ""))}
                     className="p-1 rounded-lg hover:bg-rose-100/50 text-rose-700 transition"
                     title="Copy Script"
                   >
