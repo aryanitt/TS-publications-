@@ -1,13 +1,11 @@
 import { useState, Component } from "react";
 import { Outlet, useOutletContext, useNavigate } from "react-router-dom";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { Plus, Phone, Calendar, CheckSquare, MessageSquare } from "lucide-react";
 import { EmployeeProvider } from "../../context/EmployeeContext.jsx";
 import EmployeeSidebar from "../components/EmployeeSidebar.jsx";
 import EmployeeTopbar from "../components/EmployeeTopbar.jsx";
 import EmployeeMobileNav from "../components/EmployeeMobileNav.jsx";
-import { EMP_TOAST_OPTIONS } from "../utils/empToast.jsx";
-
 class EmployeeRouteErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -66,7 +64,6 @@ export default function EmployeeLayout() {
   return (
     <EmployeeProvider>
       <div className="flex min-h-screen w-full max-w-[100vw] overflow-x-clip">
-        <Toaster position="top-right" gutter={12} containerStyle={{ top: 16, right: 16 }} toastOptions={EMP_TOAST_OPTIONS} />
         <EmployeeSidebar
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}

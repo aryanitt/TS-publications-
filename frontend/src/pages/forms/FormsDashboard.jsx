@@ -5,7 +5,7 @@ import {
   MousePointerClick, Instagram, Globe, Linkedin, MessageCircle,
   Eye, Pencil, Pause, Play, Trash2, Filter,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import {
   FORMS, FORM_SOURCES, FORM_STATUSES, FORM_SERVICES,
@@ -161,7 +161,6 @@ export default function FormsDashboard() {
 
   return (
     <div className="space-y-5 page-shell min-w-0">
-      <Toaster position="top-right" />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="Total Forms" value={String(summary.totalForms)} change="+12%" sub="vs last month" icon={ClipboardList} iconBg="bg-rose-50" iconColor="text-rose-600" />

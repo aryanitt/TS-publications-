@@ -3,7 +3,7 @@ import {
   ArrowLeft, Share2, Download, Pencil, Bot, Database, Target, Briefcase, Code,
   Users, DollarSign, TrendingUp, CheckCircle2,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import { getServiceById, formatServiceMoney, formatServicePriceLabel, serviceBadgeTone } from "../../data/servicesMock.js";
 
@@ -33,7 +33,6 @@ export default function ServiceDetail() {
 
   return (
     <div className="space-y-4 page-shell min-w-0 max-w-5xl">
-      <Toaster position="top-right" />
 
       <GlassCard className="p-3.5 sm:p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">

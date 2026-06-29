@@ -104,12 +104,30 @@ function listUpdaterForSession() {
   return getAuthenticatedEmployeeId() ? replaceFetchedList : mergeFetchedList;
 }
 
-function filterLeadsForEmployee(leadList, employeeId) {
-  if (!employeeId || !Array.isArray(leadList)) return leadList || [];
+function filterLeadsForEmployee(leadList, employeeId, { trustServer = false } = {}) {
+  if (!Array.isArray(leadList)) return [];
+  if (trustServer || !employeeId) return leadList;
   return leadList.filter((l) => {
-    if (l.assigneeId == null) return true;
-    return Number(l.assigneeId) === Number(employeeId);
+    const assigneeId = l.assigneeId ?? l.assigned_to ?? l.assignedTo;
+    const resolved = typeof assigneeId === "object" ? assigneeId?.id : assigneeId;
+    if (resolved == null) return true;
+    return Number(resolved) === Number(employeeId);
   });
+}
+
+function employeeDashboardPath(fallbackId) {
+  if (getAuthenticatedEmployeeId()) return "/api/v1/employee/me/dashboard";
+  if (fallbackId != null && !isMockEmployeeId(fallbackId, MOCK_EMPLOYEE_ID)) {
+    return `/api/v1/employee/${fallbackId}/dashboard`;
+  }
+  return null;
+}
+
+function employeeResourcePath(fallbackId, resource) {
+  const authId = getAuthenticatedEmployeeId();
+  const id = authId || fallbackId;
+  if (id == null || isMockEmployeeId(id, MOCK_EMPLOYEE_ID)) return null;
+  return resource ? `/api/v1/employee/${id}/${resource}` : `/api/v1/employee/${id}`;
 }
 
 export function EmployeeProvider({ children }) {
@@ -120,6 +138,7 @@ export function EmployeeProvider({ children }) {
     return { ...CURRENT_EMPLOYEE, id: null, name: "Employee" };
   });
   const [linkError, setLinkError] = useState(null);
+  const [workspaceError, setWorkspaceError] = useState(null);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [usingApi, setUsingApi] = useState(() => typeof window !== "undefined");
@@ -175,62 +194,62 @@ export function EmployeeProvider({ children }) {
 
   const loadEmployeeWorkspace = useCallback(async (empId, empProfile, options = {}) => {
     const { forceRefresh = false } = options;
+    const authEmployeeId = getAuthenticatedEmployeeId();
     try {
-      let resolvedId = empId;
-      if (isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
+      let resolvedId = authEmployeeId || empId;
+      if (!authEmployeeId && isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
         resolvedId = await resolveApiEmployeeId(empId, empProfile);
       }
-      const res = await apiGet(`/api/v1/employee/${resolvedId}/dashboard`, {
+      const dashboardPath = employeeDashboardPath(resolvedId);
+      if (!dashboardPath) {
+        throw new Error("Could not resolve employee workspace");
+      }
+      const res = await apiGet(dashboardPath, {
         headers: getCrmHeaders("employee", empProfile),
         cacheTtl: forceRefresh ? 0 : EMPLOYEE_CACHE_TTL,
-        skipCache: forceRefresh || isMockEmployeeId(empId, MOCK_EMPLOYEE_ID),
+        skipCache: forceRefresh || Boolean(authEmployeeId),
       });
       if (res?.success === false) {
         throw new Error(res.message || "Dashboard API failed");
       }
       const data = unwrapApiData(res) || res.data || res;
-      const authEmployeeId = getAuthenticatedEmployeeId();
+      const scopeId = authEmployeeId || resolvedId;
       const workspaceLeads = Array.isArray(data.leads)
         ? filterLeadsForEmployee(
           data.leads.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
-          authEmployeeId || resolvedId,
+          scopeId,
+          { trustServer: Boolean(authEmployeeId) },
         )
         : null;
 
       const applyList = listUpdaterForSession();
 
       if (workspaceLeads) {
-        setLeads((prev) => applyList(prev, workspaceLeads));
+        setLeads(() => applyList([], workspaceLeads));
       }
 
       if (Array.isArray(data.followups)) {
-        setFollowUpsState((prev) => {
+        setFollowUpsState(() => {
           const next = data.followups.map((f) => followUpFromApi(f, workspaceLeads || []));
-          return applyList(prev, next);
+          return applyList([], next);
         });
       }
 
       if (Array.isArray(data.calls)) {
-        setCalls((prev) => {
+        setCalls(() => {
           const next = data.calls.map((c) => callFromApi(c, workspaceLeads || []));
-          return applyList(prev, next);
+          return applyList([], next);
         });
       }
 
       if (Array.isArray(data.meetings)) {
         const split = partitionMeetings(data.meetings, workspaceLeads || []);
-        setMeetingsUpcoming((prev) => applyList(prev, split.upcoming));
-        setMeetingsHistory((prev) => applyList(prev, split.history));
+        setMeetingsUpcoming(() => applyList([], split.upcoming));
+        setMeetingsHistory(() => applyList([], split.history));
       }
 
       if (Array.isArray(data.tasks)) {
-        setTasksState((prev) => {
-          const next = tasksMapFromApi(data.tasks, empProfile);
-          if (!authEmployeeId) {
-            return countTasks(next) === 0 && countTasks(prev) > 0 ? prev : next;
-          }
-          return next;
-        });
+        setTasksState(() => tasksMapFromApi(data.tasks, empProfile));
       }
       if (Array.isArray(data.sops) && data.sops.length) {
         const mapped = mapAdminSopsForEmployee(data.sops);
@@ -241,39 +260,50 @@ export function EmployeeProvider({ children }) {
       }
       if (data.employee) {
         const mapped = { ...empProfile, ...mapApiEmployee(data.employee) };
-        if (getAuthenticatedEmployeeId() && Number(mapped.id) !== Number(getAuthenticatedEmployeeId())) {
-          return false;
-        }
+        if (authEmployeeId) mapped.id = authEmployeeId;
+        setEmployee(mapped);
+        storeEmployee(mapped);
+      } else if (authEmployeeId) {
+        const mapped = { ...empProfile, id: authEmployeeId };
         setEmployee(mapped);
         storeEmployee(mapped);
       }
       setUsingApi(true);
+      setWorkspaceError(null);
       return true;
-    } catch {
+    } catch (err) {
+      setWorkspaceError(err.message || "Could not load your workspace data");
       return false;
     }
   }, [resolveApiEmployeeId]);
 
   const refreshLeads = useCallback(async (empId = employee.id, empProfile = employee) => {
     try {
-      let resolvedId = empId;
-      if (isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
+      const authEmployeeId = getAuthenticatedEmployeeId();
+      let resolvedId = authEmployeeId || empId;
+      if (!authEmployeeId && isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
         resolvedId = await resolveApiEmployeeId(empId, empProfile);
       }
-      const res = await apiGet(`/api/v1/employee/${resolvedId}/leads`, {
+      const leadsPath = employeeResourcePath(resolvedId, "leads");
+      if (!leadsPath) return false;
+      const res = await apiGet(leadsPath, {
         headers: getCrmHeaders("employee", empProfile),
         cacheTtl: EMPLOYEE_CACHE_TTL,
+        skipCache: Boolean(authEmployeeId),
       });
       const items = unwrapApiList(res);
       if (!items) return false;
       const mapped = filterLeadsForEmployee(
         items.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
-        getAuthenticatedEmployeeId() || resolvedId,
+        authEmployeeId || resolvedId,
+        { trustServer: Boolean(authEmployeeId) },
       );
-      setLeads((prev) => listUpdaterForSession()(prev, mapped));
+      setLeads(() => listUpdaterForSession()([], mapped));
       setUsingApi(true);
+      setWorkspaceError(null);
       return true;
-    } catch {
+    } catch (err) {
+      setWorkspaceError(err.message || "Could not refresh leads");
       return false;
     }
   }, [employee, resolveApiEmployeeId]);
@@ -801,6 +831,7 @@ export function EmployeeProvider({ children }) {
     const current = leads.find((l) => l.id === leadId);
     const patch = employeeStagePatch(stageLabel, current?.status);
     const acceptedAt = fromNewAssigned ? new Date().toISOString() : current?.acceptedAt;
+    const prevSnapshot = current ? { ...current } : null;
 
     setLeads((prev) => prev.map((l) => {
       if (l.id !== leadId) return l;
@@ -818,11 +849,15 @@ export function EmployeeProvider({ children }) {
       try {
         await apiPatch(`/api/v1/leads/${leadId}/stage`, {
           stage: stageLabel,
-          status: stageLabel,
+          status: patch.employeeStatus || stageLabel,
         }, { headers: getCrmHeaders() });
         invalidateCache("/api/v1");
       } catch (err) {
+        if (prevSnapshot) {
+          setLeads((prev) => prev.map((l) => (l.id === leadId ? prevSnapshot : l)));
+        }
         toast.error(err.message || "Stage update failed");
+        throw err;
       }
     }
   }, [leads, usingApi]);
@@ -913,6 +948,7 @@ export function EmployeeProvider({ children }) {
       setEmployee(profile);
       storeEmployee(profile);
       setUsingApi(true);
+      setWorkspaceError(null);
 
       const loaded = await loadEmployeeWorkspace(profile.id, profile, { forceRefresh });
       if (cancelled) return;
@@ -961,6 +997,7 @@ export function EmployeeProvider({ children }) {
           setMeetingsHistory([]);
           setActivities({});
           invalidateCache("/api/v1/employee/");
+          setWorkspaceError(null);
 
           await hydrateWorkspace(authProfile, true);
           if (cancelled) return;
@@ -1129,6 +1166,25 @@ export function EmployeeProvider({ children }) {
     }
   }, [meetingsUpcoming, usingApi]);
 
+  const reloadWorkspace = useCallback(async () => {
+    const authId = getAuthenticatedEmployeeId();
+    const profile = authId
+      ? { ...employee, id: authId }
+      : employee;
+    if (!profile?.id) return false;
+    invalidateCache("/api/v1/employee/");
+    setLoading(true);
+    setWorkspaceError(null);
+    try {
+      const ok = await loadEmployeeWorkspace(profile.id, profile, { forceRefresh: true });
+      if (!ok) await refreshLeads(profile.id, profile);
+      await refreshTasks(profile.id, profile);
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  }, [employee, loadEmployeeWorkspace, refreshLeads, refreshTasks]);
+
   const value = useMemo(() => ({
     employee,
     tasks,
@@ -1168,6 +1224,8 @@ export function EmployeeProvider({ children }) {
     refreshMeetings,
     loading,
     linkError,
+    workspaceError,
+    reloadWorkspace,
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
@@ -1175,6 +1233,7 @@ export function EmployeeProvider({ children }) {
     reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, addCallRecord, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
+    workspaceError, reloadWorkspace,
   ]);
 
   return (
@@ -1182,6 +1241,18 @@ export function EmployeeProvider({ children }) {
       {linkError && (
         <div className="mx-3 sm:mx-4 md:mx-6 lg:mx-8 mt-3 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-sm">
           {linkError}
+        </div>
+      )}
+      {workspaceError && !linkError && (
+        <div className="mx-3 sm:mx-4 md:mx-6 lg:mx-8 mt-3 p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-900 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <span>{workspaceError}</span>
+          <button
+            type="button"
+            onClick={() => reloadWorkspace()}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold"
+          >
+            Retry load
+          </button>
         </div>
       )}
       {children}

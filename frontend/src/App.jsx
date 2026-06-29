@@ -1,5 +1,7 @@
 import { lazy, Suspense, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
+import { EMP_TOAST_OPTIONS } from "./employee/utils/empToast.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
 import EmployeeLayout from "./employee/layouts/EmployeeLayout.jsx";
 import PageLoader from "./components/PageLoader.jsx";
@@ -71,6 +73,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <Toaster position="top-right" gutter={12} containerStyle={{ top: 16, right: 16 }} toastOptions={EMP_TOAST_OPTIONS} />
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />

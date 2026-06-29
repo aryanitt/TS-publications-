@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { GlassCard, Badge, Drawer } from "../../components/Primitives.jsx";
-import { EMP_SOP_CHECKLIST, EMP_LEAD_TEMPERATURES, normalizeCallSop } from "../../data/employeeMock.js";
+import { EMP_SOP_CHECKLIST, EMP_LEAD_TEMPERATURES, getEmpAppToday, normalizeCallSop } from "../../data/employeeMock.js";
 import useIsMobile from "../../lib/useIsMobile.js";
 import { RoseHero, EmpModal, ChooseLeadPanel, BtnSecondary } from "../components/EmpUI.jsx";
 import { notifyCallStarted } from "../utils/empToast.jsx";
@@ -265,6 +265,8 @@ AI Insights & Follow-up Actions:
       duration: formatDuration(callDuration),
       type: "out",
       date: "Today " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      callAt: new Date().toISOString(),
+      callDay: getEmpAppToday(),
       period: "today",
       outcome: callOutcome,
       hasRec: true,

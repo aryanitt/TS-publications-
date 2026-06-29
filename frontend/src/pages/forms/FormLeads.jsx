@@ -5,7 +5,7 @@ import {
   CheckCircle2, Calendar, Filter, ChevronLeft, ChevronRight as ChevronRightIcon,
   DollarSign, Clock,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import AddLeadDrawer from "../../components/AddLeadDrawer.jsx";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import {
@@ -109,7 +109,6 @@ export default function FormLeads() {
 
   return (
     <div className="space-y-5 page-shell min-w-0">
-      <Toaster position="top-right" />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3">
         <StatCard label="Total Leads" value={String(kpis.total)} change="+12%" sub="this month" icon={ClipboardList} iconBg="bg-rose-50" iconColor="text-rose-600" hover={false} />

@@ -112,11 +112,81 @@ export function buildSourceChartFromLeads(leads = []) {
     }));
 }
 
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function weekStartLocal(now = new Date()) {
+  const s = new Date(now);
+  s.setHours(0, 0, 0, 0);
+  s.setDate(s.getDate() - s.getDay());
+  return s;
+}
+
+function parseCallDisplayDate(dateStr) {
+  const s = String(dateStr || "").trim();
+  if (!s) return null;
+  if (/^today/i.test(s)) return getEmpAppToday();
+  if (/^yesterday/i.test(s)) {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return localDateKey(d);
+  }
+  const daysAgo = s.match(/^(\d+)\s+days?\s+ago/i);
+  if (daysAgo) {
+    const d = new Date();
+    d.setDate(d.getDate() - Number(daysAgo[1]));
+    return localDateKey(d);
+  }
+  const year = new Date().getFullYear();
+  const attempts = [
+    s,
+    `${s}, ${year}`,
+    s.replace(/^(\d{1,2}\s+\w+),?\s+/, `$1 ${year} `),
+    s.replace(/^(\w+\s+\d{1,2}),?\s+/, `$1, ${year} `),
+  ];
+  for (const attempt of attempts) {
+    const d = new Date(attempt);
+    if (!Number.isNaN(d.getTime())) return localDateKey(d);
+  }
+  return null;
+}
+
+/** Resolve a call's local calendar day (YYYY-MM-DD) for period filters. */
+export function getCallDateKey(call) {
+  if (!call || typeof call !== "object") return null;
+  if (call.callDay) return call.callDay;
+  for (const raw of [call.callAt, call.startedAt, call.createdAt, call.endedAt]) {
+    if (!raw) continue;
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return localDateKey(d);
+  }
+  return parseCallDisplayDate(call.date);
+}
+
+export function isCallInPeriod(call, period, now = new Date()) {
+  const key = getCallDateKey(call);
+  if (!key) {
+    if (period === "today") return call.period === "today";
+    if (period === "week") return call.period === "today" || call.period === "week";
+    return true;
+  }
+  const today = localDateKey(now);
+  if (period === "today") return key === today;
+  if (period === "week") {
+    const weekStart = localDateKey(weekStartLocal(now));
+    return key >= weekStart && key <= today;
+  }
+  const monthStart = localDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+  return key >= monthStart && key <= today;
+}
+
 export function filterCallsForPeriod(calls, period) {
   const list = Array.isArray(calls) ? calls : [];
-  if (period === "today") return list.filter((c) => c.period === "today");
-  if (period === "week") return list.filter((c) => c.period === "today" || c.period === "week");
-  return list;
+  return list.filter((c) => isCallInPeriod(c, period));
 }
 
 export function computeCallStatsFromCalls(calls, period = "today") {
@@ -618,21 +688,31 @@ export function isEmployeeNewAssignedLead(lead) {
   if (!lead) return false;
   if (lead.acceptedAt || lead.accepted_at) return false;
   const assignStatus = String(lead.assignmentStatus || lead.assignment_status || "").toLowerCase();
-  if (assignStatus === "assigned") return true;
-  const stage = String(lead.stage || lead.pipelineStage || lead.pipeline_stage || "").toLowerCase();
-  return (stage === "new lead" || stage === "new") && assignStatus !== "accepted" && assignStatus !== "in_progress";
+  if (assignStatus === "accepted" || assignStatus === "in_progress") return false;
+  const stage = String(lead.stage || lead.pipelineStage || lead.pipeline_stage || "").toLowerCase().trim();
+  const inNewLeadStage = stage === "new lead" || stage === "new";
+  if (!inNewLeadStage) return false;
+  return assignStatus === "assigned" || assignStatus === "pending" || assignStatus === "unassigned";
 }
 
 export function mapEmpLeadKanbanStage(stage, status) {
   const s = (stage || "").toLowerCase();
+  const st = (status || "").toLowerCase();
   if (s === "new lead" || s === "new") return "new_lead";
-  if (status === "notpick" || s.includes("not pick")) return "not_pick";
-  if (status === "converted" || s.includes("converted")) return "converted";
+  if (s.includes("not pick")) return "not_pick";
   if (s.includes("negotiation")) return "negotiation";
   if (s.includes("proposal")) return "proposal";
+  if (s.includes("converted") || s === "won") return "converted";
   if (s.includes("booked") || s.includes("call booked")) return "booked";
   if (s.includes("contacted") || s.includes("qualified")) return "contacted";
   if (s.includes("attempted")) return "attempted";
+  if (st === "notpick" || st.includes("not pick")) return "not_pick";
+  if (st === "converted") return "converted";
+  if (st.includes("negotiation")) return "negotiation";
+  if (st.includes("proposal")) return "proposal";
+  if (st.includes("booked")) return "booked";
+  if (st.includes("contacted")) return "contacted";
+  if (st.includes("attempted")) return "attempted";
   return "attempted";
 }
 
@@ -735,6 +815,7 @@ export const EMP_TEAM = [
 
 export const LEAD_STATUS_LABELS = {
   hot: "Hot", warm: "Warm", cold: "Cold", converted: "Converted", notpick: "Not Pick", ni: "Not Interested",
+  attempted: "Attempted", contacted: "Contacted", booked: "Booked", proposal: "Proposal", negotiation: "Negotiation", new: "New",
 };
 
 export const EMP_LEAD_TEMPERATURES = [
@@ -767,13 +848,6 @@ export function priorityFromApi(priority) {
   if (v.includes("high")) return "high";
   if (v.includes("low")) return "low";
   return "med";
-}
-
-function localDateKey(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 export function tasksMapFromApi(apiTasks, employee) {
@@ -941,13 +1015,13 @@ export function callFromApi(apiCall, leads = []) {
   const today = getEmpAppToday();
   const callDay = Number.isNaN(createdDate.getTime())
     ? today
-    : createdDate.toISOString().slice(0, 10);
+    : localDateKey(createdDate);
 
   let period = "month";
   if (callDay === today) {
     period = "today";
   } else {
-    const diff = (new Date(`${today}T00:00:00`) - new Date(`${callDay}T00:00:00`)) / 86400000;
+    const diff = (new Date(`${today}T12:00:00`) - new Date(`${callDay}T12:00:00`)) / 86400000;
     if (diff >= 0 && diff <= 7) period = "week";
   }
 
@@ -965,6 +1039,8 @@ export function callFromApi(apiCall, leads = []) {
     duration: formatDurationFromSeconds(apiCall.durationSec),
     type: dir,
     date: dateLabel,
+    callAt: created || createdDate.toISOString(),
+    callDay,
     period,
     outcome: apiCall.outcome || "Call logged",
     hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),

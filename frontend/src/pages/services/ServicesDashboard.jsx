@@ -8,7 +8,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import {
   getAllServices, SERVICE_CATEGORIES, SERVICE_STATUSES, SERVICE_PRICING_SORT,
@@ -142,7 +142,6 @@ export default function ServicesDashboard() {
 
   return (
     <div className="space-y-5 page-shell min-w-0">
-      <Toaster position="top-right" />
 
       {/* Sales distribution + revenue trajectory */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

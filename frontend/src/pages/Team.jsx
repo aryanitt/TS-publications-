@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Maximize2 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
-import { apiGet, apiPost, apiDelete, invalidateCache, readCachedJson } from "../lib/api.js";
+import toast from "react-hot-toast";
+import { apiGet, apiPost, apiDelete, invalidateCache } from "../lib/api.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
 // ─── inject global styles ────────────────────────────────────────────────────
@@ -265,7 +265,17 @@ import {
   RadialBar,
 } from "recharts";
 import { GlassCard, Badge, StatCard, SectionHeader, Avatar } from "../components/Primitives.jsx";
-import { performers } from "../data/mock.js";
+import { buildPipelineChartFromLeads } from "../data/employeeMock.js";
+
+function mapTeamLeadForChart(row) {
+  return {
+    stage: row.pipeline_stage || row.status,
+    pipelineStage: row.pipeline_stage,
+    status: row.status,
+    assignmentStatus: row.assignment_status,
+    acceptedAt: row.accepted_at,
+  };
+}
 
 // ─── colour tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -325,11 +335,20 @@ const ACCESS_DESC = {
 };
 const WORK_LOCATIONS = ["Office", "Remote", "Hybrid"];
 
+function funnelConversionLabel(funnel, idx) {
+  if (idx === 0) return "Top Funnel";
+  const prev = Number(funnel[idx - 1]?.value) || 0;
+  const curr = Number(funnel[idx]?.value) || 0;
+  if (!prev) return "0% Conversion";
+  return `${Math.round((curr / prev) * 100)}% Conversion`;
+}
+
 function useEmployeeLeads(emp) {
   const [leads,        setLeads]        = useState([]);
   const [stats,        setStats]        = useState(null);
   const [activity,     setActivity]     = useState([]);
   const [funnel,       setFunnel]       = useState([]);
+  const [stageBreakdown, setStageBreakdown] = useState([]);
   const [loading,      setLoading]      = useState(false);
   const [lastRefreshed,setLastRefreshed]= useState(null);
 
@@ -343,7 +362,7 @@ function useEmployeeLeads(emp) {
 
     apiGet(
       `/api/team/employees/leads?${params.toString()}`,
-      { cacheTtl: 60 * 1000 },
+      { cacheTtl: 0, skipCache: true },
     )
       .then((data) => {
         if (data.success) {
@@ -351,6 +370,7 @@ function useEmployeeLeads(emp) {
           setStats(data.stats    || null);
           setActivity(data.activity || []);
           setFunnel(data.funnel  || []);
+          setStageBreakdown(data.stageBreakdown || []);
           setLastRefreshed(new Date());
         }
       })
@@ -360,7 +380,7 @@ function useEmployeeLeads(emp) {
 
   useEffect(() => {
     if (!emp?.id && !emp?.name) return;
-    setLeads([]); setStats(null); setActivity([]); setFunnel([]);
+    setLeads([]); setStats(null); setActivity([]); setFunnel([]); setStageBreakdown([]);
     fetchLeads(true);
   }, [emp?.id, fetchLeads]);
 
@@ -371,7 +391,7 @@ function useEmployeeLeads(emp) {
   }, [emp?.id, emp?.name, fetchLeads]);
 
   return { 
-    leads, stats, activity, funnel,
+    leads, stats, activity, funnel, stageBreakdown,
     loading, refresh: () => fetchLeads(true), lastRefreshed 
   };
 }
@@ -467,6 +487,19 @@ const initials = (n) =>
     .map((w) => w[0].toUpperCase())
     .join("");
 const genId = () => "EMP" + Math.random().toString(36).slice(2, 6).toUpperCase();
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  const s = String(value);
+  const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const fmtDate = (d) => {
   try {
     return new Date(d).toLocaleDateString("en-IN", {
@@ -507,7 +540,7 @@ function normalizeEmployee(emp) {
     accessLevel: emp.access_level || "Member",
     employeeId: emp.emp_id || "",
     callyserId: emp.callyser_id || "",
-    joiningDate: emp.joining_date || "",
+    joiningDate: toDateInputValue(emp.joining_date),
     department: emp.department || "",
     territory: emp.territory || "",
     managerName: emp.manager_name || "",
@@ -1130,6 +1163,16 @@ function MemberForm({ fields, errors, set, blur }) {
         </div>
 
         <div style={{ marginTop: 12 }}>
+          <label style={labelStyle}>Joining Date</label>
+          <input
+            type="date"
+            style={inputBase(false)}
+            value={fields.joiningDate || todayISO()}
+            onChange={(e) => set("joiningDate", e.target.value)}
+          />
+        </div>
+
+        <div style={{ marginTop: 12 }}>
           <label style={labelStyle}>Role {requiredStar}</label>
           <input
             style={inputBase(errors.role)}
@@ -1236,7 +1279,16 @@ const EMPTY = {
   meetingWeightage: "",
   cashTarget: "",
   cashWeightage: "",
+  joiningDate: "",
 };
+
+function defaultMemberFields() {
+  return {
+    ...EMPTY,
+    employeeId: genId(),
+    joiningDate: todayISO(),
+  };
+}
 
 function useForm(init) {
   const [fields, setFields] = useState(init);
@@ -1283,10 +1335,14 @@ function useForm(init) {
 // ─── Add Member Drawer ────────────────────────────────────────────────────────
 
 function AddDrawer({ open, onClose, onSave, members }) {
-  const form = useForm({ ...EMPTY, employeeId: genId() });
+  const form = useForm(defaultMemberFields());
+
+  useEffect(() => {
+    if (open) form.reset(defaultMemberFields());
+  }, [open]);
 
   const close = () => {
-    form.reset({ ...EMPTY, employeeId: genId() });
+    form.reset(defaultMemberFields());
     onClose();
   };
 
@@ -1310,7 +1366,7 @@ function AddDrawer({ open, onClose, onSave, members }) {
           style: { background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" },
           iconTheme: { primary: "#16a34a", secondary: "#fff" },
         });
-        form.reset({ ...EMPTY, employeeId: genId() });
+        form.reset(defaultMemberFields());
         onClose();
       } catch (err) {
         // duplicate email / phone from backend
@@ -1803,43 +1859,44 @@ function buildAiCoachInsights({
 }
 
 function AiCoachInsightsPanel({ compact, insights }) {
-  const rows = (insights || []).slice(0, MAX_AI_COACH_INSIGHTS);
+  const rows = (insights || []).slice(0, compact ? 2 : MAX_AI_COACH_INSIGHTS);
 
   return (
     <div style={{
       background: "#fff",
       border: "1.5px solid #e11d48",
-      borderRadius: compact ? 12 : 16,
-      padding: compact ? "10px 12px" : "20px 24px",
+      borderRadius: compact ? 10 : 16,
+      padding: compact ? "8px 10px" : "20px 24px",
       boxShadow: "0 4px 14px rgba(244,63,94,0.08)",
       minWidth: 0,
+      alignSelf: "start",
     }}>
       <h3 style={{
-        fontSize: compact ? 10 : 12,
+        fontSize: compact ? 9 : 12,
         fontWeight: 800,
         textTransform: "uppercase",
         letterSpacing: ".08em",
         color: "#be123c",
-        margin: "0 0 8px",
+        margin: "0 0 6px",
         display: "flex",
         alignItems: "center",
         gap: 5,
       }}>
-        <Sparkles style={{ width: compact ? 12 : 14, height: compact ? 12 : 14 }} />
+        <Sparkles style={{ width: compact ? 11 : 14, height: compact ? 11 : 14 }} />
         AI Coach Insights
       </h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 10 }}>
         {rows.map((row) => (
           <div
             key={row.id}
             style={{
               background: "#fff1f2",
-              padding: compact ? "8px 9px" : "10px 12px",
-              borderRadius: compact ? 8 : 10,
+              padding: compact ? "6px 8px" : "10px 12px",
+              borderRadius: compact ? 7 : 10,
               borderLeft: "3px solid #e11d48",
-              fontSize: compact ? 10 : 11.5,
+              fontSize: compact ? 9 : 11.5,
               color: "#1e293b",
-              lineHeight: 1.35,
+              lineHeight: 1.3,
             }}
           >
             {row.body}
@@ -1851,17 +1908,19 @@ function AiCoachInsightsPanel({ compact, insights }) {
 }
 
 /** SVG pipeline funnel with readable labels on every stage. */
-function PipelineFunnelGraphic({ funnelData, compact }) {
+function PipelineFunnelGraphic({ funnelData, compact, dense = false, mini = false }) {
   const stages = (funnelData || []).slice(0, 5);
   if (!stages.length) return null;
 
-  const svgW = 280;
-  const segH = compact ? 52 : 58;
-  const segGap = compact ? 8 : 10;
-  const padTop = 8;
-  const svgH = padTop + stages.length * segH + (stages.length - 1) * segGap + 10;
+  const svgW = mini ? 188 : dense ? 240 : 280;
+  const segH = mini ? 22 : dense ? 34 : (compact ? 44 : 58);
+  const segGap = mini ? 2 : dense ? 3 : (compact ? 6 : 10);
+  const padTop = mini ? 1 : dense ? 2 : 8;
+  const svgH = padTop + stages.length * segH + (stages.length - 1) * segGap + (mini ? 2 : dense ? 4 : 10);
   const cx = svgW / 2;
-  const maxHalf = 128;
+  const maxHalf = mini ? 84 : dense ? 108 : 128;
+  const minTopHalf = mini ? 18 : 28;
+  const minBotHalf = mini ? 14 : 22;
 
   const gradStops = [
     ["#be123c", "#9f1239"],
@@ -1882,14 +1941,22 @@ function PipelineFunnelGraphic({ funnelData, compact }) {
   const segments = stages.map((_, idx) => {
     const t0 = idx / stages.length;
     const t1 = (idx + 1) / stages.length;
-    const topHalf = Math.max(28, maxHalf * (1 - t0 * 0.78));
-    const botHalf = Math.max(22, maxHalf * (1 - t1 * 0.78));
+    const topHalf = Math.max(minTopHalf, maxHalf * (1 - t0 * 0.78));
+    const botHalf = Math.max(minBotHalf, maxHalf * (1 - t1 * 0.78));
     const y0 = padTop + idx * (segH + segGap);
     const y1 = y0 + segH;
     const [c0, c1] = gradStops[idx] || gradStops[gradStops.length - 1];
     const narrow = botHalf < 38;
-    const countSize = narrow ? (compact ? 17 : 19) : (compact ? 20 : 24);
-    const labelSize = narrow ? (compact ? 9 : 10) : (compact ? 11 : 12);
+    const countSize = mini
+      ? (narrow ? 11 : 12)
+      : dense
+      ? (narrow ? 13 : 15)
+      : narrow ? (compact ? 17 : 19) : (compact ? 20 : 24);
+    const labelSize = mini
+      ? (narrow ? 6 : 7)
+      : dense
+      ? (narrow ? 7 : 8)
+      : narrow ? (compact ? 9 : 10) : (compact ? 11 : 12);
 
     return {
       points: `${cx - topHalf},${y0} ${cx + topHalf},${y0} ${cx + botHalf},${y1} ${cx - botHalf},${y1}`,
@@ -1971,18 +2038,18 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   const [activeTab, setActiveTab] = useState("All Leads");
   const [search, setSearch] = useState("");
   const [compact, setCompact] = useState(() =>
-    typeof window !== "undefined" && window.innerWidth < 768,
+    typeof window !== "undefined" && window.innerWidth < 1024,
   );
 
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
+    const mq = window.matchMedia("(max-width: 1023px)");
     const sync = () => setCompact(mq.matches);
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  const { leads, stats, activity, funnel, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
+  const { leads, stats, activity, funnel, stageBreakdown, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
 
   // KRA & Remuneration Calculator States
   const [baseSalary, setBaseSalary] = useState(12000);
@@ -2022,7 +2089,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     setCashW(parseFloat(activeEmp.cashWeightage || activeEmp.cash_weightage) || 0);
 
     const achieved = activeEmp.achieved || {};
-    setCallA(achieved.calls ?? stats?.contacted ?? activeEmp.leads ?? 0);
+    setCallA(achieved.calls ?? stats?.contacted ?? 0);
     setLeadA(achieved.qualifiedLeads ?? stats?.qualified ?? 0);
     setMeetA(achieved.meetings ?? stats?.totalMeetings ?? 0);
     setCashA(achieved.cash ?? stats?.revenue ?? 0);
@@ -2096,23 +2163,39 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     return result;
   }, [leads, search]);
 
-  const calls     = stats?.contacted ?? activeEmp.leads ?? 0;
+  const calls     = stats?.contacted ?? 0;
   const meetings  = stats?.totalMeetings ?? 0;
-  const assigned  = stats?.totalLeads ?? activeEmp.leads ?? 0;
+  const assigned  = stats?.totalLeads ?? 0;
   const qualified = stats?.qualified ?? 0;
   const followups = stats?.followUps ?? 0;
-  const converted = stats?.converted ?? activeEmp.conv ?? 0;
-  const revenue   = stats?.revenue ?? activeEmp.revenue ?? 0;
+  const converted = stats?.converted ?? 0;
+  const revenue   = stats?.revenue ?? 0;
 
   const funnelData = funnel?.length
     ? funnel.map((f, idx) => ({
         label: f.name,
         value: `${f.value} ${f.name}`,
-        sub: idx === 0 ? "Top Funnel" : `${Math.round((f.value / (funnel[idx - 1].value || 1)) * 100)}% Conversion`,
+        sub: funnelConversionLabel(funnel, idx),
         width: `${Math.max(40, 100 - idx * 12)}%`,
         opacity: Math.max(0.45, 1 - idx * 0.12),
       }))
     : [];
+
+  const pipelineStages = useMemo(() => {
+    if (stageBreakdown?.length) {
+      return stageBreakdown.map((s, i) => ({
+        label: s.label,
+        count: s.count,
+        pct: s.pct,
+        color: ["#e11d48", "#94a3b8", "#3b82f6", "#7c3aed", "#0ea5e9", "#f59e0b", "#f97316", "#10b981"][i] || "#64748b",
+      }));
+    }
+    return buildPipelineChartFromLeads(leads.map(mapTeamLeadForChart));
+  }, [stageBreakdown, leads]);
+
+  const pipelineTotal = pipelineStages.reduce((sum, s) => sum + (s.count || 0), 0);
+  const convertedCount = pipelineStages.find((s) => s.label === "Converted")?.count || converted;
+  const convRate = pipelineTotal ? `${Math.round((convertedCount / pipelineTotal) * 100)}%` : "0%";
 
   const leadsList = leads.map((l) => ({
     name: l.lead_name || "Unknown",
@@ -2562,98 +2645,114 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       <div style={{
         display: "grid",
         gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))",
-        gap: compact ? 10 : 16,
+        gap: compact ? 8 : 16,
+        alignItems: "start",
       }}>
-        {/* Funnel chart */}
+        {/* Funnel chart — funnel left, stage rows right (always side-by-side) */}
         <div style={{
           background: "#fff",
           border: "1px solid #ffe4e6",
-          borderRadius: compact ? 12 : 16,
-          padding: compact ? "10px 12px" : "14px 18px",
+          borderRadius: compact ? 10 : 16,
+          padding: compact ? "6px 8px" : "14px 18px",
           display: "flex",
           flexDirection: "column",
-          gap: compact ? 6 : 8,
+          gap: compact ? 4 : 8,
           minWidth: 0,
         }}>
           <div>
-            <h3 style={{ fontSize: compact ? 11 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: 0 }}>
+            <h3 style={{ fontSize: compact ? 9 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: 0 }}>
               Sales Pipeline Funnel
             </h3>
-            <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: "2px 0 0", lineHeight: 1.3 }}>
-              Deal conversion progression and conversion efficiency
-            </p>
+            {!compact && (
+              <p style={{ fontSize: 11, color: "#64748b", margin: "2px 0 0", lineHeight: 1.3 }}>
+                Deal conversion progression and conversion efficiency
+              </p>
+            )}
           </div>
 
-          <div style={{
-            display: "flex",
-            flexDirection: compact ? "column" : "row",
-            gap: compact ? 10 : 16,
-            alignItems: "flex-start",
-            minWidth: 0,
-          }}>
-            {/* Left: SVG Sloping Funnel */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: compact ? "minmax(96px, 34%) 1fr" : "200px 1fr",
+              gap: compact ? 6 : 14,
+              alignItems: "center",
+              minWidth: 0,
+            }}
+          >
+            {/* SVG funnel — left */}
             <div style={{
-              width: compact ? "100%" : 220,
-              maxWidth: compact ? 280 : 220,
-              minWidth: compact ? 200 : 200,
-              alignSelf: "flex-start",
+              width: "100%",
+              maxWidth: compact ? 120 : 200,
+              justifySelf: compact ? "center" : "start",
               flexShrink: 0,
-              position: "relative",
             }}>
-              <PipelineFunnelGraphic funnelData={funnelData} compact={compact} />
+              <PipelineFunnelGraphic
+                funnelData={funnelData}
+                compact={compact}
+                dense={compact}
+                mini={compact}
+              />
             </div>
 
-            {/* Right: Detailed Legend */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: compact ? 5 : 8, justifyContent: "flex-start", minWidth: 0 }}>
+            {/* Stage breakdown — right */}
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: compact ? 2 : 6,
+              justifyContent: "space-between",
+              minWidth: 0,
+              minHeight: compact ? 118 : undefined,
+            }}>
               {funnelData.map((item, idx) => {
                 const count = item.value.split(" ")[0];
                 const stageName = item.label;
                 const colors = ["#be123c", "#e11d48", "#dc2626", "#c2185b", "#881337"];
                 const bgs = ["#fff1f2", "#fff5f6", "#fff8f8", "#fffafb", "#ffffff"];
                 const borders = ["#fecdd3", "#ffe4e6", "#ffe4e6", "#ffe4e6", "#fecdd3"];
+                const rowPad = compact ? "2px 6px" : "10px 12px";
+                const convLabel = compact && item.sub !== "Top Funnel"
+                  ? item.sub.replace(" Conversion", "")
+                  : item.sub;
                 
                 return (
                   <div key={idx} style={{
                     display: "flex",
-                    flexDirection: compact ? "column" : "row",
-                    alignItems: compact ? "flex-start" : "center",
-                    justifyContent: compact ? "flex-start" : "space-between",
-                    gap: compact ? 4 : 8,
-                    padding: compact ? "8px 10px" : "12px 14px",
-                    borderRadius: compact ? 10 : 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 4,
+                    padding: rowPad,
+                    borderRadius: compact ? 6 : 10,
                     background: bgs[idx],
                     border: `1px solid ${borders[idx]}`,
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.01)",
                     minWidth: 0,
+                    flex: compact ? 1 : undefined,
                   }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: compact ? undefined : 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: compact ? 4 : 6, minWidth: 0, flex: 1 }}>
                       <div style={{
-                        width: 7,
-                        height: 7,
+                        width: compact ? 5 : 6,
+                        height: compact ? 5 : 6,
                         borderRadius: "50%",
                         background: colors[idx],
                         flexShrink: 0,
                       }} />
-                      <div style={{ minWidth: 0 }}>
-                        <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: "#1e293b" }}>{count}</span>
-                        <span style={{ fontSize: compact ? 10 : 11, color: "#64748b", marginLeft: 5 }}>{stageName}</span>
+                      <div style={{ minWidth: 0, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <span style={{ fontSize: compact ? 9 : 12, fontWeight: 700, color: "#1e293b" }}>{count}</span>
+                        <span style={{ fontSize: compact ? 8 : 11, color: "#64748b", marginLeft: 3 }}>{stageName}</span>
                       </div>
                     </div>
                     <span style={{
-                      fontSize: compact ? 9 : 10,
+                      fontSize: compact ? 7 : 10,
                       fontWeight: 700,
                       color: colors[idx],
                       background: "#ffffff",
-                      padding: compact ? "2px 6px" : "2px 8px",
-                      borderRadius: 10,
-                      border: `1.2px solid ${borders[idx]}`,
+                      padding: compact ? "1px 4px" : "2px 6px",
+                      borderRadius: 8,
+                      border: `1px solid ${borders[idx]}`,
                       flexShrink: 0,
                       whiteSpace: "nowrap",
-                      maxWidth: "100%",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
                     }}>
-                      {item.sub}
+                      {convLabel}
                     </span>
                   </div>
                 );
@@ -2662,12 +2761,49 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           </div>
         </div>
 
+        {/* Stage-wise breakdown — matches employee dashboard */}
+        <div style={{
+          background: "#fff",
+          border: "1px solid #ffe4e6",
+          borderRadius: compact ? 10 : 16,
+          padding: compact ? "8px 10px" : "14px 18px",
+          minWidth: 0,
+        }}>
+          <h3 style={{ fontSize: compact ? 9 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 6px" }}>
+            Stage-wise Breakdown
+          </h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: compact ? 4 : 8, marginBottom: compact ? 6 : 10 }}>
+            {[
+              { label: "In pipeline", val: pipelineTotal },
+              { label: "Converted", val: convertedCount },
+              { label: "Conv. rate", val: convRate },
+            ].map((s) => (
+              <div key={s.label} style={{ textAlign: "center", padding: compact ? "4px 2px" : "8px 4px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                <p style={{ fontSize: compact ? 11 : 14, fontWeight: 900, color: "#0f172a", margin: 0 }}>{s.val}</p>
+                <p style={{ fontSize: compact ? 7 : 9, color: "#64748b", margin: "2px 0 0" }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: compact ? 3 : 5 }}>
+            {pipelineStages.filter((s) => s.count > 0 || !compact).map((s) => (
+              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span style={{ fontSize: compact ? 8 : 10, fontWeight: 600, color: "#64748b", width: compact ? 52 : 72, flexShrink: 0 }}>{s.label}</span>
+                <div style={{ flex: 1, height: compact ? 6 : 8, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ width: `${s.pct || 0}%`, height: "100%", background: s.color, borderRadius: 99, minWidth: s.count > 0 ? 4 : 0 }} />
+                </div>
+                <span style={{ fontSize: compact ? 9 : 11, fontWeight: 800, color: "#1e293b", width: 16, textAlign: "right", flexShrink: 0 }}>{s.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* AI & Activity columns */}
         <div style={{
           display: "grid",
           gridTemplateColumns: compact ? "repeat(2, minmax(0, 1fr))" : "1fr",
-          gap: compact ? 8 : 16,
+          gap: compact ? 6 : 16,
           minWidth: 0,
+          alignItems: "start",
         }}>
           <AiCoachInsightsPanel compact={compact} insights={aiCoachInsights} />
 
@@ -2675,40 +2811,41 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           <div style={{
             background: "#fff",
             border: "1px solid #ffe4e6",
-            borderRadius: compact ? 12 : 16,
-            padding: compact ? "10px 12px" : "20px 24px",
+            borderRadius: compact ? 10 : 16,
+            padding: compact ? "8px 10px" : "20px 24px",
             minWidth: 0,
+            alignSelf: "start",
           }}>
-            <h3 style={{ fontSize: compact ? 10 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 10px" }}>
+            <h3 style={{ fontSize: compact ? 9 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 6px" }}>
               Daily Activity
             </h3>
-            <div style={{ position: "relative", paddingLeft: compact ? 14 : 18 }}>
+            <div style={{ position: "relative", paddingLeft: compact ? 12 : 18 }}>
               <div style={{ position: "absolute", left: 4, top: 4, bottom: 4, width: 1.5, background: "#f1f5f9" }} />
-              {(activity?.length ? activity : []).slice(0, 3).map((act, idx, arr) => (
-                <div key={`${act.lead_name}-${idx}`} style={{ position: "relative", paddingBottom: idx < arr.length - 1 ? (compact ? 10 : 14) : 0 }}>
+              {(activity?.length ? activity : []).slice(0, compact ? 2 : 3).map((act, idx, arr) => (
+                <div key={`${act.lead_name}-${idx}`} style={{ position: "relative", paddingBottom: idx < arr.length - 1 ? (compact ? 6 : 14) : 0 }}>
                   <div style={{
                     position: "absolute",
-                    left: -18,
+                    left: compact ? -14 : -18,
                     top: 2,
-                    width: 10,
-                    height: 10,
+                    width: 8,
+                    height: 8,
                     borderRadius: "50%",
                     background: "#e11d48",
                     border: "2px solid #ffffff",
                   }} />
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <PhoneCall style={{ width: 12, height: 12, color: "#be123c", opacity: 0.8 }} />
-                    <p style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", margin: 0 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <PhoneCall style={{ width: 11, height: 11, color: "#be123c", opacity: 0.8, flexShrink: 0 }} />
+                    <p style={{ fontSize: compact ? 10 : 12, fontWeight: 600, color: "#1e293b", margin: 0, lineHeight: 1.25 }}>
                       {act.lead_name} · {act.status}
                     </p>
                   </div>
-                  <p style={{ fontSize: 10, color: "#64748b", margin: "3px 0 0 20px" }}>
+                  <p style={{ fontSize: compact ? 9 : 10, color: "#64748b", margin: "2px 0 0 16px", lineHeight: 1.25 }}>
                     {act.business || "Lead update"} · {act.time ? fmtDate(act.time) : "Recently"}
                   </p>
                 </div>
               ))}
               {!activity?.length && (
-                <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>No recent lead activity yet.</p>
+                <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: 0 }}>No recent lead activity yet.</p>
               )}
             </div>
           </div>
@@ -3289,7 +3426,9 @@ export default function Team() {
   }, []);
   const { apiLabel, preset, fromDate, toDate } = useDateRange();
   const [q, setQ] = useState("");
-  const [members, setMembers] = useState(performers);
+  const [members, setMembers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(true);
+  const [membersError, setMembersError] = useState(null);
   const [activeEmp, setActiveEmp] = useState(null);
   const [deleteEmp, setDeleteEmp] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -3318,25 +3457,31 @@ export default function Team() {
   }
 }, []);
 
+  const fetchEmployees = useCallback(async () => {
+    setMembersLoading(true);
+    setMembersError(null);
+    try {
+      invalidateCache("/api/team/employees");
+      const data = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+      if (data?.success && Array.isArray(data.employees)) {
+        setMembers(data.employees.map(normalizeEmployee));
+      } else {
+        setMembers([]);
+        setMembersError(data?.message || "Could not load team members");
+      }
+    } catch (error) {
+      console.error("Failed to fetch employees:", error);
+      setMembers([]);
+      setMembersError(error.message || "Failed to load team members");
+    } finally {
+      setMembersLoading(false);
+    }
+  }, []);
+
   // ── fetch employees on mount ────────────────────────────────────────────
   useEffect(() => {
-    const cached = readCachedJson("/api/team/employees");
-    if (cached?.success) {
-      setMembers(cached.employees.map(normalizeEmployee));
-    }
-
-    const fetchEmployees = async () => {
-      try {
-        const data = await apiGet("/api/team/employees");
-        if (data.success) {
-          setMembers(data.employees.map(normalizeEmployee));
-        }
-      } catch (error) {
-        console.error("Failed to fetch employees:", error);
-      }
-    };
     fetchEmployees();
-  }, []);
+  }, [fetchEmployees]);
 
   // ── fetch KPIs when nav date range changes ─────────────────────────────
  useEffect(() => {
@@ -3439,7 +3584,7 @@ export default function Team() {
       work_location: formFields.workLocation || "Office",
       access_level: formFields.accessLevel || "Member",
       notes: formFields.notes || null,
-      joining_date: formFields.joiningDate || null,
+      joining_date: formFields.joiningDate || todayISO(),
       callyser_id: formFields.callyserId || null,
       emp_id: formFields.employeeId || null,
       salary: formFields.salary ? Number(formFields.salary) : null,
@@ -3467,6 +3612,7 @@ export default function Team() {
     const normalized = normalizeEmployee(data.employee);
     setMembers((prev) => [normalized, ...prev]);
     fetchKPIs();
+    fetchEmployees();
 
     if (data.credentials) {
       setNewMemberName(formFields.name);
@@ -3537,7 +3683,6 @@ export default function Team() {
 
   return (
     <div className="page-shell min-w-0" style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-      <Toaster position="top-right" />
 
       {/* ── KPI grid — Dashboard-style cards ── */}
       <div>
@@ -3604,7 +3749,24 @@ export default function Team() {
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: compactMembers ? 4 : 6, padding: compactMembers ? 6 : 8 }}>
-        {filtered.length === 0 && (
+        {membersLoading && (
+          <div style={{ padding: "40px 0", textAlign: "center", fontSize: 13, color: "oklch(0.46 0.02 280)" }}>
+            Loading team members…
+          </div>
+        )}
+        {!membersLoading && membersError && (
+          <div style={{ padding: "40px 16px", textAlign: "center" }}>
+            <p style={{ fontSize: 13, color: "#be123c", marginBottom: 8 }}>{membersError}</p>
+            <button
+              type="button"
+              onClick={fetchEmployees}
+              className="text-xs font-semibold text-rose-700 hover:text-rose-900 underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!membersLoading && !membersError && filtered.length === 0 && (
           <div
             style={{
               padding: "40px 0",
@@ -3613,10 +3775,10 @@ export default function Team() {
               color: "oklch(0.46 0.02 280)",
             }}
           >
-            No team members match your search.
+            {q.trim() ? "No team members match your search." : "No team members yet. Use Add Member to create one."}
           </div>
         )}
-        {filtered.map((p, i) => (
+        {!membersLoading && !membersError && filtered.map((p, i) => (
           <motion.div
             key={p.id}
             initial={{ opacity: 0, y: 6 }}

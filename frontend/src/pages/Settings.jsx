@@ -1,13 +1,35 @@
 import { useState, useMemo, useEffect } from "react";
 import {
   Target, Scale, Percent, FileSliders,
-  Search, AlertTriangle, RefreshCw,
+  AlertTriangle, RefreshCw, Users,
 } from "lucide-react";
 import { Badge } from "../components/Primitives.jsx";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import AdminProfileHeader, { DashboardScrollbarStyles } from "../components/AdminProfileHeader.jsx";
 import { SettingsSidebar, SettingsMobileTabs, SettingsPanel, PanelFooter } from "../components/SettingsLayout.jsx";
+import { CustomSelect, EmployeeListPicker, colorForName } from "../components/CustomSelect.jsx";
+import { initialsFromName } from "../lib/adminProfile.js";
 import { apiGet, apiPut } from "../lib/api.js";
+
+function mapEmployeeToTarget(emp, savedTargets) {
+  const saved = Array.isArray(savedTargets)
+    ? savedTargets.find((row) => Number(row.id) === Number(emp.id))
+    : null;
+  return {
+    id: emp.id,
+    name: emp.name,
+    team: emp.department || emp.role || "General",
+    calls: Number(saved?.calls ?? emp.call_target ?? 0),
+    leads: Number(saved?.leads ?? emp.qualified_lead_target ?? 0),
+    meetings: Number(saved?.meetings ?? emp.meeting_target ?? 0),
+    revenue: Number(saved?.revenue ?? emp.cash_target ?? 0),
+  };
+}
+
+function mergeEmployeeTargets(employees, savedTargets) {
+  if (!Array.isArray(employees) || !employees.length) return [];
+  return employees.map((emp) => mapEmployeeToTarget(emp, savedTargets));
+}
 
 // ─── TABS DEFINITION ──────────────────────────────────────────────────────────
 const tabs = [
@@ -23,17 +45,11 @@ export default function Settings() {
   const [currentVersion, setCurrentVersion] = useState("v2.3");
 
   // ─── 1. Target Management State ───
-  const [employeeTargets, setEmployeeTargets] = useState([
-    { id: 1, name: "Sarah Chen", team: "Sales & Growth", calls: 450, leads: 45, meetings: 35, revenue: 145000 },
-    { id: 2, name: "James Wilson", team: "Enterprise Sales", calls: 390, leads: 39, meetings: 30, revenue: 118000 },
-    { id: 3, name: "Emily Davis", team: "Sales & Growth", calls: 540, leads: 54, meetings: 40, revenue: 240000 },
-    { id: 4, name: "Lisa Park", team: "Inbound Growth", calls: 312, leads: 31, meetings: 25, revenue: 72000 },
-    { id: 5, name: "Marcus Brody", team: "Enterprise Sales", calls: 490, leads: 49, meetings: 38, revenue: 195000 },
-    { id: 6, name: "Siddharth Mehta", team: "Sales & Growth", calls: 416, leads: 41, meetings: 30, revenue: 132000 },
-  ]);
+  const [employeeTargets, setEmployeeTargets] = useState([]);
+  const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetSearch, setTargetSearch] = useState("");
-  const [selectedTargetEmp, setSelectedTargetEmp] = useState(1);
-  const [bulkTeam, setBulkTeam] = useState("Sales & Growth");
+  const [selectedTargetEmp, setSelectedTargetEmp] = useState(null);
+  const [bulkTeam, setBulkTeam] = useState("");
   const [bulkValue, setBulkValue] = useState("");
   const [bulkField, setBulkField] = useState("calls");
 
@@ -71,18 +87,32 @@ export default function Settings() {
 
   useEffect(() => {
     (async () => {
+      setTargetsLoading(true);
       try {
-        const data = await apiGet("/api/settings", { skipCache: true, cacheTtl: 0 });
-        if (data.employeeTargets?.length) setEmployeeTargets(data.employeeTargets);
-        if (data.kpiWeights?.length) setKpiWeights(data.kpiWeights);
-        if (data.incentiveSlabs?.length) setIncentiveSlabs(data.incentiveSlabs);
-        if (data.baseIncentiveRate != null) setBaseIncentiveRate(data.baseIncentiveRate);
-        if (data.targetBonusAmount != null) setTargetBonusAmount(data.targetBonusAmount);
-        if (data.formulaType) setFormulaType(data.formulaType);
-        if (data.ratingThresholds) setRatingThresholds(data.ratingThresholds);
-        if (data.currentVersion) setCurrentVersion(data.currentVersion);
+        const [teamRes, settingsRes] = await Promise.all([
+          apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/settings", { skipCache: true, cacheTtl: 0 }).catch(() => ({})),
+        ]);
+
+        const employees = teamRes?.success && Array.isArray(teamRes.employees) ? teamRes.employees : [];
+        const mergedTargets = mergeEmployeeTargets(employees, settingsRes?.employeeTargets);
+        setEmployeeTargets(mergedTargets);
+        if (mergedTargets.length) {
+          setSelectedTargetEmp(mergedTargets[0].id);
+          setBulkTeam(mergedTargets[0].team);
+        }
+
+        if (settingsRes?.kpiWeights?.length) setKpiWeights(settingsRes.kpiWeights);
+        if (settingsRes?.incentiveSlabs?.length) setIncentiveSlabs(settingsRes.incentiveSlabs);
+        if (settingsRes?.baseIncentiveRate != null) setBaseIncentiveRate(settingsRes.baseIncentiveRate);
+        if (settingsRes?.targetBonusAmount != null) setTargetBonusAmount(settingsRes.targetBonusAmount);
+        if (settingsRes?.formulaType) setFormulaType(settingsRes.formulaType);
+        if (settingsRes?.ratingThresholds) setRatingThresholds(settingsRes.ratingThresholds);
+        if (settingsRes?.currentVersion) setCurrentVersion(settingsRes.currentVersion);
       } catch {
-        // keep local defaults (mock fallback)
+        setEmployeeTargets([]);
+      } finally {
+        setTargetsLoading(false);
       }
     })();
   }, []);
@@ -96,8 +126,14 @@ export default function Settings() {
 
   // ─── Selected Target Employee computed details ───
   const activeTargetEmp = useMemo(() => {
-    return employeeTargets.find(e => e.id === Number(selectedTargetEmp)) || employeeTargets[0];
+    if (!employeeTargets.length) return null;
+    return employeeTargets.find((e) => e.id === Number(selectedTargetEmp)) || employeeTargets[0];
   }, [employeeTargets, selectedTargetEmp]);
+
+  const bulkTeams = useMemo(() => {
+    const teams = [...new Set(employeeTargets.map((e) => e.team).filter(Boolean))];
+    return teams.length ? teams : ["General"];
+  }, [employeeTargets]);
 
   // ─── Handlers ───
   const handleSaveDraft = () => {
@@ -156,7 +192,7 @@ export default function Settings() {
 
   // Add target handler
   const handleTargetChange = (field, value) => {
-    if (value === "" || isNaN(Number(value))) return;
+    if (!activeTargetEmp || value === "" || isNaN(Number(value))) return;
     setEmployeeTargets(prev =>
       prev.map(e => (e.id === activeTargetEmp.id ? { ...e, [field]: Number(value) } : e))
     );
@@ -186,16 +222,8 @@ export default function Settings() {
     );
   };
 
-  // ─── Filter targets list ───
-  const filteredTargets = useMemo(() => {
-    return employeeTargets.filter(e =>
-      e.name.toLowerCase().includes(targetSearch.toLowerCase())
-    );
-  }, [employeeTargets, targetSearch]);
-
   return (
     <div className="space-y-4 sm:space-y-6 page-shell min-w-0">
-      <Toaster position="top-right" />
       <DashboardScrollbarStyles />
       <AdminProfileHeader />
 
@@ -265,40 +293,35 @@ export default function Settings() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
                     {/* Select Employee Card */}
-                    <div className="p-4 border border-rose-100/50 rounded-2xl bg-slate-50/50 flex flex-col gap-3">
-                      <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search employee..."
-                          value={targetSearch}
-                          onChange={(e) => setTargetSearch(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 border border-rose-200 rounded-xl bg-white text-slate-800 placeholder:text-slate-400 text-xs outline-none focus:border-rose-400"
-                        />
-                      </div>
-
-                      <div className="space-y-1 overflow-y-auto max-h-48 pr-1 no-sb">
-                        {filteredTargets.map(e => (
-                          <div
-                            key={e.id}
-                            onClick={() => setSelectedTargetEmp(e.id)}
-                            className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition flex justify-between items-center ${
-                              activeTargetEmp.id === e.id
-                                ? "bg-rose-50 border border-rose-200 text-rose-700"
-                                : "hover:bg-slate-100 text-slate-600 border border-transparent"
-                            }`}
-                          >
-                            <span>{e.name}</span>
-                            <span className="text-[9px] text-slate-400 font-medium truncate">{e.team}</span>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="p-4 border border-rose-100/60 rounded-2xl bg-gradient-to-b from-white to-rose-50/30 shadow-[0_2px_12px_rgba(244,63,94,0.04)] flex flex-col min-h-[280px]">
+                      <EmployeeListPicker
+                        employees={employeeTargets}
+                        selectedId={selectedTargetEmp}
+                        onSelect={setSelectedTargetEmp}
+                        search={targetSearch}
+                        onSearchChange={setTargetSearch}
+                        loading={targetsLoading}
+                        emptyMessage="No employees found. Add team members on the Team page."
+                      />
                     </div>
 
                     {/* Employee Target Form */}
                     <div className="md:col-span-2 p-4 border border-rose-100/50 rounded-2xl bg-white space-y-4">
-                      <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                        <span className="text-xs font-black text-[#be123c] uppercase">{activeTargetEmp.name}'s Target slate</span>
+                      {!activeTargetEmp ? (
+                        <p className="text-xs text-slate-400 py-8 text-center">Select an employee to edit targets.</p>
+                      ) : (
+                      <>
+                      <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                        <span
+                          className="w-10 h-10 rounded-xl grid place-items-center text-xs font-bold text-white shrink-0 shadow-sm"
+                          style={{ background: colorForName(activeTargetEmp.name) }}
+                        >
+                          {initialsFromName(activeTargetEmp.name)}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-black text-slate-900 truncate">{activeTargetEmp.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium mt-0.5">Monthly target slate</p>
+                        </div>
                         <Badge tone="primary">{activeTargetEmp.team}</Badge>
                       </div>
 
@@ -340,6 +363,8 @@ export default function Settings() {
                           />
                         </div>
                       </div>
+                      </>
+                      )}
                     </div>
 
                   </div>
@@ -352,31 +377,26 @@ export default function Settings() {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-                      <div>
-                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Target Team</label>
-                        <select
-                          value={bulkTeam}
-                          onChange={(e) => setBulkTeam(e.target.value)}
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-700 text-xs outline-none"
-                        >
-                          <option>Sales & Growth</option>
-                          <option>Enterprise Sales</option>
-                          <option>Inbound Growth</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Metric Target Field</label>
-                        <select
-                          value={bulkField}
-                          onChange={(e) => setBulkField(e.target.value)}
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-700 text-xs outline-none"
-                        >
-                          <option value="calls">Call Volume</option>
-                          <option value="leads">Converted Leads</option>
-                          <option value="meetings">Scheduled Meetings</option>
-                          <option value="revenue">Revenue Quota</option>
-                        </select>
-                      </div>
+                      <CustomSelect
+                        label="Target Team"
+                        value={bulkTeam}
+                        onChange={setBulkTeam}
+                        options={bulkTeams.map((team) => ({ value: team, label: team }))}
+                        icon={Users}
+                        compact
+                      />
+                      <CustomSelect
+                        label="Metric Target Field"
+                        value={bulkField}
+                        onChange={setBulkField}
+                        options={[
+                          { value: "calls", label: "Call Volume" },
+                          { value: "leads", label: "Converted Leads" },
+                          { value: "meetings", label: "Scheduled Meetings" },
+                          { value: "revenue", label: "Revenue Quota" },
+                        ]}
+                        compact
+                      />
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">New Target Value</label>
                         <input

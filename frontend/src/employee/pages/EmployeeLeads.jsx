@@ -137,6 +137,7 @@ export default function EmployeeLeads() {
       currentStageId === "new_lead"
         ? `Accepted · moved to ${target.label}`
         : `Moved to ${target.label}`,
+      { id: `lead-move-${lead.id}-${stageId}` },
     );
   };
 

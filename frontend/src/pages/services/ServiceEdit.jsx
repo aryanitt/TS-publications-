@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Bot, Database, Target, Briefcase, Code, Plus, Trash2,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import {
   getServiceById, updateService, SERVICE_CATEGORIES, formatServicePriceLabel,
@@ -187,7 +187,6 @@ export default function ServiceEdit() {
 
   return (
     <div className="space-y-4 page-shell min-w-0 max-w-5xl">
-      <Toaster position="top-right" />
 
       <GlassCard className="p-3.5 sm:p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">

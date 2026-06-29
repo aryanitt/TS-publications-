@@ -112,7 +112,6 @@ export function getAuthenticatedEmployeeId() {
   }
   return null;
 }
-
 export function getCrmHeaders(role = "employee", employeeOverride = null) {
   const authUser = getStoredAuthUser();
   const emp = employeeOverride || getStoredEmployee();

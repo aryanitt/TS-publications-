@@ -11,7 +11,7 @@ import {
   Lock,
   LogOut,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { Badge } from "../components/Primitives.jsx";
 import AdminProfileHeader, { DashboardScrollbarStyles } from "../components/AdminProfileHeader.jsx";
 import {
@@ -194,7 +194,6 @@ export default function Admin() {
 
   return (
     <div className="space-y-4 sm:space-y-6 page-shell min-w-0">
-      <Toaster position="top-right" />
       <DashboardScrollbarStyles />
       <AdminProfileHeader />
 

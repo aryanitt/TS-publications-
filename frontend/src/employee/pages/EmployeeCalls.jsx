@@ -9,6 +9,7 @@ import {
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import {
   computeCallStatsFromCalls,
+  filterCallsForPeriod,
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
@@ -218,11 +219,7 @@ export default function EmployeeCalls() {
   );
 
   const calls = useMemo(() => {
-    let list = period === "today"
-      ? contextCalls.filter((c) => c.period === "today")
-      : period === "week"
-      ? contextCalls.filter((c) => c.period === "today" || c.period === "week")
-      : contextCalls;
+    let list = filterCallsForPeriod(contextCalls, period);
 
     if (typeFilter !== "all") list = list.filter((c) => c.type === typeFilter);
     if (search.trim()) {

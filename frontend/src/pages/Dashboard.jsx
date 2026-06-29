@@ -799,8 +799,7 @@ function LeaderBoardTooltip({ emp, anchorRef, visible }) {
 
   const rows = [
     { key: "leads", label: "Leads" },
-    { key: "resp", label: "Avg Response" },
-    { key: "qualR", label: "Qual. Ratio" },
+    { key: "qualR", label: "Contact Rate" },
     { key: "convR", label: "Conv. Rate" },
     { key: "conv", label: "Conversions" },
     { key: "rev", label: "Revenue" },
@@ -850,21 +849,30 @@ function LeaderBoardTooltip({ emp, anchorRef, visible }) {
 }
 
 // ─── Leader Board ─────────────────────────────────────────────────────────────
+function fmtLeaderRevenue(n) {
+  const v = Number(n) || 0;
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)}Cr`;
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
+  if (v >= 1000) return `₹${(v / 1000).toFixed(0)}K`;
+  return v > 0 ? `₹${Math.round(v)}` : "₹0";
+}
+
 function buildLeaderboardFromEmployees(employees) {
   if (!Array.isArray(employees) || !employees.length) return [];
   return employees
     .map((emp) => {
-      const leads = Number(emp.leads ?? emp.lead_count ?? emp.call_target ?? 0);
+      const leads = Number(emp.leads ?? 0);
       const conv = Number(emp.conv ?? emp.deals ?? 0);
+      const contacted = Number(emp.contacted ?? 0);
       const convPct = leads ? Math.round((conv / leads) * 100) : 0;
+      const contactPct = leads ? Math.round((contacted / leads) * 100) : 0;
       return {
         name: emp.name,
         leads,
         conv,
         convR: `${convPct}%`,
-        qualR: leads ? `${Math.min(99, 100 - convPct)}%` : "0%",
-        resp: "2h",
-        rev: emp.revenue ? `₹${emp.revenue}` : "₹0",
+        qualR: `${contactPct}%`,
+        rev: fmtLeaderRevenue(emp.revenue),
       };
     })
     .sort((a, b) => b.conv - a.conv || b.leads - a.leads || a.name.localeCompare(b.name))

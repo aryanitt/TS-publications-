@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Search, Plus, Kanban, Flame, Target, TrendingUp } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { GlassCard, Badge } from "../components/Primitives.jsx";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import PipelineLeadDrawer from "../components/pipeline/PipelineLeadDrawer.jsx";
@@ -234,7 +234,6 @@ export default function Pipeline() {
 
   return (
     <div className="space-y-4 page-shell min-w-0">
-      <Toaster position="top-right" />
 
       <GlassCard className="p-4 space-y-4">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
