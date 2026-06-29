@@ -4,9 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Bell, History, Plus, ChevronDown,
   FileText, Users, Calculator,
-  User, Briefcase, X, CheckCheck, Menu, Settings,
+  User, Briefcase, X, CheckCheck, Menu, Settings, LogOut,
 } from "lucide-react";
 import { useAdmin } from "../context/AdminContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import { apiGet, apiPost } from "../lib/api.js";
 import { queryKeys } from "../lib/queryKeys.js";
 import DateRangeFilter from "./DateRangeFilter.jsx";
@@ -92,6 +93,7 @@ export default function Topbar({ onMenu }) {
   const showDateRange = !hideDateRange(pathname);
   const navigate     = useNavigate();
   const { admin }    = useAdmin();
+  const { logout }   = useAuth();
   const meta         = resolvePageMeta(pathname);
 
   const [openMenu,       setOpenMenu]       = useState(null);
@@ -165,9 +167,13 @@ export default function Topbar({ onMenu }) {
     setOpenMenu(null);
     if (item === "Admin Profile") navigate("/admin");
     else if (item === "Workspace Settings") navigate("/settings");
+    else if (item === "Sign out") {
+      logout();
+      navigate("/login", { replace: true });
+    }
   };
 
-  const userMenuItems = ["Admin Profile", "Workspace Settings"];
+  const userMenuItems = ["Admin Profile", "Workspace Settings", "Sign out"];
 
   // close search on outside click
   useEffect(() => {
@@ -422,6 +428,7 @@ export default function Topbar({ onMenu }) {
                   >
                     {i === "Admin Profile" && <User className="w-4 h-4 shrink-0" />}
                     {i === "Workspace Settings" && <Settings className="w-4 h-4 shrink-0" />}
+                    {i === "Sign out" && <LogOut className="w-4 h-4 shrink-0" />}
                     {i}
                   </button>
                 ))}

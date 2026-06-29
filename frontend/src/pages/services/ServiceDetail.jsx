@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
-import { getServiceById, formatServiceMoney, serviceBadgeTone } from "../../data/servicesMock.js";
+import { getServiceById, formatServiceMoney, formatServicePriceLabel, serviceBadgeTone } from "../../data/servicesMock.js";
 
 const ICON_MAP = {
   bot: Bot,
@@ -55,7 +55,7 @@ export default function ServiceDetail() {
                 <Badge tone={service.status === "ACTIVE" ? "success" : "muted"}>{service.status}</Badge>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                {service.categoryLabel} · {service.price}
+                {service.categoryLabel} · {formatServicePriceLabel(service.price, service.priceNum)}
               </p>
             </div>
           </div>
@@ -127,7 +127,7 @@ export default function ServiceDetail() {
                 </span>
               )}
               <p className="text-sm font-black text-slate-900">{tier.name}</p>
-              <p className="text-base font-black text-rose-700 mt-0.5">{tier.price}</p>
+              <p className="text-base font-black text-rose-700 mt-0.5">{formatServicePriceLabel(tier.price)}</p>
               <ul className="mt-2.5 space-y-1.5 flex-1">
                 {tier.features.map((feat) => (
                   <li key={feat} className="flex items-start gap-2 text-[11px] text-slate-600">

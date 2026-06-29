@@ -1,22 +1,23 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useAuth } from "./AuthContext.jsx";
+import { getStoredAuthUser } from "../lib/crmContext.js";
+import { adminProfileFromAuth } from "../lib/adminProfile.js";
 
 const STORAGE_KEY = "ts_admin_profile";
 
 export const DEFAULT_ADMIN = {
   id: "admin-1",
-  initials: "AC",
-  fullName: "Alex Chen",
+  initials: "AD",
+  fullName: "Admin",
   role: "Super Admin",
   department: "Operations",
-  email: "alex.chen@tspublication.in",
-  phone: "+91 98765 43210",
-  city: "Mumbai",
+  email: "",
+  phone: "",
+  city: "",
   timezone: "Asia/Kolkata (IST)",
-  joinedAt: "2024-03-12",
-  lastLogin: "2026-06-19T09:42:00",
-  authProvider: "google",
-  googleConnected: false,
-  googleEmail: "",
+  loginId: "",
+  joinedAt: null,
+  lastLogin: null,
   permissions: [
     "Full dashboard access",
     "Team & employee management",
@@ -32,31 +33,37 @@ export const DEFAULT_ADMIN = {
     targetAchieved: false,
     weeklyDigest: true,
   },
-  sessions: [
-    { id: 1, device: "Windows · Chrome", location: "Mumbai, IN", current: true, lastActive: "Active now" },
-    { id: 2, device: "iPhone · Safari", location: "Mumbai, IN", current: false, lastActive: "2 days ago" },
-  ],
   stats: {
-    teamMembers: 24,
-    rulesPublished: 12,
-    actionsThisWeek: 47,
+    teamMembers: 0,
+    rulesPublished: 0,
+    actionsThisWeek: 0,
   },
 };
 
 function loadProfile() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_ADMIN;
-    return { ...DEFAULT_ADMIN, ...JSON.parse(raw) };
+    const stored = raw ? { ...DEFAULT_ADMIN, ...JSON.parse(raw) } : { ...DEFAULT_ADMIN };
+    const authUser = getStoredAuthUser();
+    return authUser?.role === "admin" ? adminProfileFromAuth(authUser, stored) : stored;
   } catch {
-    return DEFAULT_ADMIN;
+    const authUser = getStoredAuthUser();
+    const base = { ...DEFAULT_ADMIN };
+    return authUser?.role === "admin" ? adminProfileFromAuth(authUser, base) : base;
   }
 }
 
 const AdminContext = createContext(null);
 
 export function AdminProvider({ children }) {
+  const { user } = useAuth();
   const [admin, setAdmin] = useState(loadProfile);
+
+  useEffect(() => {
+    if (user?.role === "admin") {
+      setAdmin((prev) => adminProfileFromAuth(user, prev));
+    }
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(admin));
@@ -70,29 +77,11 @@ export function AdminProvider({ children }) {
       notifications: { ...prev.notifications, ...patch },
     }));
 
-  const connectGoogle = (email = "alex.chen@gmail.com") =>
-    setAdmin((prev) => ({
-      ...prev,
-      googleConnected: true,
-      googleEmail: email,
-      authProvider: "google",
-      lastLogin: new Date().toISOString(),
-    }));
-
-  const disconnectGoogle = () =>
-    setAdmin((prev) => ({
-      ...prev,
-      googleConnected: false,
-      googleEmail: "",
-    }));
-
   const value = useMemo(
     () => ({
       admin,
       updateAdmin,
       updateNotifications,
-      connectGoogle,
-      disconnectGoogle,
     }),
     [admin],
   );

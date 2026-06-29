@@ -1,19 +1,15 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Shield,
-  Mail,
-  Phone,
-  MapPin,
-  Clock,
-  Building2,
   BadgeCheck,
   Users,
   Activity,
   Globe,
   Laptop,
-  Smartphone,
   ExternalLink,
+  Lock,
+  LogOut,
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { Badge } from "../components/Primitives.jsx";
@@ -28,6 +24,14 @@ import {
   labelClass,
 } from "../components/SettingsLayout.jsx";
 import { useAdmin } from "../context/AdminContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
+import { apiGet } from "../lib/api.js";
+import {
+  currentBrowserSession,
+  formatDateTime,
+  mapActivityLogRow,
+  mapAuditLogRow,
+} from "../lib/adminProfile.js";
 
 const tabs = [
   { id: "profile", label: "Profile", icon: BadgeCheck },
@@ -36,21 +40,19 @@ const tabs = [
   { id: "activity", label: "Recent Activity", icon: Activity },
 ];
 
-function GoogleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-    </svg>
-  );
-}
-
 export default function Admin() {
-  const { admin, updateAdmin, connectGoogle, disconnectGoogle } = useAdmin();
+  const { admin, updateAdmin } = useAdmin();
+  const { user, changePassword, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("profile");
   const [profileDirty, setProfileDirty] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [activityRows, setActivityRows] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [teamCount, setTeamCount] = useState(0);
   const [draft, setDraft] = useState({
     fullName: admin.fullName,
     email: admin.email,
@@ -59,6 +61,55 @@ export default function Admin() {
     department: admin.department,
     timezone: admin.timezone,
   });
+
+  useEffect(() => {
+    setDraft({
+      fullName: admin.fullName,
+      email: admin.email || user?.email || "",
+      phone: admin.phone,
+      city: admin.city,
+      department: admin.department,
+      timezone: admin.timezone,
+    });
+  }, [admin.fullName, admin.email, admin.phone, admin.city, admin.department, admin.timezone, user?.email]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLiveData() {
+      setActivityLoading(true);
+      try {
+        const [activityRes, auditRes, teamRes] = await Promise.all([
+          apiGet("/api/activity", { skipCache: true, cacheTtl: 0 }).catch(() => null),
+          apiGet("/api/v1/audit?limit=20", { skipCache: true, cacheTtl: 0 }).catch(() => null),
+          apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 }).catch(() => null),
+        ]);
+
+        if (cancelled) return;
+
+        const activityList = activityRes?.success && Array.isArray(activityRes.activities)
+          ? activityRes.activities.map(mapActivityLogRow)
+          : [];
+        const auditList = auditRes?.success && Array.isArray(auditRes.data)
+          ? auditRes.data.map(mapAuditLogRow)
+          : [];
+
+        const merged = [...activityList, ...auditList]
+          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+          .slice(0, 20);
+        setActivityRows(merged);
+
+        if (teamRes?.success && Array.isArray(teamRes.employees)) {
+          setTeamCount(teamRes.employees.length);
+        }
+      } finally {
+        if (!cancelled) setActivityLoading(false);
+      }
+    }
+
+    loadLiveData();
+    return () => { cancelled = true; };
+  }, []);
 
   const updateDraft = (key, value) => {
     setDraft((p) => ({ ...p, [key]: value }));
@@ -91,26 +142,50 @@ export default function Admin() {
     toast.success("Admin profile updated");
   };
 
-  const handleGoogleConnect = () => {
-    connectGoogle();
-    toast.success("Google account connected (demo — wire OAuth next)");
+  const handleChangePassword = async (event) => {
+    event.preventDefault();
+
+    if (!currentPassword) {
+      toast.error("Enter your current password");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      toast.error("New password must be different from your current password");
+      return;
+    }
+
+    setPasswordBusy(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("Password updated successfully");
+    } catch (err) {
+      toast.error(err?.message || "Could not update password");
+    } finally {
+      setPasswordBusy(false);
+    }
   };
 
-  const handleGoogleDisconnect = () => {
-    disconnectGoogle();
-    toast("Google account disconnected", { icon: "ℹ️" });
+  const handleSignOut = () => {
+    logout();
+    navigate("/login", { replace: true });
   };
 
-  const auditEntries = [
-    { id: 1, action: "Published incentive rule config v2.3", time: "Today, 10:14 AM" },
-    { id: 2, action: "Added team member — Siddharth Mehta", time: "Yesterday, 4:32 PM" },
-    { id: 3, action: "Updated KPI weightages for Sales team", time: "Jun 17, 2026" },
-    { id: 4, action: "Exported monthly performance report", time: "Jun 15, 2026" },
-  ];
+  const sessions = [currentBrowserSession(user?.lastLoginAt || admin.lastLogin)];
 
   const profileFields = [
     { key: "fullName", label: "Full Name" },
-    { key: "email", label: "Work Email" },
+    { key: "email", label: "Work Email", readOnly: true },
     { key: "phone", label: "Phone Number" },
     { key: "city", label: "City" },
     { key: "department", label: "Department" },
@@ -180,16 +255,45 @@ export default function Admin() {
                   <Badge tone="primary">{admin.role}</Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {profileFields.map(({ key, label }) => (
+                  <div>
+                    <label className={labelClass}>Login ID</label>
+                    <input
+                      value={user?.loginId || admin.loginId || "—"}
+                      readOnly
+                      className={`${inputClass} bg-slate-50 text-slate-600 cursor-not-allowed`}
+                    />
+                  </div>
+                  {profileFields.map(({ key, label, readOnly }) => (
                     <div key={key}>
                       <label className={labelClass}>{label}</label>
                       <input
                         value={draft[key]}
-                        onChange={(e) => updateDraft(key, e.target.value)}
-                        className={inputClass}
+                        onChange={(e) => !readOnly && updateDraft(key, e.target.value)}
+                        readOnly={readOnly}
+                        className={readOnly ? `${inputClass} bg-slate-50 text-slate-600 cursor-not-allowed` : inputClass}
                       />
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div className="p-4 border border-slate-200 rounded-2xl bg-slate-50/50">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black text-slate-800 uppercase">Account session</p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Signed in as {user?.loginId || user?.email || admin.email}
+                      {user?.lastLoginAt ? ` · Last login ${formatDateTime(user.lastLoginAt)}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-rose-200 text-[#be123c] rounded-xl text-xs font-bold bg-white hover:bg-rose-50 shrink-0"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign out
+                  </button>
                 </div>
               </div>
             </PanelSection>
@@ -198,63 +302,69 @@ export default function Admin() {
           {activeTab === "security" && (
             <PanelSection
               title="Sign-in & Security"
-              subtitle="Authentication is handled via Google OAuth — no passwords stored in this app"
+              subtitle="Update your admin password and manage sign-in"
             >
-              <div className="p-4 border border-rose-100/50 rounded-2xl bg-slate-50/50">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 grid place-items-center shrink-0 shadow-sm">
-                    <GoogleIcon />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-slate-800 uppercase">Google Account</p>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      {admin.googleConnected
-                        ? `Signed in as ${admin.googleEmail}`
-                        : "Connect your Google account to sign in securely"}
-                    </p>
-                  </div>
-                  {admin.googleConnected ? (
-                    <button
-                      type="button"
-                      onClick={handleGoogleDisconnect}
-                      className="px-4 py-2 border border-rose-200 text-[#be123c] rounded-xl text-xs font-bold bg-white hover:bg-rose-50 shrink-0"
-                    >
-                      Disconnect
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleGoogleConnect}
-                      className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 shrink-0"
-                    >
-                      <GoogleIcon />
-                      Connect with Google
-                    </button>
-                  )}
+              <form onSubmit={handleChangePassword} className="p-4 border border-rose-100/50 rounded-2xl bg-white space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <span className="text-xs font-black text-[#be123c] uppercase">Change password</span>
+                  <Badge tone="muted">{user?.loginId || "Admin"}</Badge>
                 </div>
-              </div>
-
-              <div className="p-4 border border-amber-100 rounded-2xl bg-amber-50/60">
-                <p className="text-xs font-black text-amber-800 uppercase">Password login removed</p>
-                <p className="text-[11px] text-amber-700/90 mt-1 leading-relaxed">
-                  This workspace no longer uses email/password credentials. All admin access will flow through Google OAuth once you wire the backend callback.
+                <p className="text-[11px] text-slate-500">
+                  Use your current password, then choose a new one with at least 6 characters.
                 </p>
-              </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <PasswordField
+                    label="Current password"
+                    value={currentPassword}
+                    onChange={setCurrentPassword}
+                    autoComplete="current-password"
+                  />
+                  <div className="hidden md:block" />
+                  <PasswordField
+                    label="New password"
+                    value={newPassword}
+                    onChange={setNewPassword}
+                    autoComplete="new-password"
+                  />
+                  <PasswordField
+                    label="Confirm new password"
+                    value={confirmPassword}
+                    onChange={setConfirmPassword}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={passwordBusy}
+                    className="px-4 py-2 bg-[#be123c] hover:bg-[#a20f32] disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+                  >
+                    {passwordBusy ? "Updating…" : "Update password"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentPassword("");
+                      setNewPassword("");
+                      setConfirmPassword("");
+                    }}
+                    className="px-4 py-2 border border-rose-200 text-[#be123c] rounded-xl text-xs font-bold bg-white hover:bg-rose-50"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </form>
 
               <div className="space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Active sessions</p>
-                {admin.sessions.map((session) => (
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Current session</p>
+                {sessions.map((session) => (
                   <div
                     key={session.id}
                     className="flex items-center justify-between gap-3 p-3 rounded-xl border border-rose-100/50 bg-white"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 grid place-items-center shrink-0">
-                        {session.device.includes("iPhone") ? (
-                          <Smartphone className="w-4 h-4" />
-                        ) : (
-                          <Laptop className="w-4 h-4" />
-                        )}
+                        <Laptop className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-slate-800 truncate">{session.device}</p>
@@ -283,9 +393,9 @@ export default function Admin() {
                   <p className="text-[11px] text-slate-500 mt-1">Highest workspace privilege tier</p>
                 </div>
                 <div className="p-4 border border-rose-100/50 rounded-2xl bg-white">
-                  <p className={labelClass}>Workspace</p>
-                  <p className="text-lg font-black text-slate-900">TS Publication</p>
-                  <p className="text-[11px] text-slate-500 mt-1">Enterprise CRM dashboard</p>
+                  <p className={labelClass}>Team members</p>
+                  <p className="text-lg font-black text-slate-900">{teamCount}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Active employees in database</p>
                 </div>
               </div>
               <div>
@@ -312,20 +422,26 @@ export default function Admin() {
               subtitle="Latest changes made under this account"
             >
               <div className="space-y-2">
-                {auditEntries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-start justify-between gap-4 p-3 rounded-xl border border-rose-100/50 bg-white hover:bg-rose-50/30 transition"
-                  >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 grid place-items-center shrink-0">
-                        <Activity className="w-4 h-4" />
+                {activityLoading ? (
+                  <p className="text-xs text-slate-400 py-6 text-center">Loading activity…</p>
+                ) : activityRows.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-6 text-center">No activity logged yet</p>
+                ) : (
+                  activityRows.map((entry) => (
+                    <div
+                      key={entry.id ?? entry.action}
+                      className="flex items-start justify-between gap-4 p-3 rounded-xl border border-rose-100/50 bg-white hover:bg-rose-50/30 transition"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 grid place-items-center shrink-0">
+                          <Activity className="w-4 h-4" />
+                        </div>
+                        <p className="text-xs font-bold text-slate-800">{entry.action}</p>
                       </div>
-                      <p className="text-xs font-bold text-slate-800">{entry.action}</p>
+                      <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">{entry.time}</span>
                     </div>
-                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">{entry.time}</span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
               <Link
                 to="/settings"
@@ -337,6 +453,24 @@ export default function Admin() {
             </PanelSection>
           )}
         </SettingsPanel>
+      </div>
+    </div>
+  );
+}
+
+function PasswordField({ label, value, onChange, autoComplete }) {
+  return (
+    <div>
+      <label className={labelClass}>{label}</label>
+      <div className="relative">
+        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          className={`${inputClass} pl-10`}
+        />
       </div>
     </div>
   );

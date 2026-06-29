@@ -1,7 +1,9 @@
 import { Link, useLocation } from "react-router-dom";
 import { Settings } from "lucide-react";
 import { useAdmin } from "../context/AdminContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import AdminDoodleAvatar from "./AdminDoodleAvatar.jsx";
+import { formatDateTime as formatProfileDateTime } from "../lib/adminProfile.js";
 
 function formatDate(iso) {
   if (!iso) return "—";
@@ -9,17 +11,6 @@ function formatDate(iso) {
     day: "numeric",
     month: "short",
     year: "numeric",
-  });
-}
-
-function formatDateTime(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
@@ -37,8 +28,14 @@ export function DashboardScrollbarStyles() {
 
 export default function AdminProfileHeader() {
   const { admin } = useAdmin();
+  const { user } = useAuth();
   const { pathname } = useLocation();
   const onSettingsPage = pathname === "/settings";
+
+  const displayName = admin.fullName || user?.name || "Admin";
+  const displayEmail = user?.email || admin.email;
+  const lastLogin = user?.lastLoginAt || admin.lastLogin;
+  const joinedAt = user?.createdAt || admin.joinedAt;
 
   const actionLink = !onSettingsPage ? (
     <Link
@@ -90,28 +87,30 @@ export default function AdminProfileHeader() {
           <div className="min-w-0 flex-1">
             <div className="flex items-start gap-2 flex-wrap">
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
-                {admin.fullName}
+                {displayName}
               </h2>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold bg-[#be123c] text-white uppercase tracking-wider shadow-sm shrink-0">
                 {admin.role}
               </span>
-              {admin.googleConnected && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-600 text-white uppercase tracking-wider shadow-sm shrink-0">
-                  Google linked
+              {user?.loginId && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-slate-100 text-slate-600 uppercase tracking-wider shrink-0">
+                  {user.loginId}
                 </span>
               )}
             </div>
 
             <div className="mt-1.5 space-y-0.5 text-[10px] sm:text-xs text-slate-500 font-medium">
               <p className="truncate">
-                {admin.department}
+                {displayEmail || admin.department}
                 <span className="text-slate-300 mx-1">·</span>
                 TS Publication CRM
               </p>
-              <p>Joined {formatDate(admin.joinedAt)}</p>
+              {joinedAt && <p>Joined {formatDate(joinedAt)}</p>}
               <p className="flex items-center gap-1.5 text-emerald-600">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                <span className="truncate">Last sign-in {formatDateTime(admin.lastLogin)}</span>
+                <span className="truncate">
+                  Last sign-in {lastLogin ? formatProfileDateTime(lastLogin) : "—"}
+                </span>
               </p>
             </div>
           </div>

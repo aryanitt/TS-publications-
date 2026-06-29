@@ -35,6 +35,13 @@ const URGENCY = {
     time: "text-emerald-700",
     icon: CalendarClock,
   },
+  completed: {
+    label: "Completed",
+    section: "Completed",
+    tone: "success",
+    time: "text-emerald-700",
+    icon: CheckCircle2,
+  },
 };
 
 const FILTERS = [
@@ -42,6 +49,7 @@ const FILTERS = [
   { id: "overdue", label: "Overdue", short: "Late", icon: AlertCircle },
   { id: "today", label: "Due Today", short: "Today", icon: Clock },
   { id: "upcoming", label: "Upcoming", short: "Soon", icon: CalendarClock },
+  { id: "completed", label: "Completed", short: "Done", icon: CheckCircle2 },
 ];
 
 const TYPE_ICON = {
@@ -53,6 +61,40 @@ const TYPE_ICON = {
 
 const CARD_BTN =
   "inline-flex items-center justify-center gap-1 w-full py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px] font-semibold border transition min-h-[36px] sm:min-h-0";
+
+function CompletedFollowUpCard({ item }) {
+  const TypeIcon = TYPE_ICON[item.type] || Phone;
+
+  return (
+    <article className="rounded-xl sm:rounded-2xl border border-emerald-200/80 bg-emerald-50/30 p-2.5 sm:p-4 min-w-0">
+      <div className="flex items-center gap-2 mb-1.5 sm:mb-2">
+        <AvatarCircle initials={item.av} color={item.color} size={28} />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{item.name}</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">{item.company}</p>
+        </div>
+        <Badge tone="success">Completed</Badge>
+      </div>
+
+      <p className="text-[10px] sm:text-xs text-slate-600 leading-snug line-clamp-2">{item.note}</p>
+
+      <div className="flex items-center justify-between gap-2 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-emerald-100">
+        <span className="inline-flex items-center gap-0.5 sm:gap-1 text-[9px] sm:text-[10px] font-semibold text-slate-600 bg-white px-1.5 sm:px-2 py-0.5 rounded-md border border-emerald-100 shrink-0">
+          <TypeIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+          {item.type}
+        </span>
+        <span className="text-[9px] sm:text-[10px] font-bold text-emerald-800 tabular-nums text-right">
+          {item.completedTime || "—"}
+        </span>
+      </div>
+      {item.momSnippet && (
+        <p className="text-[9px] sm:text-[10px] text-slate-500 mt-2 line-clamp-2 italic border-t border-emerald-100 pt-2">
+          MOM saved · {item.momSnippet}
+        </p>
+      )}
+    </article>
+  );
+}
 
 function FollowUpCard({ item, onCall, onDone }) {
   const u = URGENCY[item.urgency] || URGENCY.upcoming;
@@ -135,7 +177,7 @@ const EMPTY_SCHEDULE = {
 };
 
 export default function EmployeeFollowUps() {
-  const { leads, followUps, scheduleFollowUp, completeFollowUp, refreshFollowUps, loading } = useEmployee();
+  const { leads, followUps, scheduleFollowUp, completeFollowUp } = useEmployee();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
@@ -147,28 +189,36 @@ export default function EmployeeFollowUps() {
     if (searchParams.get("action") === "add") setModalOpen(true);
   }, [searchParams]);
 
-  useEffect(() => {
-    if (loading) return;
-    refreshFollowUps(undefined, leads);
-  }, [loading, refreshFollowUps, leads]);
+  const openFollowUps = useMemo(
+    () => followUps.filter((f) => !f.done && !f.completedWithMom),
+    [followUps],
+  );
 
-  const openFollowUps = useMemo(() => followUps.filter((f) => !f.done), [followUps]);
+  const completedFollowUps = useMemo(
+    () => followUps
+      .filter((f) => f.completedWithMom && f.completedAt)
+      .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt)),
+    [followUps],
+  );
 
   const filterCounts = useMemo(() => ({
     all: openFollowUps.length,
     overdue: openFollowUps.filter((f) => f.urgency === "overdue").length,
     today: openFollowUps.filter((f) => f.urgency === "today").length,
     upcoming: openFollowUps.filter((f) => f.urgency === "upcoming").length,
-  }), [openFollowUps]);
+    completed: completedFollowUps.length,
+  }), [openFollowUps, completedFollowUps]);
 
   const stats = useMemo(() => ({
     overdue: filterCounts.overdue,
     today: filterCounts.today,
     upcoming: filterCounts.upcoming,
     total: filterCounts.all,
+    completed: filterCounts.completed,
   }), [filterCounts]);
 
   const filtered = useMemo(() => {
+    if (filter === "completed") return completedFollowUps;
     let list = openFollowUps;
     if (filter !== "all") list = list.filter((f) => f.urgency === filter);
     if (search.trim()) {
@@ -182,7 +232,23 @@ export default function EmployeeFollowUps() {
       );
     }
     return list;
-  }, [filter, search, openFollowUps]);
+  }, [filter, search, openFollowUps, completedFollowUps]);
+
+  const filteredCompleted = useMemo(() => {
+    if (filter !== "all") return [];
+    let list = completedFollowUps;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (f) =>
+          f.name.toLowerCase().includes(q) ||
+          f.company.toLowerCase().includes(q) ||
+          f.note.toLowerCase().includes(q) ||
+          (f.momSnippet || "").toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [filter, search, completedFollowUps]);
 
   const grouped = useMemo(() => {
     if (filter !== "all") return null;
@@ -195,19 +261,21 @@ export default function EmployeeFollowUps() {
       .filter((g) => g.items.length > 0);
   }, [filter, filtered]);
 
+  const handleCall = (item) => {
+    const params = new URLSearchParams({ lead: item.name });
+    if (item.id) params.set("followUp", String(item.id));
+    navigate(`/employee/call-assistant?${params.toString()}`);
+  };
+  const handleDone = (item) => {
+    completeFollowUp(item.id);
+    toast.success(`${item.name} marked done`);
+  };
+
   const closeModal = () => {
     setModalOpen(false);
     if (searchParams.get("action") === "add") {
       setSearchParams({}, { replace: true });
     }
-  };
-
-  const handleCall = (item) => {
-    navigate(`/employee/call-assistant?lead=${encodeURIComponent(item.name)}`);
-  };
-  const handleDone = (item) => {
-    completeFollowUp(item.id);
-    toast.success(`${item.name} marked done — task updated`);
   };
 
   const handleSchedule = () => {
@@ -271,7 +339,7 @@ export default function EmployeeFollowUps() {
           value={String(stats.total)}
           icon={List}
           tone="primary"
-          change={`${followUps.filter((f) => f.done).length} completed`}
+          change={`${stats.completed} with MOM`}
           changeTone="success"
           sub=""
         />
@@ -280,7 +348,7 @@ export default function EmployeeFollowUps() {
       <GlassCard className="p-2.5 sm:p-4">
         <div className="flex flex-col gap-2 sm:gap-3">
           {/* Mobile: 4 equal filter pills in one row */}
-          <div className="grid grid-cols-4 gap-0.5 p-0.5 rounded-lg bg-slate-100/80 border border-slate-200/80 sm:hidden">
+          <div className="grid grid-cols-5 gap-0.5 p-0.5 rounded-lg bg-slate-100/80 border border-slate-200/80 sm:hidden">
             {FILTERS.map(({ id, short, icon: Icon }) => (
               <button
                 key={id}
@@ -333,13 +401,47 @@ export default function EmployeeFollowUps() {
           </div>
 
           <p className="text-[9px] sm:text-[11px] font-semibold text-slate-400">
-            {filterCounts.overdue} overdue · {filterCounts.today} today · {filtered.length} shown
-            <span className="hidden sm:inline"> · {filterCounts.upcoming} upcoming</span>
+            {filterCounts.overdue} overdue · {filterCounts.today} today · {filtered.length} open shown
+            <span className="hidden sm:inline"> · {filterCounts.upcoming} upcoming · {filterCounts.completed} completed (MOM)</span>
           </p>
         </div>
       </GlassCard>
 
-      {filtered.length === 0 ? (
+      {filter === "completed" ? (
+        filtered.length === 0 ? (
+          <GlassCard className="py-4">
+            <EmpEmptyState
+              icon="✅"
+              title="No completed follow-ups yet"
+              subtitle="Call a lead, save the MOM in Call Assistant, and they will appear here with date & time"
+            />
+          </GlassCard>
+        ) : (
+          <GlassCard className="p-2.5 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2 mb-2 sm:mb-4">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl grid place-items-center shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">
+                <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <h3 className="text-xs sm:text-sm font-display font-bold text-slate-900">Completed</h3>
+                  <span className="inline-flex items-center justify-center min-w-[1.125rem] h-4 px-1 rounded-full bg-emerald-100 border border-emerald-200 text-[9px] sm:text-[10px] font-bold text-emerald-800 tabular-nums">
+                    {filtered.length}
+                  </span>
+                </div>
+                <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
+                  Call logged with Minutes of Meeting saved
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 xl:grid-cols-3 sm:gap-3">
+              {filtered.map((item) => (
+                <CompletedFollowUpCard key={`completed-${item.id}`} item={item} />
+              ))}
+            </div>
+          </GlassCard>
+        )
+      ) : filtered.length === 0 && filteredCompleted.length === 0 ? (
         <GlassCard className="py-4">
           <EmpEmptyState
             icon="📅"
@@ -352,7 +454,7 @@ export default function EmployeeFollowUps() {
             </div>
           )}
         </GlassCard>
-      ) : (
+          ) : (
         <div className="space-y-2 sm:space-y-5">
           {grouped ? (
             grouped.map(({ key, meta, items }) => {
@@ -395,6 +497,32 @@ export default function EmployeeFollowUps() {
                 </div>
               </div>
               <FollowUpGrid items={filtered} onCall={handleCall} onDone={handleDone} />
+            </GlassCard>
+          )}
+
+          {filter === "all" && filteredCompleted.length > 0 && (
+            <GlassCard className="p-2.5 sm:p-4 md:p-5">
+              <div className="flex items-center gap-2 mb-2 sm:mb-4">
+                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl grid place-items-center shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <h3 className="text-xs sm:text-sm font-display font-bold text-slate-900">Completed</h3>
+                    <span className="inline-flex items-center justify-center min-w-[1.125rem] h-4 px-1 rounded-full bg-emerald-100 border border-emerald-200 text-[9px] sm:text-[10px] font-bold text-emerald-800 tabular-nums">
+                      {filteredCompleted.length}
+                    </span>
+                  </div>
+                  <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
+                    Call finished and MOM saved — with date & time
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 xl:grid-cols-3 sm:gap-3">
+                {filteredCompleted.map((item) => (
+                  <CompletedFollowUpCard key={`completed-${item.id}`} item={item} />
+                ))}
+              </div>
             </GlassCard>
           )}
         </div>

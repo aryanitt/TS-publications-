@@ -1,5 +1,10 @@
 const STORAGE_KEY = "crm_lead_assignment_v1";
 
+function isEmployeeInRotation(emp) {
+  const status = String(emp?.status || "active").toLowerCase();
+  return status !== "inactive" && status !== "on_leave";
+}
+
 const defaultState = () => ({
   assignments: {},
   employeeSettings: {},
@@ -177,13 +182,43 @@ export function setAutoAssign(state, autoAssign) {
 }
 
 export function initRoundRobinOrder(state, employees) {
-  const active = employees.filter(
-    (e) => e.status !== "inactive" && e.status !== "on_leave",
-  );
+  const active = employees.filter(isEmployeeInRotation);
   const order = active.map((e) => e.id);
   const next = {
     ...state,
     distribution: { ...state.distribution, roundRobinOrder: order, rrIndex: 0 },
+  };
+  saveState(next);
+  return next;
+}
+
+/** Keep stored rotation in sync when employee IDs change (API vs cached demo IDs). */
+export function syncRoundRobinOrder(state, employees) {
+  if (!employees?.length) return state;
+
+  const activeIds = employees.filter(isEmployeeInRotation).map((e) => e.id);
+  if (!activeIds.length) return state;
+
+  const idSet = new Set(activeIds.map(String));
+  const prevOrder = state.distribution.roundRobinOrder || [];
+  const kept = prevOrder.filter((id) => idSet.has(String(id)));
+  const keptSet = new Set(kept.map(String));
+  const added = activeIds.filter((id) => !keptSet.has(String(id)));
+  const order = [...kept, ...added];
+
+  const unchanged =
+    order.length === prevOrder.length &&
+    order.every((id, i) => String(id) === String(prevOrder[i]));
+
+  if (unchanged) return state;
+
+  const next = {
+    ...state,
+    distribution: {
+      ...state.distribution,
+      roundRobinOrder: order,
+      rrIndex: order.length ? Math.min(state.distribution.rrIndex || 0, order.length - 1) : 0,
+    },
   };
   saveState(next);
   return next;
@@ -202,7 +237,7 @@ function employeeUtilization(emp, settings, workload) {
 
 function isAvailable(emp, settings, workload) {
   const s = settings[String(emp.id)] || {};
-  if (s.receivingPaused || emp.status === "inactive" || emp.status === "on_leave") return false;
+  if (s.receivingPaused || !isEmployeeInRotation(emp)) return false;
   const util = employeeUtilization(emp, settings, workload);
   return util < 100;
 }
@@ -305,6 +340,7 @@ function distributeUnassigned(state, employees, leads, options = {}) {
 
   let next = state;
 
+  next = syncRoundRobinOrder(next, employees);
   if (!next.distribution.roundRobinOrder?.length && employees.length) {
     next = initRoundRobinOrder(next, employees);
   }

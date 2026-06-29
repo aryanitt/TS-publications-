@@ -1,5 +1,5 @@
 export const kpis = [
-  { label: "Revenue", value: "$1.24M", change: "+18.4%", trend: "up", icon: "DollarSign" },
+  { label: "Revenue", value: "₹1.24Cr", change: "+18.4%", trend: "up", icon: "DollarSign" },
   { label: "Active Leads", value: "342", change: "+12.1%", trend: "up", icon: "Users" },
   { label: "Team Productivity", value: "92%", change: "+4.2%", trend: "up", icon: "Activity" },
   { label: "Total SOPs", value: "186", change: "+8", trend: "up", icon: "FileText" },
@@ -72,7 +72,7 @@ export const salesKpis = [
   { label: "Qualified Leads", value: "146", change: "+12" },
   { label: "Missing Ratio", value: "9%", change: "-2%" },
   { label: "Proposal Sent", value: "62", change: "+8" },
-  { label: "Revenue", value: "$1.24M", change: "+18%" },
+  { label: "Revenue", value: "₹1.24Cr", change: "+18%" },
   { label: "Avg Closing Time", value: "21d", change: "-3d" },
 ];
 

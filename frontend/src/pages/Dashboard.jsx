@@ -25,6 +25,7 @@ import {
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import { apiGet } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
+import { formatINR } from "../lib/indianFormat.js";
 
 // ─── Icon maps ────────────────────────────────────────────────────────────────
 const iconMap = { DollarSign, Users, Activity, FileText };
@@ -1882,7 +1883,7 @@ function LeadDrawerContent({ lead }) {
       <div className="grid grid-cols-2 gap-3">
         <Info label="Stage"    value={<Badge tone={stageTone(lead.stage)}>{lead.stage}</Badge>} />
         <Info label="Priority" value={<Badge tone={priorityTone(lead.priority)}>{lead.priority}</Badge>} />
-        <Info label="Revenue"  value={`$${lead.revenue.toLocaleString()}`} />
+        <Info label="Revenue"  value={formatINR(lead.revenue)} />
         <Info label="Assignee" value={lead.assignee} />
         <Info label="Phone"    value={lead.phone} />
         <Info label="Follow-up" value={lead.followUp} />
@@ -2193,6 +2194,7 @@ export default function Dashboard() {
   const [chartRevenue, setChartRevenue] = useState(revenueSeries);
   const [pipelineStats, setPipelineStats] = useState(null);
   const [pipelineLoading, setPipelineLoading] = useState(true);
+  const [liveActivity, setLiveActivity] = useState(null);
 
   const filterKey = preset === "custom" ? "week" : preset;
   const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
@@ -2227,6 +2229,19 @@ export default function Dashboard() {
       } catch {
         // ignore
       }
+      try {
+        const activity = await apiGet("/api/activity", { skipCache: true, cacheTtl: 0 });
+        if (!cancelled && activity?.success && activity.activities?.length) {
+          setLiveActivity(
+            activity.activities.slice(0, 8).map((row) => ({
+              text: row.user_name ? `${row.action} — ${row.user_name}` : row.action,
+              createdAt: row.created_at,
+            })),
+          );
+        }
+      } catch {
+        // keep mock fallback
+      }
     })();
     return () => { cancelled = true; };
   }, [filterKey]);
@@ -2254,6 +2269,7 @@ export default function Dashboard() {
   // Resolve service breakdown for the current filter + service selection
   const serviceBreakdownData = SERVICE_BREAKDOWN[filterKey];
   const services = serviceBreakdownData[selectedService] || serviceBreakdownData["All Services"];
+  const activityItems = liveActivity?.length ? liveActivity : fd.activity;
 
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0">
@@ -2279,7 +2295,7 @@ export default function Dashboard() {
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0 w-full">
           <AIInsightsPanel insights={fd.insights} filterKey={filterKey} />
           <ImpMetrics metrics={fd.metrics} filterKey={filterKey} />
-          <RecentActivityPanel items={fd.activity} filterKey={filterKey} />
+          <RecentActivityPanel items={activityItems} filterKey={filterKey} />
         </div>
       </div>
 

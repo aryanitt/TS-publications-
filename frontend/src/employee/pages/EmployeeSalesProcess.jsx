@@ -1,21 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   BookOpen, Check, CheckCircle2, Copy, Layers,
-  MessageSquare, Plus, Search, Target, Pencil, X, CheckCircle, ChevronRight,
+  MessageSquare, Search, Target, ChevronRight,
 } from "lucide-react";
-import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.jsx";
-import {
-  EMP_SOP_SCRIPTS, EMP_SOP_CROSS, EMP_SOP_CHECKLIST,
-} from "../../data/employeeMock.js";
-import { BtnPrimary, BtnSecondary } from "../components/EmpUI.jsx";
+import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
+import { EMP_SOP_CROSS, EMP_SOP_CHECKLIST } from "../../data/employeeMock.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-
-const INPUT = "w-full h-10 px-3 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition";
-const TEXTAREA = `${INPUT} !h-auto py-2.5 resize-none`;
-const LABEL = "block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5";
 
 const TABS = [
   { id: "sops", label: "All SOPs", short: "SOPs", icon: BookOpen },
@@ -24,125 +17,37 @@ const TABS = [
   { id: "checklist", label: "Daily Checklist", short: "List", icon: CheckCircle2 },
 ];
 
-function Field({ label, children, className = "" }) {
-  return (
-    <div className={className}>
-      <label className={LABEL}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function SopDrawer({ open, mode, form, setForm, onClose, onSave }) {
-  const isEdit = mode === "edit-sop";
-  return (
-    <Drawer open={open} onClose={onClose} title={isEdit ? "Edit SOP" : "Add SOP"} width="drawer-panel">
-      <p className="text-xs text-slate-500 mb-4 pb-3 border-b border-slate-100">
-        {isEdit ? "Update title, steps, and scripts" : "Create a new standard operating procedure"}
-      </p>
-      <div className="space-y-4">
-        <Field label="SOP Title">
-          <input className={INPUT} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="How to Start Talking to Leads" />
-        </Field>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Subtitle">
-            <input className={INPUT} value={form.sub} onChange={(e) => setForm((f) => ({ ...f, sub: e.target.value }))} placeholder="Intro script · First 30 sec" />
-          </Field>
-          <Field label="Category">
-            <select className={INPUT} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
-              {["SaaS", "Branding", "Process", "Media", "General"].map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <Field label="Opening Script">
-          <textarea rows={4} className={TEXTAREA} value={form.openingScript} onChange={(e) => setForm((f) => ({ ...f, openingScript: e.target.value }))} placeholder="Hi {leadName}, I'm {repName} from..." />
-        </Field>
-        <Field label="Key Tips">
-          <textarea rows={3} className={TEXTAREA} value={form.tips} onChange={(e) => setForm((f) => ({ ...f, tips: e.target.value }))} placeholder="Keep tone confident and friendly..." />
-        </Field>
-        <Field label="Checklist (one item per line)">
-          <textarea rows={4} className={TEXTAREA} value={form.checklistText} onChange={(e) => setForm((f) => ({ ...f, checklistText: e.target.value }))} placeholder="Greet warmly using first name&#10;Introduce yourself and company" />
-        </Field>
-      </div>
-      <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-4 mt-6 bg-white border-t border-slate-100 flex flex-wrap gap-2">
-        <BtnPrimary onClick={onSave} className="flex-1 sm:flex-initial">
-          <CheckCircle className="w-4 h-4" /> {isEdit ? "Save Changes" : "Create SOP"}
-        </BtnPrimary>
-        <BtnSecondary onClick={onClose} className="sm:ml-auto">
-          <X className="w-4 h-4" /> Cancel
-        </BtnSecondary>
-      </div>
-    </Drawer>
-  );
-}
-
-function ScriptDrawer({ open, form, setForm, onClose, onSave }) {
-  return (
-    <Drawer open={open} onClose={onClose} title="Edit Script" width="drawer-panel">
-      <p className="text-xs text-slate-500 mb-4 pb-3 border-b border-slate-100">
-        Modify call script text — changes apply immediately
-      </p>
-      <div className="space-y-4">
-        <Field label="Script Title">
-          <input className={INPUT} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
-        </Field>
-        <Field label="Script Body">
-          <textarea rows={6} className={TEXTAREA} value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} />
-        </Field>
-        <Field label="When to Use">
-          <input className={INPUT} value={form.use} onChange={(e) => setForm((f) => ({ ...f, use: e.target.value }))} placeholder="First contact with any new lead" />
-        </Field>
-      </div>
-      <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-4 mt-6 bg-white border-t border-slate-100 flex flex-wrap gap-2">
-        <BtnPrimary onClick={onSave} className="flex-1 sm:flex-initial">
-          <CheckCircle className="w-4 h-4" /> Save Script
-        </BtnPrimary>
-        <BtnSecondary onClick={onClose} className="sm:ml-auto">
-          <X className="w-4 h-4" /> Cancel
-        </BtnSecondary>
-      </div>
-    </Drawer>
-  );
-}
-
-function SopCard({ sop, onEdit }) {
+function SopCard({ sop }) {
   const navigate = useNavigate();
   const stepCount = sop.steps?.length || 0;
 
   return (
     <article className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white overflow-hidden hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition-all group min-w-0">
-      <div className="flex items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4">
-        <button
-          type="button"
-          className="flex flex-1 items-center gap-2 sm:gap-3 min-w-0 text-left"
-          onClick={() => navigate(`/employee/sales-process/${sop.id}`)}
-        >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200 grid place-items-center shrink-0 text-base sm:text-lg">
-            {sop.icon || "📋"}
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 sm:gap-3 p-2.5 sm:p-4 text-left min-w-0"
+        onClick={() => navigate(`/employee/sales-process/${sop.id}`)}
+      >
+        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200 grid place-items-center shrink-0 text-base sm:text-lg">
+          {sop.icon || "📋"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-slate-700">{sop.title}</p>
+            <span className="shrink-0 text-[7px] sm:hidden font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-sky-50 text-sky-700 border-sky-100">
+              {sop.category}
+            </span>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <p className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-slate-700">{sop.title}</p>
-              <span className="shrink-0 text-[7px] sm:hidden font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-sky-50 text-sky-700 border-sky-100">
-                {sop.category}
-              </span>
-            </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate hidden sm:block">{sop.sub}</p>
-            <p className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5">{stepCount} steps · {sop.duration || "—"}</p>
-          </div>
-          <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0 group-hover:text-slate-600 transition" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onEdit(sop)}
-          className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0 border border-transparent hover:border-rose-100 transition"
-          aria-label="Quick edit"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
-      </div>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate hidden sm:block">{sop.sub}</p>
+          <p className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5">{stepCount} steps · {sop.duration || "—"}</p>
+          {sop.status && sop.status !== "Active" && (
+            <span className="inline-block mt-1 text-[8px] sm:text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-100">
+              {sop.status}
+            </span>
+          )}
+        </div>
+        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0 group-hover:text-slate-600 transition" />
+      </button>
       <div className="hidden sm:flex px-4 pb-3 justify-between items-center border-t border-slate-50 pt-2">
         <Badge tone="muted">{sop.category}</Badge>
         <span className="text-[10px] font-semibold text-slate-500">Tap card to open playbook</span>
@@ -151,32 +56,16 @@ function SopCard({ sop, onEdit }) {
   );
 }
 
-const EMPTY_SOP_FORM = {
-  id: null,
-  title: "",
-  sub: "",
-  category: "General",
-  openingScript: "",
-  tips: "",
-  checklistText: "",
-};
-
-const EMPTY_SCRIPT_FORM = { id: null, title: "", body: "", use: "", sopId: null, stepId: null, type: "standalone" };
-
 export default function EmployeeSalesProcess() {
-  const { sops, setSops } = useEmployee();
+  const { sops, refreshSops } = useEmployee();
   const [tab, setTab] = useState("sops");
-  const [standaloneScripts, setStandaloneScripts] = useState(() =>
-    EMP_SOP_SCRIPTS.map((s, i) => ({ ...s, id: `standalone-${i}`, type: "standalone" })),
-  );
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [checks, setChecks] = useState({});
-  const [sopDrawerOpen, setSopDrawerOpen] = useState(false);
-  const [sopDrawerMode, setSopDrawerMode] = useState("add-sop");
-  const [sopForm, setSopForm] = useState(EMPTY_SOP_FORM);
-  const [scriptDrawerOpen, setScriptDrawerOpen] = useState(false);
-  const [scriptForm, setScriptForm] = useState(EMPTY_SCRIPT_FORM);
+
+  useEffect(() => {
+    refreshSops();
+  }, [refreshSops]);
 
   const categories = useMemo(() => {
     const set = new Set(sops.map((s) => s.category).filter(Boolean));
@@ -201,6 +90,16 @@ export default function EmployeeSalesProcess() {
   const allScripts = useMemo(() => {
     const fromSops = [];
     sops.forEach((sop) => {
+      if (sop.description?.trim()) {
+        fromSops.push({
+          id: `sop-desc-${sop.id}`,
+          type: "overview",
+          sopId: sop.id,
+          title: `${sop.title} — Overview`,
+          body: sop.description,
+          use: sop.sub,
+        });
+      }
       sop.steps?.forEach((step) => {
         if (step.scripts?.opening) {
           fromSops.push({
@@ -215,8 +114,8 @@ export default function EmployeeSalesProcess() {
         }
       });
     });
-    return [...standaloneScripts, ...fromSops];
-  }, [sops, standaloneScripts]);
+    return fromSops;
+  }, [sops]);
 
   const filteredScripts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -249,128 +148,6 @@ export default function EmployeeSalesProcess() {
     cross: crossItems.length,
   }), [sops.length, allScripts.length, categories.length, crossItems.length]);
 
-  const openAddSop = () => {
-    setSopForm(EMPTY_SOP_FORM);
-    setSopDrawerMode("add-sop");
-    setSopDrawerOpen(true);
-  };
-
-  const openEditSop = (sop) => {
-    const firstStep = sop.steps?.[0];
-    setSopForm({
-      id: sop.id,
-      title: sop.title,
-      sub: sop.sub || "",
-      category: sop.category || "General",
-      openingScript: firstStep?.scripts?.opening || "",
-      tips: firstStep?.scripts?.tips || "",
-      checklistText: (firstStep?.checklist || []).join("\n"),
-    });
-    setSopDrawerMode("edit-sop");
-    setSopDrawerOpen(true);
-  };
-
-  const saveSop = () => {
-    if (!sopForm.title.trim()) {
-      toast.error("SOP title is required");
-      return;
-    }
-    const checklist = sopForm.checklistText.split("\n").map((l) => l.trim()).filter(Boolean);
-    const step = {
-      id: "main",
-      label: "Main Script",
-      questions: checklist.map((t, i) => ({ id: `q${i}`, text: t, type: "check" })),
-      discovery: [],
-      checklist,
-      scripts: {
-        opening: sopForm.openingScript,
-        talkingPoints: [],
-        tips: sopForm.tips,
-      },
-    };
-
-    if (sopDrawerMode === "edit-sop" && sopForm.id != null) {
-      setSops((prev) =>
-        prev.map((s) =>
-          s.id === sopForm.id
-            ? {
-                ...s,
-                title: sopForm.title.trim(),
-                sub: sopForm.sub.trim(),
-                category: sopForm.category,
-                steps: s.steps?.length
-                  ? [{ ...s.steps[0], ...step, label: s.steps[0].label }, ...s.steps.slice(1)]
-                  : [step],
-              }
-            : s,
-        ),
-      );
-      toast.success("SOP updated");
-    } else {
-      const newSop = {
-        id: Date.now(),
-        title: sopForm.title.trim(),
-        sub: sopForm.sub.trim(),
-        category: sopForm.category,
-        budgetRange: "—",
-        duration: "3–5 mins",
-        icon: "📋",
-        steps: [step],
-        objections: [],
-        crossSell: null,
-      };
-      setSops((prev) => [newSop, ...prev]);
-      toast.success("SOP created");
-    }
-    setSopDrawerOpen(false);
-  };
-
-  const openEditScript = (script) => {
-    setScriptForm({
-      id: script.id,
-      title: script.title,
-      body: script.body,
-      use: script.use || "",
-      sopId: script.sopId ?? null,
-      stepId: script.stepId ?? null,
-      type: script.type,
-    });
-    setScriptDrawerOpen(true);
-  };
-
-  const saveScript = () => {
-    if (!scriptForm.title.trim() || !scriptForm.body.trim()) {
-      toast.error("Title and script body are required");
-      return;
-    }
-
-    if (scriptForm.type === "standalone") {
-      setStandaloneScripts((prev) =>
-        prev.map((s) =>
-          s.id === scriptForm.id
-            ? { ...s, title: scriptForm.title, body: scriptForm.body, use: scriptForm.use }
-            : s,
-        ),
-      );
-    } else {
-      setSops((prev) =>
-        prev.map((sop) => {
-          if (sop.id !== scriptForm.sopId) return sop;
-          return {
-            ...sop,
-            steps: sop.steps.map((step) =>
-              step.id === scriptForm.stepId
-                ? { ...step, scripts: { ...step.scripts, opening: scriptForm.body } }
-                : step,
-            ),
-          };
-        }),
-      );
-    }
-    toast.success("Script saved");
-    setScriptDrawerOpen(false);
-  };
-
   const copyScript = (body) => {
     navigator.clipboard?.writeText(body);
     toast.success("Script copied");
@@ -384,15 +161,14 @@ export default function EmployeeSalesProcess() {
   return (
     <div className="space-y-3 sm:space-y-5 page-shell min-w-0 animate-fade-in">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
-        <StatCard compact label="Total SOPs" value={String(stats.sops)} icon={BookOpen} tone="primary" change="playbooks" sub="" />
-        <StatCard compact label="Call Scripts" value={String(stats.scripts)} icon={MessageSquare} tone="info" change="editable" sub="" />
+        <StatCard compact label="Total SOPs" value={String(stats.sops)} icon={BookOpen} tone="primary" change="from admin" sub="" />
+        <StatCard compact label="Call Scripts" value={String(stats.scripts)} icon={MessageSquare} tone="info" change="read-only" sub="" />
         <StatCard compact label="Categories" value={String(stats.categories)} icon={Layers} tone="success" change="segments" sub="" />
         <StatCard compact label="Cross-Sell" value={String(stats.cross)} icon={Target} tone="warning" change="guides" sub="" />
       </div>
 
       <GlassCard className="p-2.5 sm:p-4">
         <div className="flex flex-col gap-2 sm:gap-3">
-          {/* Mobile: 4 tabs in one row */}
           <div className="grid grid-cols-4 gap-0.5 p-0.5 rounded-lg bg-slate-100/80 border border-slate-200/80 sm:hidden">
             {TABS.map(({ id, short, icon: Icon }) => (
               <button
@@ -425,11 +201,10 @@ export default function EmployeeSalesProcess() {
                 </button>
               ))}
             </div>
-
             {tab === "sops" && (
-              <BtnPrimary onClick={openAddSop} className="shrink-0 lg:ml-auto">
-                <Plus className="w-4 h-4" /> Add SOP
-              </BtnPrimary>
+              <p className="text-[10px] text-slate-500 lg:ml-auto shrink-0">
+                SOPs are managed by admin · view only
+              </p>
             )}
           </div>
 
@@ -446,25 +221,15 @@ export default function EmployeeSalesProcess() {
                   />
                 </div>
                 {tab === "sops" && (
-                  <>
-                    <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      className="h-9 sm:h-10 w-[6.5rem] sm:w-auto shrink-0 px-2 sm:px-3 rounded-xl bg-white border border-slate-200 text-[11px] sm:text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200 transition"
-                    >
-                      {categories.map((c) => (
-                        <option key={c} value={c}>{c === "all" ? "All" : c}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={openAddSop}
-                      className="sm:hidden w-9 h-9 shrink-0 rounded-xl bg-rose-700 text-white grid place-items-center hover:bg-rose-800 transition shadow-sm"
-                      aria-label="Add SOP"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="h-9 sm:h-10 w-[6.5rem] sm:w-auto shrink-0 px-2 sm:px-3 rounded-xl bg-white border border-slate-200 text-[11px] sm:text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200 transition"
+                  >
+                    {categories.map((c) => (
+                      <option key={c} value={c}>{c === "all" ? "All" : c}</option>
+                    ))}
+                  </select>
                 )}
               </div>
             </div>
@@ -475,17 +240,15 @@ export default function EmployeeSalesProcess() {
       {tab === "sops" && (
         <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-1 xl:grid-cols-2 sm:gap-3">
           {filteredSops.length === 0 ? (
-            <GlassCard className="xl:col-span-2 py-10 text-center">
-              <p className="text-sm font-bold text-slate-600">No SOPs found</p>
-              <BtnPrimary onClick={openAddSop} className="mt-4"><Plus className="w-4 h-4" /> Add SOP</BtnPrimary>
+            <GlassCard className="xl:col-span-2 py-10 text-center px-4">
+              <p className="text-sm font-bold text-slate-600">No SOPs available yet</p>
+              <p className="text-xs text-slate-500 mt-2 max-w-sm mx-auto leading-relaxed">
+                SOPs are created and updated in the admin panel. Draft, review, and active SOPs appear here automatically (archived SOPs are hidden).
+              </p>
             </GlassCard>
           ) : (
             filteredSops.map((sop) => (
-              <SopCard
-                key={sop.id}
-                sop={sop}
-                onEdit={openEditSop}
-              />
+              <SopCard key={sop.id} sop={sop} />
             ))
           )}
         </div>
@@ -493,38 +256,38 @@ export default function EmployeeSalesProcess() {
 
       {tab === "scripts" && (
         <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 sm:gap-3">
-          {filteredScripts.map((script) => (
-            <article key={script.id} className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-2.5 sm:p-4 hover:border-slate-300 transition-all min-w-0">
-              <div className="flex items-start justify-between gap-2 mb-1.5 sm:mb-2">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2">{script.title}</p>
-                  {script.use && <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 line-clamp-1">Use: {script.use}</p>}
+          {filteredScripts.length === 0 ? (
+            <GlassCard className="sm:col-span-2 py-10 text-center px-4">
+              <p className="text-sm font-bold text-slate-600">No scripts yet</p>
+              <p className="text-xs text-slate-500 mt-2">Scripts come from admin SOPs — add opening scripts in admin SOP Management.</p>
+            </GlassCard>
+          ) : (
+            filteredScripts.map((script) => (
+              <article key={script.id} className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-2.5 sm:p-4 hover:border-slate-300 transition-all min-w-0">
+                <div className="flex items-start justify-between gap-2 mb-1.5 sm:mb-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2">{script.title}</p>
+                    {script.use && <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 line-clamp-1">Use: {script.use}</p>}
+                  </div>
+                  <span className="shrink-0 text-[7px] sm:text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">
+                    SOP
+                  </span>
                 </div>
-                <span className="shrink-0 text-[7px] sm:text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">
-                  {script.type === "standalone" ? "Tpl" : "SOP"}
-                </span>
-              </div>
-              <p className="text-[10px] sm:text-xs text-slate-700 leading-relaxed whitespace-pre-wrap line-clamp-2 sm:line-clamp-4 italic">
-                &ldquo;{script.body}&rdquo;
-              </p>
-              <div className="flex gap-1.5 sm:gap-2 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => copyScript(script.body)}
-                  className="inline-flex items-center justify-center gap-1 flex-1 py-1.5 sm:py-1.5 px-2 sm:px-3 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px] font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition min-h-[36px] sm:min-h-0"
-                >
-                  <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Copy
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openEditScript(script)}
-                  className="inline-flex items-center justify-center gap-1 flex-1 py-1.5 sm:py-1.5 px-2 sm:px-3 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px] font-semibold border border-rose-700 bg-rose-700 text-white hover:bg-rose-800 transition min-h-[36px] sm:min-h-0"
-                >
-                  <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Edit
-                </button>
-              </div>
-            </article>
-          ))}
+                <p className="text-[10px] sm:text-xs text-slate-700 leading-relaxed whitespace-pre-wrap line-clamp-2 sm:line-clamp-4 italic">
+                  &ldquo;{script.body}&rdquo;
+                </p>
+                <div className="flex gap-1.5 sm:gap-2 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => copyScript(script.body)}
+                    className="inline-flex items-center justify-center gap-1 flex-1 py-1.5 sm:py-1.5 px-2 sm:px-3 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px] font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition min-h-[36px] sm:min-h-0"
+                  >
+                    <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Copy
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
         </div>
       )}
 
@@ -585,23 +348,6 @@ export default function EmployeeSalesProcess() {
           ))}
         </div>
       )}
-
-      <SopDrawer
-        open={sopDrawerOpen}
-        mode={sopDrawerMode}
-        form={sopForm}
-        setForm={setSopForm}
-        onClose={() => setSopDrawerOpen(false)}
-        onSave={saveSop}
-      />
-
-      <ScriptDrawer
-        open={scriptDrawerOpen}
-        form={scriptForm}
-        setForm={setScriptForm}
-        onClose={() => setScriptDrawerOpen(false)}
-        onSave={saveScript}
-      />
     </div>
   );
 }

@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import {
-  EMP_CALL_STATS, EMP_LEAD_CALL_ACTIVITY, EMP_TEAM_CALL, getCallsForPeriod, LEAD_STATUS_LABELS,
+  computeCallStatsFromCalls,
+  LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
@@ -207,11 +208,14 @@ export default function EmployeeCalls() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const period = searchParams.get("period") || "today";
-  const { calls: contextCalls = [] } = useEmployee();
+  const { calls: contextCalls = [], employee } = useEmployee();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const stats = EMP_CALL_STATS[period] || EMP_CALL_STATS.today;
+  const stats = useMemo(
+    () => computeCallStatsFromCalls(contextCalls, period),
+    [contextCalls, period],
+  );
 
   const calls = useMemo(() => {
     let list = period === "today"
@@ -356,38 +360,40 @@ export default function EmployeeCalls() {
         ))}
       </div>
 
+      {stats.dials > 0 && (
       <GlassCard className="p-4">
         <div className="flex items-center justify-between gap-2 mb-3">
           <div>
-            <h3 className="font-display font-bold text-slate-900 text-sm">Team Call Performance</h3>
-            <p className="text-[11px] text-slate-500">{PERIOD_LABEL[period]} · leaderboard</p>
+            <h3 className="font-display font-bold text-slate-900 text-sm">Your Call Performance</h3>
+            <p className="text-[11px] text-slate-500">{PERIOD_LABEL[period]} · your stats</p>
           </div>
-          <Badge tone="muted">{EMP_TEAM_CALL.length} reps</Badge>
+          <Badge tone="muted">1 rep</Badge>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {EMP_TEAM_CALL.map((m) => {
-            const scale = period === "today" ? 0.35 : period === "week" ? 0.65 : 1;
-            const callsCount = Math.round(m.calls * scale);
-            const pct = Math.round((callsCount / 150) * 100);
-            const scTone = m.score >= 85 ? "success" : m.score >= 70 ? "warning" : "danger";
+          {(() => {
+            const callsCount = stats.dials;
+            const pct = stats.pickupRate;
+            const scTone = stats.quality >= 85 ? "success" : stats.quality >= 70 ? "warning" : "danger";
+            const initials = String(employee?.name || "You").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
             return (
-              <div key={m.name} className="flex items-center gap-3 p-3 rounded-xl border border-rose-100 bg-white/80">
-                <AvatarCircle initials={m.av} color={m.color === "#2563eb" ? "#be123c" : m.color} size={32} />
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-rose-100 bg-white/80">
+                <AvatarCircle initials={initials} color="#be123c" size={32} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-sm font-bold text-slate-800 truncate">{m.name}</span>
-                    <Badge tone={scTone}>{m.score}</Badge>
+                    <span className="text-sm font-bold text-slate-800 truncate">{employee?.name || "You"}</span>
+                    <Badge tone={scTone}>{stats.quality}</Badge>
                   </div>
                   <div className="h-2 rounded-full bg-rose-50 overflow-hidden">
                     <div className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-rose-500 to-rose-600" style={{ width: `${pct}%` }} />
                   </div>
-                  <p className="text-[10px] font-semibold text-slate-500 mt-1">{callsCount} calls · {pct}% of target</p>
+                  <p className="text-[10px] font-semibold text-slate-500 mt-1">{callsCount} calls · {pct}% pickup rate</p>
                 </div>
               </div>
             );
-          })}
+          })()}
         </div>
       </GlassCard>
+      )}
     </div>
   );
 }

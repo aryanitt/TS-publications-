@@ -3,9 +3,17 @@
  * Configure production API via VITE_API_URL (see .env.example).
  */
 
+import { getAuthHeaders } from "./crmContext.js";
+
 const CACHE_PREFIX = "crm_cache:";
 const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
+const inflightGets = new Map();
+let lastFetchAt = 0;
+const MIN_FETCH_GAP_MS = 120;
+const DEFAULT_FETCH_TIMEOUT_MS = 20000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Hostinger backend — used when VITE_API_URL is missing from the Vercel build. */
 const PRODUCTION_API_BASE =
@@ -96,17 +104,55 @@ export function invalidateCache(match = "") {
 }
 
 async function performFetch(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
+  const { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, ...fetchOptions } = options;
+  const method = (fetchOptions.method || "GET").toUpperCase();
+  if (method === "GET") {
+    const existing = inflightGets.get(url);
+    if (existing) return existing;
+  }
+
+  const gap = lastFetchAt + MIN_FETCH_GAP_MS - Date.now();
+  if (gap > 0) await sleep(gap);
+  lastFetchAt = Date.now();
+
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
+  const request = fetch(url, {
+    ...fetchOptions,
+    signal: controller?.signal,
     headers: {
       Accept: "application/json",
-      ...(options.body && !(options.body instanceof FormData)
+      ...getAuthHeaders(),
+      ...(fetchOptions.body && !(fetchOptions.body instanceof FormData)
         ? { "Content-Type": "application/json" }
         : {}),
-      ...options.headers,
+      ...fetchOptions.headers,
     },
+  }).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
   });
-  return response;
+
+  if (method === "GET") {
+    inflightGets.set(url, request);
+    request.finally(() => {
+      if (inflightGets.get(url) === request) inflightGets.delete(url);
+    });
+  }
+
+  try {
+    return await request;
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(
+        `API request timed out after ${Math.round(timeoutMs / 1000)}s. `
+        + "Check that the backend is running and auth routes are deployed.",
+      );
+    }
+    throw err;
+  }
 }
 
 function storeGetCache(key, data, ttl) {
@@ -114,15 +160,49 @@ function storeGetCache(key, data, ttl) {
   writeSession(key, data, ttl);
 }
 
-async function revalidateInBackground(url, options, key, ttl) {
+function formatApiError(data, fallback) {
+  if (!data || typeof data !== "object") return fallback;
+  const base = data.message || data.error || fallback;
+  const fieldErrors = data.errors?.fieldErrors;
+  if (!fieldErrors || typeof fieldErrors !== "object") return base;
+  const details = Object.entries(fieldErrors)
+    .flatMap(([field, messages]) => (
+      Array.isArray(messages) ? messages.map((msg) => `${field}: ${msg}`) : []
+    ))
+    .join("; ");
+  return details ? `${base} — ${details}` : base;
+}
+
+function parseApiResponseBody(text, contentType) {
+  const trimmed = text.trim();
+  if (!trimmed) return { parsed: false, data: null };
+  const looksJson = contentType.includes("application/json")
+    || trimmed.startsWith("{")
+    || trimmed.startsWith("[")
+    || trimmed === "null";
+  if (!looksJson) return { parsed: false, data: null };
   try {
-    const response = await performFetch(url, options);
-    if (!response.ok) return;
-    const data = await response.json();
-    storeGetCache(key, data, ttl);
+    return { parsed: true, data: JSON.parse(trimmed) };
   } catch {
-    // silent background refresh
+    return { parsed: false, data: null };
   }
+}
+
+function describeNonJsonResponse(status, contentType, preview) {
+  if (preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")) {
+    if (status === 404) {
+      return "Auth API not found (404). Deploy the latest backend with auth routes to Hostinger.";
+    }
+    return "API request hit the frontend instead of the backend. Check VITE_API_URL.";
+  }
+  if (status === 429) return "Too many API requests — wait a moment and try again.";
+  if (status === 502 || status === 503 || status === 504) {
+    return "Backend API is temporarily unavailable. Try again in a few seconds.";
+  }
+  if (status === 204 || !preview.trim()) {
+    return `API returned ${status} with an empty response. Try again.`;
+  }
+  return `Expected JSON from API but got ${contentType || "unknown type"}`;
 }
 
 /**
@@ -133,6 +213,8 @@ export async function apiJson(path, options = {}) {
     cacheTtl = DEFAULT_GET_TTL,
     skipCache = false,
     method = "GET",
+    timeoutMs,
+    _retry429 = 0,
     ...fetchOptions
   } = options;
 
@@ -144,20 +226,18 @@ export async function apiJson(path, options = {}) {
   if (isGet && !skipCache && cacheTtl > 0) {
     const mem = memoryCache.get(key);
     if (mem && Date.now() < mem.expires) {
-      revalidateInBackground(url, { ...fetchOptions, method: httpMethod }, key, cacheTtl);
       return mem.data;
     }
     const stored = readSession(key);
     if (stored != null) {
       storeGetCache(key, stored, cacheTtl);
-      revalidateInBackground(url, { ...fetchOptions, method: httpMethod }, key, cacheTtl);
       return stored;
     }
   }
 
   let response;
   try {
-    response = await performFetch(url, { ...fetchOptions, method: httpMethod });
+    response = await performFetch(url, { ...fetchOptions, method: httpMethod, timeoutMs });
   } catch (err) {
     const isNetwork = err instanceof TypeError
       || String(err?.message || "").toLowerCase().includes("failed to fetch");
@@ -175,21 +255,40 @@ export async function apiJson(path, options = {}) {
   }
 
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    const preview = (await response.text()).slice(0, 80);
-    const err = new Error(
-      preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")
-        ? "API request hit the frontend instead of the backend. Check VITE_API_URL."
-        : `Expected JSON from API but got ${contentType || "unknown type"}`,
-    );
+  const text = await response.text();
+  const { parsed, data } = parseApiResponseBody(text, contentType);
+
+  if (!parsed) {
+    const preview = text.slice(0, 80);
+    if (isGet && response.status === 429 && _retry429 < 2) {
+      await sleep(2000 * (_retry429 + 1));
+      return apiJson(path, {
+        cacheTtl,
+        skipCache,
+        method,
+        timeoutMs,
+        _retry429: _retry429 + 1,
+        ...fetchOptions,
+      });
+    }
+    const err = new Error(describeNonJsonResponse(response.status, contentType, preview));
     err.status = response.status;
     throw err;
   }
 
-  const data = await response.json();
-
   if (!response.ok) {
-    const message = data?.message || data?.error || response.statusText || "Request failed";
+    if (isGet && response.status === 429 && _retry429 < 2) {
+      await sleep(2000 * (_retry429 + 1));
+      return apiJson(path, {
+        cacheTtl,
+        skipCache,
+        method,
+        timeoutMs,
+        _retry429: _retry429 + 1,
+        ...fetchOptions,
+      });
+    }
+    const message = formatApiError(data, response.statusText || "Request failed");
     const err = new Error(message);
     err.status = response.status;
     err.data = data;

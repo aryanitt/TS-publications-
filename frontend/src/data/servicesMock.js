@@ -1,3 +1,5 @@
+import { formatINR, formatServicePriceLabel } from "../lib/indianFormat.js";
+
 export const SERVICE_CATEGORIES = [
   { id: "all", label: "Category: All" },
   { id: "ai", label: "AI Solutions" },
@@ -73,7 +75,7 @@ export const SERVICES = [
     leads: 12482,
     converted: 842,
     convRate: 6.8,
-    price: "$15,000/mo",
+    price: "₹15,000/mo",
     priceNum: 15000,
     icon: "bot",
     features: [
@@ -83,8 +85,8 @@ export const SERVICES = [
       { title: "CRM Sync", desc: "Bi-directional sync with HubSpot, Zoho, and Salesforce." },
     ],
     tiers: [
-      { name: "Basic", price: "$499/mo", features: ["2 workflows", "Email automation", "Basic reporting"], popular: false },
-      { name: "Professional", price: "$1,249/mo", features: ["10 workflows", "Multi-channel", "AI scoring", "Priority support"], popular: true },
+      { name: "Basic", price: "₹499/mo", features: ["2 workflows", "Email automation", "Basic reporting"], popular: false },
+      { name: "Professional", price: "₹1,249/mo", features: ["10 workflows", "Multi-channel", "AI scoring", "Priority support"], popular: true },
       { name: "Enterprise", price: "Custom", features: ["Unlimited workflows", "Custom LLM", "Dedicated CSM", "SLA guarantee"], popular: false },
     ],
     insights: [
@@ -117,7 +119,7 @@ export const SERVICES = [
     leads: 8420,
     converted: 612,
     convRate: 7.3,
-    price: "$8,500/mo",
+    price: "₹8,500/mo",
     priceNum: 8500,
     icon: "database",
     features: [
@@ -127,8 +129,8 @@ export const SERVICES = [
       { title: "Automation Rules", desc: "Assignment, alerts, and SLA triggers." },
     ],
     tiers: [
-      { name: "Starter", price: "$2,500", features: ["1 pipeline", "Up to 5 users", "Email support"], popular: false },
-      { name: "Growth", price: "$5,500", features: ["3 pipelines", "Up to 20 users", "Migration included"], popular: true },
+      { name: "Starter", price: "₹2,500", features: ["1 pipeline", "Up to 5 users", "Email support"], popular: false },
+      { name: "Growth", price: "₹5,500", features: ["3 pipelines", "Up to 20 users", "Migration included"], popular: true },
       { name: "Scale", price: "Custom", features: ["Unlimited pipelines", "Dedicated admin", "Custom fields"], popular: false },
     ],
     insights: ["Strong fit for mid-market teams migrating from spreadsheets."],
@@ -157,7 +159,7 @@ export const SERVICES = [
     leads: 15600,
     converted: 920,
     convRate: 5.9,
-    price: "$6,200/mo",
+    price: "₹6,200/mo",
     priceNum: 6200,
     icon: "target",
     features: [
@@ -167,8 +169,8 @@ export const SERVICES = [
       { title: "Reporting", desc: "Weekly pipeline and ROI dashboards." },
     ],
     tiers: [
-      { name: "Launch", price: "$3,200/mo", features: ["500 leads/mo", "Email only"], popular: false },
-      { name: "Scale", price: "$6,200/mo", features: ["2,000 leads/mo", "Multi-channel"], popular: true },
+      { name: "Launch", price: "₹3,200/mo", features: ["500 leads/mo", "Email only"], popular: false },
+      { name: "Scale", price: "₹6,200/mo", features: ["2,000 leads/mo", "Multi-channel"], popular: true },
       { name: "Enterprise", price: "Custom", features: ["Unlimited volume", "Dedicated SDR pod"], popular: false },
     ],
     insights: ["Highest lead volume in catalog — optimize qualification to protect rep time."],
@@ -194,7 +196,7 @@ export const SERVICES = [
     leads: 3200,
     converted: 186,
     convRate: 5.8,
-    price: "$12,000/mo",
+    price: "₹12,000/mo",
     priceNum: 12000,
     icon: "briefcase",
     features: [
@@ -204,8 +206,8 @@ export const SERVICES = [
       { title: "Playbook Library", desc: "Documented SOPs and sales enablement assets." },
     ],
     tiers: [
-      { name: "Advisory", price: "$5,000/mo", features: ["2 sessions/mo", "Async support"], popular: false },
-      { name: "Partner", price: "$12,000/mo", features: ["Weekly sessions", "RevOps support"], popular: true },
+      { name: "Advisory", price: "₹5,000/mo", features: ["2 sessions/mo", "Async support"], popular: false },
+      { name: "Partner", price: "₹12,000/mo", features: ["Weekly sessions", "RevOps support"], popular: true },
       { name: "Embedded", price: "Custom", features: ["Fractional CRO", "Full team embed"], popular: false },
     ],
     insights: ["Longest sales cycle — nurture enterprise accounts with case studies."],
@@ -230,7 +232,7 @@ export const SERVICES = [
     leads: 4100,
     converted: 248,
     convRate: 6.0,
-    price: "$18,000/mo",
+    price: "₹18,000/mo",
     priceNum: 18000,
     icon: "code",
     features: [
@@ -240,8 +242,8 @@ export const SERVICES = [
       { title: "Maintenance", desc: "Ongoing fixes, updates, and monitoring." },
     ],
     tiers: [
-      { name: "Sprint", price: "$8,000", features: ["2-week sprint", "1 developer"], popular: false },
-      { name: "Team", price: "$18,000/mo", features: ["Dedicated pod", "Bi-weekly demos"], popular: true },
+      { name: "Sprint", price: "₹8,000", features: ["2-week sprint", "1 developer"], popular: false },
+      { name: "Team", price: "₹18,000/mo", features: ["Dedicated pod", "Bi-weekly demos"], popular: true },
       { name: "Retainer", price: "Custom", features: ["SLA", "24/7 support"], popular: false },
     ],
     insights: ["Bundle with AI Automation for 22% higher average contract value."],
@@ -303,10 +305,10 @@ export function getAllServices() {
 }
 
 export function formatServiceMoney(val) {
-  if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
-  if (val >= 1000) return `$${Math.round(val / 1000)}K`;
-  return `$${val}`;
+  return formatINR(val);
 }
+
+export { formatServicePriceLabel };
 
 export function serviceBadgeTone(badge) {
   if (badge === "POPULAR") return "danger";

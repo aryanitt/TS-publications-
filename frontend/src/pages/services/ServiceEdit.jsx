@@ -6,7 +6,7 @@ import {
 import toast, { Toaster } from "react-hot-toast";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import {
-  getServiceById, updateService, SERVICE_CATEGORIES,
+  getServiceById, updateService, SERVICE_CATEGORIES, formatServicePriceLabel,
 } from "../../data/servicesMock.js";
 
 const ICON_MAP = {
@@ -132,7 +132,7 @@ export default function ServiceEdit() {
   const addTier = () => {
     setDraft((prev) => ({
       ...prev,
-      tiers: [...prev.tiers, { name: "New Tier", price: "$0/mo", features: ["Feature 1"], popular: false }],
+      tiers: [...prev.tiers, { name: "New Tier", price: "₹0/mo", features: ["Feature 1"], popular: false }],
     }));
   };
 
@@ -169,11 +169,17 @@ export default function ServiceEdit() {
       toast.error("Service name is required");
       return;
     }
+    const priceNum = parsePriceNum(draft.price);
     const saved = updateService({
       ...draft,
       name: draft.name.trim(),
       description: draft.description.trim(),
-      priceNum: parsePriceNum(draft.price),
+      price: formatServicePriceLabel(draft.price, priceNum),
+      priceNum,
+      tiers: draft.tiers.map((tier) => ({
+        ...tier,
+        price: formatServicePriceLabel(tier.price),
+      })),
     });
     toast.success(`${saved.name} saved`);
     navigate(`/services/${service.id}`);
@@ -265,7 +271,7 @@ export default function ServiceEdit() {
                     <input
                       value={draft.price}
                       onChange={(e) => patch({ price: e.target.value })}
-                      placeholder="$12,000/mo"
+                      placeholder="₹12,000/mo"
                       className={inputClass}
                     />
                   </div>

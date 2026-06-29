@@ -144,8 +144,9 @@ export default function EmployeeCallAssistant() {
   const isMobile = useIsMobile();
   const urlLead = searchParams.get("lead");
   const urlSop = searchParams.get("sop");
+  const urlFollowUp = searchParams.get("followUp");
   
-  const { leads, addCallRecord, addActivityRecord, sops, updateLeadTemperature } = useEmployee();
+  const { leads, addCallRecord, addActivityRecord, sops, updateLeadTemperature, completeFollowUpWithMom } = useEmployee();
 
   const [selectedSopId, setSelectedSopId] = useState(1);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -298,7 +299,18 @@ AI Insights & Follow-up Actions:
       });
     }
 
-    toast.success("Call saved to Reporting database!");
+    if (aiMoM?.trim()) {
+      await completeFollowUpWithMom({
+        followUpId: urlFollowUp || undefined,
+        leadId: matchedLead.id,
+        leadName,
+        mom: aiMoM,
+      });
+    }
+
+    toast.success(aiMoM?.trim()
+      ? "Call & MOM saved — follow-up moved to Completed"
+      : "Call saved to Reporting database!");
     setIsEndingCall(false);
 
     navigate("/employee/calls");

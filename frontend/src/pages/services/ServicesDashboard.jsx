@@ -13,9 +13,10 @@ import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import {
   getAllServices, SERVICE_CATEGORIES, SERVICE_STATUSES, SERVICE_PRICING_SORT,
   SALES_DISTRIBUTION, SALES_TOTAL, REVENUE_TRAJECTORY,
-  formatServiceMoney, serviceBadgeTone, registerService,
+  formatServiceMoney, formatServicePriceLabel, serviceBadgeTone, registerService,
 } from "../../data/servicesMock.js";
 import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
+import { formatIndianNumber } from "../../lib/indianFormat.js";
 import AddServiceDrawer from "./AddServiceDrawer.jsx";
 
 const ICON_MAP = {
@@ -25,6 +26,23 @@ const ICON_MAP = {
   briefcase: Briefcase,
   code: Code,
 };
+
+function normalizeCatalogService(service) {
+  return {
+    badge: "ACTIVE",
+    clients: 0,
+    tags: [],
+    icon: "bot",
+    priceNum: 0,
+    price: "",
+    ...service,
+    tags: Array.isArray(service?.tags) ? service.tags : [],
+    clients: Number(service?.clients) || 0,
+    priceNum: Number(service?.priceNum) || 0,
+    badge: service?.badge || "ACTIVE",
+    icon: service?.icon || "bot",
+  };
+}
 
 function ChartCardHeader({ title, subtitle }) {
   return (
@@ -37,7 +55,7 @@ function ChartCardHeader({ title, subtitle }) {
 
 export default function ServicesDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [catalog, setCatalog] = useState(getAllServices);
+  const [catalog, setCatalog] = useState(() => getAllServices());
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -48,7 +66,9 @@ export default function ServicesDashboard() {
     (async () => {
       try {
         const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
-        if (data.services?.length) setCatalog(data.services);
+        if (data.services?.length) {
+          setCatalog(data.services.map(normalizeCatalogService));
+        }
       } catch {
         // keep getAllServices mock
       }
@@ -85,7 +105,7 @@ export default function ServicesDashboard() {
         await apiPost("/api/services", newService);
         invalidateCache("/api/services");
         const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
-        if (data.services?.length) setCatalog(data.services);
+        if (data.services?.length) setCatalog(data.services.map(normalizeCatalogService));
         else {
           registerService(newService);
           setCatalog(getAllServices());
@@ -361,7 +381,7 @@ export default function ServicesDashboard() {
                   {[
                     ["Revenue", formatServiceMoney(service.revenue)],
                     ["Clients", String(service.clients)],
-                    ["Leads", service.leads >= 1000 ? `${(service.leads / 1000).toFixed(1)}k` : String(service.leads)],
+                    ["Leads", service.leads >= 1000 ? `${(service.leads / 1000).toFixed(1)}k` : formatIndianNumber(service.leads)],
                   ].map(([label, val]) => (
                     <div key={label}>
                       <p className="text-[7px] font-bold text-slate-400 uppercase leading-none">{label}</p>
@@ -370,7 +390,7 @@ export default function ServicesDashboard() {
                   ))}
                 </div>
                 <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-rose-50">
-                  <span className="text-xs font-black text-rose-700">{service.price}</span>
+                  <span className="text-xs font-black text-rose-700">{formatServicePriceLabel(service.price, service.priceNum)}</span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition" />
                 </div>
               </GlassCard>

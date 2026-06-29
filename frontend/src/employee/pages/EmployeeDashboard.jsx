@@ -9,7 +9,13 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis
 import { Badge } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
-  EMP_PIPELINE, EMP_AGENDA, EMP_SOURCE_CHART, EMP_ACTIVITY, EMP_LEADS,
+  buildPipelineChartFromLeads,
+  buildSourceChartFromLeads,
+  buildDashboardAgenda,
+  buildRecentActivityFeed,
+  getEmpPipelineSummary,
+  getEmpAppToday,
+  filterCallsForPeriod,
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { AvatarCircle, EmployeeDoodleAvatar } from "../components/EmpUI.jsx";
@@ -18,13 +24,6 @@ import { formatGreeting } from "../../lib/greeting.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 
 const PANEL = "rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]";
-
-const STAT_CARDS = [
-  { label: "Total Leads", value: "248", change: "↑ 12%", icon: Users, iconTone: "bg-sky-50 text-sky-600 border-sky-100", link: "/employee/leads" },
-  { label: "Hot Leads", value: "42", change: "↑ +5", icon: Flame, iconTone: "bg-orange-50 text-orange-600 border-orange-100", filter: "hot" },
-  { label: "Converted", value: "24", change: "24.2% rate", icon: CheckCircle2, iconTone: "bg-emerald-50 text-emerald-600 border-emerald-100", filter: "converted" },
-  { label: "Tasks Due", value: "8", change: "3 done", icon: ClipboardList, iconTone: "bg-violet-50 text-violet-600 border-violet-100", link: "/employee/tasks" },
-];
 
 const PIPE_FILTERS = [
   { id: "all", label: "All" },
@@ -81,25 +80,89 @@ function SectionHead({ icon: Icon, title, sub, action, stackAction }) {
 }
 
 export default function EmployeeDashboard() {
-  const { employee } = useEmployee();
+  const {
+    employee,
+    leads,
+    tasks,
+    followUps,
+    meetingsUpcoming,
+    calls,
+    activities,
+    loading,
+  } = useEmployee();
   const navigate = useNavigate();
   const isMobile = useIsMobile(640);
   const [period, setPeriod] = useState("Today");
   const [pipeFilter, setPipeFilter] = useState("all");
-  const [agenda, setAgenda] = useState(EMP_AGENDA);
+  const [agendaDone, setAgendaDone] = useState({});
+
+  const pipeline = useMemo(() => buildPipelineChartFromLeads(leads), [leads]);
+  const sourceChart = useMemo(() => buildSourceChartFromLeads(leads), [leads]);
+  const summary = useMemo(() => getEmpPipelineSummary(leads), [leads]);
+  const agenda = useMemo(
+    () => buildDashboardAgenda({ meetingsUpcoming, tasks, followUps }),
+    [meetingsUpcoming, tasks, followUps],
+  );
+  const activityFeed = useMemo(
+    () => buildRecentActivityFeed(activities, calls, 5),
+    [activities, calls],
+  );
+
+  const todayTasks = tasks[getEmpAppToday()] || [];
+  const tasksDue = todayTasks.filter((t) => t.status !== "done" && t.status !== "completed").length;
+  const tasksDone = todayTasks.filter((t) => t.status === "done" || t.status === "completed").length;
+  const hotFollowUps = followUps.filter((f) => !f.done && (f.urgency === "overdue" || f.urgency === "today")).length;
+  const callsToday = filterCallsForPeriod(calls, "today").length;
+  const callsTarget = employee.callsTarget || 60;
+  const callPct = callsTarget ? Math.min(100, Math.round((callsToday / callsTarget) * 100)) : 0;
+
+  const statCards = useMemo(() => [
+    {
+      label: "Total Leads",
+      value: String(summary.total),
+      change: summary.total ? `${summary.active} active` : "No leads yet",
+      icon: Users,
+      iconTone: "bg-sky-50 text-sky-600 border-sky-100",
+      link: "/employee/leads",
+    },
+    {
+      label: "Hot Leads",
+      value: String(summary.hot),
+      change: summary.hot ? "Needs attention" : "None right now",
+      icon: Flame,
+      iconTone: "bg-orange-50 text-orange-600 border-orange-100",
+      filter: "hot",
+    },
+    {
+      label: "Converted",
+      value: String(leads.filter((l) => l.status === "converted").length),
+      change: summary.total ? `${summary.winRate}% rate` : "—",
+      icon: CheckCircle2,
+      iconTone: "bg-emerald-50 text-emerald-600 border-emerald-100",
+      filter: "converted",
+    },
+    {
+      label: "Tasks Due",
+      value: String(tasksDue),
+      change: tasksDone ? `${tasksDone} done today` : "None completed",
+      icon: ClipboardList,
+      iconTone: "bg-violet-50 text-violet-600 border-violet-100",
+      link: "/employee/tasks",
+    },
+  ], [summary, leads, tasksDue, tasksDone]);
 
   const filteredPipeLeads = useMemo(() => {
     if (pipeFilter === "all") return null;
-    return EMP_LEADS.filter((l) => l.status === pipeFilter);
-  }, [pipeFilter]);
+    return leads.filter((l) => l.status === pipeFilter);
+  }, [pipeFilter, leads]);
 
-  const callPct = Math.round((employee.callsDone / employee.callsTarget) * 100);
-  const pendingAgenda = agenda.filter((a) => !a.done).length;
-  const pipelineTotal = EMP_PIPELINE.reduce((s, p) => s + p.count, 0);
-  const convertedCount = EMP_PIPELINE.find((p) => p.label === "Converted")?.count ?? 0;
+  const pendingAgenda = agenda.filter((a, i) => !agendaDone[i]).length;
+  const pipelineTotal = pipeline.reduce((s, p) => s + p.count, 0);
+  const convertedCount = pipeline.find((p) => p.label === "Converted")?.count ?? 0;
+  const convRate = pipelineTotal ? `${Math.round((convertedCount / pipelineTotal) * 100)}%` : "—";
 
   const markAgendaDone = (idx) => {
-    setAgenda((prev) => prev.map((a, i) => (i === idx ? { ...a, done: true } : a)));
+    setAgendaDone((prev) => ({ ...prev, [idx]: true }));
     toast.success("Marked done");
   };
 
@@ -144,8 +207,8 @@ export default function EmployeeDashboard() {
               </h1>
               <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-none -mx-0.5 px-0.5 pb-0.5">
                 {[
-                  { label: "8 hot follow-ups", to: "/employee/follow-ups" },
-                  { label: "3 meetings", to: "/employee/meetings" },
+                  { label: `${hotFollowUps} hot follow-ups`, to: "/employee/follow-ups" },
+                  { label: `${meetingsUpcoming.length} meetings`, to: "/employee/meetings" },
                   { label: `${pendingAgenda} agenda`, to: null },
                 ].map((chip) => (
                   chip.to ? (
@@ -196,7 +259,7 @@ export default function EmployeeDashboard() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
-        {STAT_CARDS.map((s) => (
+        {statCards.map((s) => (
           <button
             key={s.label}
             type="button"
@@ -228,7 +291,7 @@ export default function EmployeeDashboard() {
               {[
                 { label: "In pipeline", val: pipelineTotal },
                 { label: "Converted", val: convertedCount },
-                { label: "Conv. rate", val: "9.7%" },
+                { label: "Conv. rate", val: convRate },
               ].map((s) => (
                 <div key={s.label} className="rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 px-2 py-1.5 sm:px-3 sm:py-2 text-center min-w-0">
                   <p className="text-sm sm:text-base font-black text-slate-900 tabular-nums">{s.val}</p>
@@ -238,9 +301,12 @@ export default function EmployeeDashboard() {
             </div>
 
             <div className="w-full min-w-0" style={{ height: pipeChartHeight }}>
+              {pipelineTotal === 0 && !loading ? (
+                <p className="text-center text-sm text-slate-400 py-12">No leads in pipeline yet</p>
+              ) : (
               <ResponsiveContainer width="100%" height={pipeChartHeight}>
                 <BarChart
-                  data={EMP_PIPELINE}
+                  data={pipeline}
                   layout="vertical"
                   margin={{ top: 2, right: isMobile ? 18 : 28, left: 0, bottom: 2 }}
                 >
@@ -267,7 +333,7 @@ export default function EmployeeDashboard() {
                     formatter={(val) => [`${val} leads`, "Count"]}
                   />
                   <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={isMobile ? 11 : 16}>
-                    {EMP_PIPELINE.map((entry) => (
+                    {pipeline.map((entry) => (
                       <Cell key={entry.label} fill={entry.color} fillOpacity={0.85} />
                     ))}
                     <LabelList
@@ -278,6 +344,7 @@ export default function EmployeeDashboard() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+              )}
             </div>
 
             {pipeFilter !== "all" && filteredPipeLeads && (
@@ -312,11 +379,15 @@ export default function EmployeeDashboard() {
               <div className="p-3 sm:p-4 md:p-5">
                 <SectionHead icon={TrendingUp} title="Lead Sources" sub={isMobile ? "Top channels" : "Top channels this month"} />
                 <div className="flex flex-col items-center py-1 sm:py-2">
+                  {sourceChart.length === 0 ? (
+                    <p className="text-sm text-slate-400 py-8">No lead sources yet</p>
+                  ) : (
+                  <>
                   <div className={`relative ${isMobile ? "w-[112px] h-[112px]" : "w-[148px] h-[148px]"}`}>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={EMP_SOURCE_CHART.map((s) => ({ name: s.label, value: s.pct, color: s.color }))}
+                          data={sourceChart.map((s) => ({ name: s.label, value: s.pct, color: s.color }))}
                           dataKey="value"
                           cx="50%"
                           cy="50%"
@@ -326,7 +397,7 @@ export default function EmployeeDashboard() {
                           stroke="#fff"
                           strokeWidth={2}
                         >
-                          {EMP_SOURCE_CHART.map((s) => (
+                          {sourceChart.map((s) => (
                             <Cell key={s.label} fill={s.color} />
                           ))}
                         </Pie>
@@ -342,7 +413,7 @@ export default function EmployeeDashboard() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-x-3 sm:gap-x-4 gap-y-1 mt-3 sm:mt-4 w-full max-w-[240px]">
-                    {EMP_SOURCE_CHART.map((s) => (
+                    {sourceChart.map((s) => (
                       <div key={s.label} className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] text-slate-600 min-w-0">
                         <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0" style={{ background: s.color }} />
                         <span className="truncate flex-1">{s.label}</span>
@@ -350,6 +421,8 @@ export default function EmployeeDashboard() {
                       </div>
                     ))}
                   </div>
+                  </>
+                  )}
                 </div>
               </div>
 
@@ -361,8 +434,10 @@ export default function EmployeeDashboard() {
                   action={<Badge tone="muted">Live</Badge>}
                 />
                 <ul className="space-y-1 sm:space-y-1.5">
-                  {EMP_ACTIVITY.map((a) => (
-                    <li key={a.text}>
+                  {activityFeed.length === 0 ? (
+                    <li className="text-sm text-slate-400 py-4 text-center">No recent activity</li>
+                  ) : activityFeed.map((a) => (
+                    <li key={a.text + a.time}>
                       <div className="flex items-center gap-2 sm:gap-2.5 p-1.5 sm:p-2 rounded-lg sm:rounded-xl hover:bg-slate-50 transition">
                         <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md sm:rounded-lg grid place-items-center text-xs sm:text-sm shrink-0 bg-slate-100 border border-slate-200">
                           {a.emoji}
@@ -411,7 +486,7 @@ export default function EmployeeDashboard() {
               </div>
               <div className="min-w-0">
                 <p className="text-base sm:text-lg font-black text-slate-900 tabular-nums leading-none">
-                  {employee.callsDone}<span className="text-xs sm:text-sm text-slate-400 font-semibold">/{employee.callsTarget}</span>
+                  {callsToday}<span className="text-xs sm:text-sm text-slate-400 font-semibold">/{callsTarget}</span>
                 </p>
                 <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 mt-0.5 leading-tight">
                   Calls today · {callPct}% of target
@@ -420,11 +495,15 @@ export default function EmployeeDashboard() {
             </div>
 
             <div className={`space-y-1.5 sm:space-y-2 ${isMobile ? "max-h-[240px]" : "max-h-[340px]"} overflow-y-auto pr-0.5`}>
-              {agenda.map((a, i) => (
+              {agenda.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-6">Nothing scheduled for today</p>
+              ) : agenda.map((a, i) => {
+                const done = Boolean(agendaDone[i]);
+                return (
                 <div
-                  key={a.time + a.title}
+                  key={a.time + a.title + i}
                   className={`rounded-lg sm:rounded-xl border p-2.5 sm:p-3 transition ${
-                    a.done
+                    done
                       ? "border-slate-100 bg-slate-50/50 opacity-60"
                       : a.hot
                         ? "border-rose-100 bg-rose-50/30"
@@ -435,15 +514,15 @@ export default function EmployeeDashboard() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
                         <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 tabular-nums">{a.time}</span>
-                        {a.hot && !a.done && <Badge tone="danger">Hot</Badge>}
-                        {a.done && <Badge tone="success">Done</Badge>}
+                        {a.hot && !done && <Badge tone="danger">Hot</Badge>}
+                        {done && <Badge tone="success">Done</Badge>}
                       </div>
-                      <p className={`text-[11px] sm:text-xs font-bold mt-0.5 sm:mt-1 leading-snug ${a.done ? "line-through text-slate-400" : "text-slate-900"}`}>
+                      <p className={`text-[11px] sm:text-xs font-bold mt-0.5 sm:mt-1 leading-snug ${done ? "line-through text-slate-400" : "text-slate-900"}`}>
                         {a.title}
                       </p>
                       <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 line-clamp-1">{a.sub}</p>
                     </div>
-                    {!a.done && (
+                    {!done && (
                       <button
                         type="button"
                         onClick={() => markAgendaDone(i)}
@@ -454,14 +533,14 @@ export default function EmployeeDashboard() {
                     )}
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
             {[
-              { label: "Follow-ups", to: "/employee/follow-ups", icon: Zap, count: 8 },
-              { label: "All Leads", to: "/employee/leads", icon: Target, count: 24 },
+              { label: "Follow-ups", to: "/employee/follow-ups", icon: Zap, count: followUps.filter((f) => !f.done).length },
+              { label: "All Leads", to: "/employee/leads", icon: Target, count: leads.length },
             ].map((q) => (
               <Link
                 key={q.to}

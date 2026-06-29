@@ -18,6 +18,7 @@ import {
   priorityTone, stageTone, Avatar, StatCard,
 } from "../components/Primitives.jsx";
 import { salesKpis } from "../data/mock.js";
+import { formatIndianNumber } from "../lib/indianFormat.js";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import { apiGet, apiPut, apiDelete } from "../lib/api.js";
 import { useIsMobile } from "../hooks/use-mobile.tsx";
@@ -293,7 +294,7 @@ function PipelineTooltip({ stage, count, convPct, dropPct, prevStage, anchorRef,
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-gray-400">Count</span>
-                  <span className="text-[11px] font-semibold text-white tabular-nums">{count.toLocaleString()}</span>
+                  <span className="text-[11px] font-semibold text-white tabular-nums">{formatIndianNumber(count)}</span>
                 </div>
                 {convPct !== null && (
                   <div className="flex justify-between items-center">
@@ -614,8 +615,8 @@ function SalesPipelineStatus() {
 
       <div className="mt-3 sm:mt-5 lg:mt-3 pt-3 sm:pt-4 lg:pt-2.5 border-t border-rose-100/50 grid grid-cols-3 gap-1.5 sm:gap-3 lg:gap-2">
         {[
-          { label: "Total Leads",  value: totalLeads.toLocaleString() },
-          { label: "Conversions",  value: conversions.toLocaleString() },
+          { label: "Total Leads",  value: formatIndianNumber(totalLeads) },
+          { label: "Conversions",  value: formatIndianNumber(conversions) },
           { label: "Overall Conv", value: `${overallConv}%` },
         ].map(({ label, value }) => (
           <div key={label} className="text-center min-w-0 px-0.5">
@@ -629,7 +630,7 @@ function SalesPipelineStatus() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   3. IM METRICS — inside SectionCard
+   3. IMP METRICS — inside SectionCard
 ══════════════════════════════════════════════════════════ */
 const IM_METRICS = [
   { label: "Pickup Rate", shortLabel: "Pickup", value: 78, rgb: "124,58,237", desc: "Calls answered vs dialed", trend: "+6% vs last week" },
@@ -665,7 +666,7 @@ function IMMetrics() {
   const ringSize = isMobile ? 56 : 88;
 
   return (
-    <SectionCard title="IM Metrics" subtitle={isMobile ? "Messaging funnel" : "Instant messaging funnel performance"} className="flex flex-col min-w-0 w-full">
+    <SectionCard title="IMP Metrics" subtitle={isMobile ? "Messaging funnel" : "Instant messaging funnel performance"} className="flex flex-col min-w-0 w-full">
       <div className="grid grid-cols-3 gap-1.5 sm:gap-4 w-full min-w-0">
         {IM_METRICS.map((m, i) => (
           <motion.div
@@ -941,7 +942,7 @@ export default function Sales() {
         {salesKpis.map((k, i) => <PremiumKPICard key={k.label} k={k} index={i} />)}
       </div>
 
-      {/* ── 2. Revenue Opportunity + IM Metrics (left) + AI Insights (right) ── */}
+      {/* ── 2. Revenue Opportunity + IMP Metrics (left) + AI Insights (right) ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-6 items-start min-w-0">
         <div className="xl:col-span-2 flex flex-col gap-3 sm:gap-6 min-w-0">
           <RevenueOpportunitySection />

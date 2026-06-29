@@ -12,6 +12,7 @@ import {
   getEmpPipelineSummary,
   getEmpStageMeta,
   groupEmpLeadsKanban,
+  isEmployeeNewAssignedLead,
   mapEmpLeadKanbanStage,
 } from "../../data/employeeMock.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
@@ -34,7 +35,7 @@ function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
   );
 }
 
-function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd }) {
+function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd, isNewAssigned }) {
   return (
     <div
       draggable
@@ -44,11 +45,16 @@ function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd }) {
         onDragStart?.();
       }}
       onDragEnd={onDragEnd}
-      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
-        isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"
-      }`}
+      className={`rounded-xl border bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
+        isNewAssigned ? "border-rose-300 ring-1 ring-rose-100" : "border-rose-100"
+      } ${isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"}`}
     >
       <button type="button" onClick={onOpen} className="w-full text-left p-3">
+        {isNewAssigned && (
+          <span className="inline-block mb-1.5 text-[8px] font-black uppercase tracking-wider text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+            Admin assigned
+          </span>
+        )}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
             <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
@@ -114,14 +120,24 @@ export default function EmployeeLeads() {
     const lead = leads.find((l) => l.id === Number(leadId) || l.id === leadId);
     if (!lead) return;
     const target = getEmpStageMeta(stageId);
-    const currentStageId = mapEmpLeadKanbanStage(lead.stage, lead.status);
+    const currentStageId = isEmployeeNewAssignedLead(lead)
+      ? "new_lead"
+      : mapEmpLeadKanbanStage(lead.stage, lead.status);
+    if (stageId === "new_lead" && currentStageId !== "new_lead") {
+      toast.error("Only admin-assigned leads appear in New Lead");
+      return;
+    }
     if (currentStageId === stageId) {
       if (scroll) scrollToStage(stageId);
       return;
     }
-    updateLeadStage(lead.id, target.label);
+    updateLeadStage(lead.id, target.label, { fromNewAssigned: currentStageId === "new_lead" });
     if (scroll) scrollToStage(stageId);
-    toast.success(`Moved to ${target.label}`);
+    toast.success(
+      currentStageId === "new_lead"
+        ? `Accepted · moved to ${target.label}`
+        : `Moved to ${target.label}`,
+    );
   };
 
   const closeModal = () => {
@@ -254,13 +270,16 @@ export default function EmployeeLeads() {
                 >
                   {columnLeads.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-rose-200 bg-white/60 p-4 text-center shrink-0 w-[min(72vw,200px)] min-h-[88px] flex items-center justify-center">
-                      <p className="text-[11px] text-slate-400">No leads here</p>
+                      <p className="text-[11px] text-slate-400">
+                        {stage.id === "new_lead" ? "Admin-assigned leads appear here" : "No leads here"}
+                      </p>
                     </div>
                   ) : (
                     columnLeads.map((lead) => (
                       <LeadCard
                         key={lead.id}
                         lead={lead}
+                        isNewAssigned={isEmployeeNewAssignedLead(lead)}
                         isDragging={dragLeadId === lead.id}
                         onOpen={() => setSelected(lead)}
                         onDragStart={() => setDragLeadId(lead.id)}
@@ -318,13 +337,16 @@ export default function EmployeeLeads() {
                   >
                     {columnLeads.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-rose-200 bg-white/60 p-4 text-center">
-                        <p className="text-[11px] text-slate-400">Drop leads here</p>
+                        <p className="text-[11px] text-slate-400">
+                          {stage.id === "new_lead" ? "Admin-assigned leads appear here" : "Drop leads here"}
+                        </p>
                       </div>
                     ) : (
                       columnLeads.map((lead) => (
                         <LeadCard
                           key={lead.id}
                           lead={lead}
+                          isNewAssigned={isEmployeeNewAssignedLead(lead)}
                           isDragging={dragLeadId === lead.id}
                           onOpen={() => setSelected(lead)}
                           onDragStart={() => setDragLeadId(lead.id)}

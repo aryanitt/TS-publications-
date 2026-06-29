@@ -20,7 +20,7 @@ import { apiLeadToAdmin, apiEmployeeToAdmin, unwrapApiData } from "../lib/leadSy
 import {
   getAssignmentState, assignLead, bulkAssign,
   toggleEmployeeReceiving, setDistributionMode, setAutoAssign,
-  initRoundRobinOrder, autoAssignUnassigned, runDistributionNow, computeWorkload,
+  initRoundRobinOrder, syncRoundRobinOrder, autoAssignUnassigned, runDistributionNow, computeWorkload,
   workloadStatus, getAssignmentForLead, getLeadId, normalizeSource,
   isConverted, persistAssignmentState,
 } from "../lib/leadAssignment.js";
@@ -213,9 +213,10 @@ const showToast = (message, type = "success") => {
 
         setAssignState((prev) => {
           const hasAssignments = Object.keys(prev.assignments || {}).length > 0;
-          let s = prev.distribution?.roundRobinOrder?.length
-            ? prev
-            : initRoundRobinOrder(prev, empList);
+          let s = syncRoundRobinOrder(prev, empList);
+          if (!s.distribution.roundRobinOrder?.length) {
+            s = initRoundRobinOrder(s, empList);
+          }
 
           if (isDemo && !hasAssignments) {
             s = createDemoAssignmentState(s, empList, leadList);
@@ -410,22 +411,35 @@ const showToast = (message, type = "success") => {
   }, [enrichedLeads]);
 
   const rrOrder = useMemo(() => {
+    const rotatable = employees.filter(
+      (e) => String(e.status || "active").toLowerCase() !== "inactive"
+        && String(e.status || "").toLowerCase() !== "on_leave",
+    );
     const order = assignState.distribution.roundRobinOrder?.length
       ? assignState.distribution.roundRobinOrder
-      : employees.map((e) => e.id);
-    return order
+      : rotatable.map((e) => e.id);
+
+    const buildRow = (emp, i) => {
+      const s = assignState.employeeSettings[String(emp.id)] || {};
+      return {
+        order: i + 1,
+        id: emp.id,
+        name: emp.name,
+        paused: s.receivingPaused,
+        today: assignState.todayStats?.byEmployee?.[String(emp.id)] || 0,
+      };
+    };
+
+    const mapped = order
       .map((id, i) => {
         const emp = employees.find((e) => String(e.id) === String(id));
         if (!emp) return null;
-        const s = assignState.employeeSettings[String(id)] || {};
-        return {
-          order: i + 1,
-          name: emp.name,
-          paused: s.receivingPaused,
-          today: assignState.todayStats?.byEmployee?.[String(id)] || 0,
-        };
+        return buildRow(emp, i);
       })
       .filter(Boolean);
+
+    if (mapped.length) return mapped;
+    return rotatable.map((emp, i) => buildRow(emp, i));
   }, [assignState, employees]);
 
   const leadAudit = (lead) => {
@@ -539,7 +553,7 @@ const showToast = (message, type = "success") => {
           <div className="space-y-1">
             {rrOrder.map((r) => (
               <div
-                key={r.order}
+                key={r.id ?? r.order}
                 className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border ${
                   r.paused ? "bg-amber-50/80 border-amber-200" : "bg-white border-rose-100"
                 }`}
@@ -585,7 +599,7 @@ const showToast = (message, type = "success") => {
               <div className="flex flex-wrap gap-1.5">
                 {rrOrder.map((r) => (
                   <span
-                    key={r.order}
+                    key={r.id ?? r.order}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border whitespace-nowrap ${
                       r.paused ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-white border-rose-100 text-slate-700"
                     }`}

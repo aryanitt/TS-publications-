@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Component } from "react";
 import { Outlet, useOutletContext, useNavigate } from "react-router-dom";
 import toast, { Toaster } from "react-hot-toast";
 import { Plus, Phone, Calendar, CheckSquare, MessageSquare } from "lucide-react";
@@ -7,6 +7,47 @@ import EmployeeSidebar from "../components/EmployeeSidebar.jsx";
 import EmployeeTopbar from "../components/EmployeeTopbar.jsx";
 import EmployeeMobileNav from "../components/EmployeeMobileNav.jsx";
 import { EMP_TOAST_OPTIONS } from "../utils/empToast.jsx";
+
+class EmployeeRouteErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="page-shell min-w-0 p-6 text-center max-w-md mx-auto">
+          <h1 className="text-lg font-bold text-slate-800">This page couldn&apos;t load</h1>
+          <p className="text-sm text-slate-500 mt-2">
+            Something went wrong loading this workspace. Try refreshing or return to your dashboard.
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-bold"
+            >
+              Refresh page
+            </button>
+            <button
+              type="button"
+              onClick={() => { window.location.href = "/employee"; }}
+              className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700"
+            >
+              Go to dashboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function EmployeeLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -37,7 +78,9 @@ export default function EmployeeLayout() {
           <EmployeeTopbar onMenu={() => setSidebarOpen(true)} />
 
           <main className="flex-1 bg-white text-slate-900 p-3 sm:p-4 md:p-6 lg:p-8 xl:px-10 pb-28 lg:pb-8 page-shell overflow-x-clip relative">
-            <Outlet context={{ toast: (msg, type = "success") => (type === "error" ? toast.error(msg) : toast.success(msg)) }} />
+            <EmployeeRouteErrorBoundary>
+              <Outlet context={{ toast: (msg, type = "success") => (type === "error" ? toast.error(msg) : toast.success(msg)) }} />
+            </EmployeeRouteErrorBoundary>
           </main>
 
           <EmployeeMobileNav />

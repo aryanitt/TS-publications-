@@ -233,7 +233,7 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
 }
 
 export default function EmployeeTasks() {
-  const { tasks, createTask, updateTaskStatus, removeTask, syncTaskWithFollowUp, employee, usingApi } = useEmployee();
+  const { tasks, createTask, updateTaskStatus, removeTask, syncTaskWithFollowUp, employee, usingApi, loading, refreshTasks } = useEmployee();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [tab, setTab] = useState("upcoming");
@@ -248,8 +248,15 @@ export default function EmployeeTasks() {
     deadline: "17:00",
   });
   const [checklistChecks, setChecklistChecks] = useState(() => {
-    const saved = localStorage.getItem("emp_daily_checklist_checks");
-    return saved ? JSON.parse(saved) : {};
+    if (typeof window === "undefined") return {};
+    try {
+      const saved = window.localStorage.getItem("emp_daily_checklist_checks");
+      if (!saved) return {};
+      const parsed = JSON.parse(saved);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
   });
 
   useEffect(() => {
@@ -260,6 +267,11 @@ export default function EmployeeTasks() {
     setChecklistChecks((prev) => ({ ...prev, [key]: !prev[key] }));
     toast.success("Checklist updated");
   };
+
+  useEffect(() => {
+    if (loading || !employee?.id) return;
+    refreshTasks(employee.id, employee);
+  }, [loading, employee?.id, employee?.name, refreshTasks]);
 
   const today = new Date(`${getEmpAppToday()}T00:00:00`);
 
@@ -306,7 +318,11 @@ export default function EmployeeTasks() {
       .filter(([, items]) => items.length > 0)
       .sort(([a], [b]) => new Date(a) - new Date(b));
     entries = tab === "upcoming"
-      ? entries.filter(([d]) => new Date(`${d}T00:00:00`) >= today)
+      ? entries.filter(([d, items]) => {
+        const day = new Date(`${d}T00:00:00`);
+        if (day >= today) return true;
+        return items.some((t) => !t.done);
+      })
       : entries.filter(([d]) => new Date(`${d}T00:00:00`) < today);
 
     if (search.trim()) {

@@ -49,6 +49,30 @@ export function unwrapApiData(res) {
   return res?.data ?? [];
 }
 
+/** Extract a list array from common API envelope shapes. Returns null when not a list. */
+export function unwrapApiList(res) {
+  const direct = unwrapApiData(res);
+  if (Array.isArray(direct)) return direct;
+  if (Array.isArray(res?.data?.items)) return res.data.items;
+  if (Array.isArray(res?.data?.leads)) return res.data.leads;
+  if (Array.isArray(res?.items)) return res.items;
+  if (Array.isArray(res?.leads)) return res.leads;
+  return null;
+}
+
+/** Replace list on fetch — used for per-employee workspace (no cross-user merge). */
+export function replaceFetchedList(_prev, next) {
+  if (!Array.isArray(next)) return [];
+  return next;
+}
+
+/** Keep existing rows when a refetch returns empty (avoids wiping good data on race/429). */
+export function mergeFetchedList(prev, next) {
+  if (!Array.isArray(next)) return prev;
+  if (next.length === 0 && Array.isArray(prev) && prev.length > 0) return prev;
+  return next;
+}
+
 export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   const name = lead.leadName || lead.lead_name || "Lead";
   const id = lead.id;
@@ -83,6 +107,8 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
     createdAt: lead.createdAt || lead.created_at,
     updatedAt: lead.updatedAt || lead.updated_at,
     assignmentStatus: lead.assignmentStatus || lead.assignment_status,
+    assignedAt: lead.assignedAt || lead.assigned_at,
+    acceptedAt: lead.acceptedAt || lead.accepted_at,
     _api: true,
   };
 }
@@ -123,6 +149,7 @@ export function employeeStagePatch(stageLabel, currentStatus) {
   const status = stageLabel === "Converted" ? "converted"
     : stageLabel === "Not Pick" ? "notpick"
     : stageLabel === "Closed" ? "ni"
+    : stageLabel === "New Lead" ? "new"
     : currentStatus;
   return {
     stage: stageLabel,

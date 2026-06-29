@@ -2,9 +2,10 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CheckSquare, MessageSquare, Phone, Users, FileText,
-  Download, Calendar, ArrowLeftRight,
+  Download, Calendar, LogOut,
 } from "lucide-react";
 import { SidebarContext } from "../../context/SidebarContext.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 import EmployeeDoodleAvatar from "./EmployeeDoodleAvatar.jsx";
 import EmployeePanelDoodleLogo from "./EmployeePanelDoodleLogo.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
@@ -14,7 +15,6 @@ import {
   SidebarHeader,
   SidebarSectionLabel,
   SidebarNavItem,
-  SidebarSwitchLink,
   SidebarProfileCard,
   SidebarCollapseHint,
   SidebarNav,
@@ -35,6 +35,7 @@ const NAV = [
 export default function EmployeeSidebar({ open, onClose, collapsed, onToggleCollapse }) {
   const [hovered, setHovered] = useState(false);
   const { employee } = useEmployee();
+  const { logout } = useAuth();
   const navigate = useNavigate();
   const isExpanded = !collapsed || hovered;
 
@@ -78,13 +79,6 @@ export default function EmployeeSidebar({ open, onClose, collapsed, onToggleColl
         </SidebarNav>
 
         <SidebarFooter>
-          <SidebarSwitchLink
-            to="/"
-            onClick={onClose}
-            icon={ArrowLeftRight}
-            label="Switch to Admin Panel"
-            isExpanded={isExpanded}
-          />
           <SidebarProfileCard
             isExpanded={isExpanded}
             onClick={() => { navigate("/employee/profile"); onClose(); }}
@@ -93,6 +87,16 @@ export default function EmployeeSidebar({ open, onClose, collapsed, onToggleColl
             title={employee.name}
             avatar={<EmployeeDoodleAvatar size={32} shape="circle" />}
           />
+          {isExpanded && (
+            <button
+              type="button"
+              onClick={() => { logout(); onClose(); navigate("/login", { replace: true }); }}
+              className="mt-2 w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[11px] font-semibold text-slate-400 hover:text-rose-300 hover:bg-slate-800 border border-transparent hover:border-slate-700 transition"
+            >
+              <LogOut className="w-3.5 h-3.5 shrink-0" />
+              <span>Sign out</span>
+            </button>
+          )}
         </SidebarFooter>
 
         <SidebarCollapseHint show={collapsed && !hovered} />

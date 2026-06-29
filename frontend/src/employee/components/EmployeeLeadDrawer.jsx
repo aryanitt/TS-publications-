@@ -3,7 +3,7 @@ import {
   Phone, MessageCircle, Mail, Sparkles, Clock, 
   User, Users, RefreshCw, Shuffle, ChevronDown 
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer } from "../../components/Primitives.jsx";
 import { LEAD_STATUS_LABELS, EMP_TEAM, EMP_LEAD_TEMPERATURES } from "../../data/employeeMock.js";
@@ -21,7 +21,17 @@ const TEMPERATURE_BTN_ACTIVE = {
 export default function EmployeeLeadDrawer({ lead, onClose }) {
   if (!lead) return null;
   const navigate = useNavigate();
-  const { calls = [], activities = {}, leads = [], reassignLead, teamEmployees, updateLeadTemperature, addActivityRecord } = useEmployee();
+  const {
+    calls = [],
+    activities = {},
+    leads = [],
+    employee,
+    reassignLead,
+    teamEmployees,
+    refreshTeamEmployees,
+    updateLeadTemperature,
+    addActivityRecord,
+  } = useEmployee();
 
   const liveLead = useMemo(
     () => leads.find((l) => l.id === lead.id) || lead,
@@ -36,7 +46,24 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
     return activities[liveLead.id] || [];
   }, [activities, liveLead.id]);
 
-  const currentAssignee = liveLead.assignee || "Amit Kumar";
+  useEffect(() => {
+    if (!teamEmployees.length && refreshTeamEmployees) {
+      refreshTeamEmployees();
+    }
+  }, [teamEmployees.length, refreshTeamEmployees]);
+
+  const currentAssignee = liveLead.assignee || employee?.name || "—";
+
+  const reassignOptions = useMemo(() => {
+    const source = teamEmployees.length
+      ? teamEmployees
+      : EMP_TEAM.map((t, i) => ({ id: i + 1, name: t.name }));
+    const byName = new Map(source.filter((e) => e?.name).map((e) => [e.name, e]));
+    if (currentAssignee && currentAssignee !== "—" && !byName.has(currentAssignee)) {
+      byName.set(currentAssignee, { id: `assignee-${currentAssignee}`, name: currentAssignee });
+    }
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [teamEmployees, currentAssignee]);
 
   const handleManualReassign = async (newAssignee) => {
     const emp = teamEmployees.find((e) => e.name === newAssignee)
@@ -49,7 +76,7 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
     if (!ok) return;
     addActivityRecord(liveLead.id, {
       type: "meeting",
-      text: `Lead manually reassigned to ${newAssignee} by Amit Kumar`,
+      text: `Lead manually reassigned to ${newAssignee} by ${employee?.name || "You"}`,
       time: "Just now",
     });
     toast.success(`Assigned to ${newAssignee}`);
@@ -178,9 +205,10 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
                 onChange={(e) => handleManualReassign(e.target.value)}
                 className="w-full h-9.5 pl-3.5 pr-10 rounded-xl border border-rose-100 bg-white text-xs font-bold text-slate-850 outline-none appearance-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition cursor-pointer"
               >
-                {EMP_TEAM.map((t) => (
-                  <option key={t.name} value={t.name}>
-                    {t.name} {t.name === "Amit Kumar" ? "(You)" : ""}
+                {reassignOptions.map((t) => (
+                  <option key={t.id ?? t.name} value={t.name}>
+                    {t.name}{" "}
+                    {(t.id === employee?.id || t.name === employee?.name) ? "(You)" : ""}
                   </option>
                 ))}
               </select>

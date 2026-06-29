@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Drawer } from "../../components/Primitives.jsx";
+import { formatServicePriceLabel } from "../../lib/indianFormat.js";
 import { SERVICE_CATEGORIES } from "../../data/servicesMock.js";
 
 const CATEGORY_OPTIONS = SERVICE_CATEGORIES.filter((c) => c.id !== "all");
@@ -32,6 +33,8 @@ export function buildServiceFromForm(form) {
   const iconMap = { ai: "bot", crm: "database", leadgen: "target", consulting: "briefcase", dev: "code" };
   const tags = [form.tag1, form.tag2].filter(Boolean);
 
+  const priceLabel = formatServicePriceLabel(form.price.trim(), parsePriceNum(form.price));
+
   return {
     id: slugify(form.name),
     name: form.name.trim(),
@@ -46,12 +49,12 @@ export function buildServiceFromForm(form) {
     leads: 0,
     converted: 0,
     convRate: 0,
-    price: form.price.trim(),
+    price: priceLabel,
     priceNum: parsePriceNum(form.price),
     icon: iconMap[form.category] || "bot",
     features: [{ title: "Core Offering", desc: form.description.trim() }],
     tiers: [
-      { name: "Starter", price: form.price.trim() || "Custom", features: ["Standard scope"], popular: true },
+      { name: "Starter", price: priceLabel || "Custom", features: ["Standard scope"], popular: true },
     ],
     insights: ["New service — track performance after launch."],
     delivery: [{ step: "Setup", status: "pending" }],
@@ -148,7 +151,7 @@ export default function AddServiceDrawer({ open, onClose }) {
               <input
                 value={form.price}
                 onChange={(e) => update("price", e.target.value)}
-                placeholder="$5,000/mo"
+                placeholder="₹5,000/mo"
                 className={inputClass}
               />
             </div>

@@ -69,6 +69,154 @@ export const EMP_LEADS = [
   { id: 12, name: "Siddharth Roy", company: "DataPro Pvt", status: "ni", stage: "Closed", source: "Cold Call", budget: "₹2L", service: "CRM Setup & Onboarding", last: "4d ago", av: "SR", color: "#ec4899" },
 ];
 
+export function buildPipelineChartFromLeads(leads = []) {
+  const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
+  for (const lead of leads) {
+    const stageId = isEmployeeNewAssignedLead(lead)
+      ? "new_lead"
+      : (() => {
+        const raw = String(lead.stage || lead.pipelineStage || "attempted").toLowerCase();
+        const found = EMP_KANBAN_STAGES.find((s) => s.id === raw.replace(/\s+/g, "_"))
+          || EMP_KANBAN_STAGES.find((s) => s.label.toLowerCase() === raw)
+          || EMP_KANBAN_STAGES.find((s) => raw.includes(s.label.toLowerCase()))
+          || EMP_KANBAN_STAGES[2];
+        return found.id;
+      })();
+    counts[stageId] = (counts[stageId] || 0) + 1;
+  }
+  const max = Math.max(1, ...Object.values(counts));
+  return EMP_KANBAN_STAGES.map((s) => ({
+    label: s.label,
+    count: counts[s.id] || 0,
+    pct: Math.round(((counts[s.id] || 0) / max) * 100),
+    color: s.color,
+  }));
+}
+
+export function buildSourceChartFromLeads(leads = []) {
+  if (!leads.length) return [];
+  const counts = {};
+  for (const lead of leads) {
+    const src = lead.source || "Other";
+    counts[src] = (counts[src] || 0) + 1;
+  }
+  const total = leads.length;
+  const colors = ["#3b82f6", "#7c3aed", "#0ea5e9", "#10b981", "#f59e0b", "#f97316"];
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([label, count], i) => ({
+      label,
+      pct: Math.round((count / total) * 100),
+      color: colors[i % colors.length],
+    }));
+}
+
+export function filterCallsForPeriod(calls, period) {
+  const list = Array.isArray(calls) ? calls : [];
+  if (period === "today") return list.filter((c) => c.period === "today");
+  if (period === "week") return list.filter((c) => c.period === "today" || c.period === "week");
+  return list;
+}
+
+export function computeCallStatsFromCalls(calls, period = "today") {
+  const list = filterCallsForPeriod(calls, period);
+  const dials = list.length;
+  const missed = list.filter(
+    (c) => c.type === "miss" || /not pick|missed/i.test(String(c.outcome || "")),
+  ).length;
+  const connected = dials - missed;
+  const pickupRate = dials ? Math.round((connected / dials) * 100) : 0;
+  const missRate = dials ? Math.round((missed / dials) * 100) : 0;
+  const durations = list.map((c) => parseDurationToSeconds(c.duration)).filter((s) => s > 0);
+  const avgSecs = durations.length
+    ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+    : 0;
+  const avgDuration = avgSecs ? formatDurationFromSeconds(avgSecs) : "—";
+  const totalSecs = durations.reduce((a, b) => a + b, 0);
+  const totalTalk = totalSecs
+    ? `${Math.floor(totalSecs / 3600)}h ${Math.floor((totalSecs % 3600) / 60)}m`.replace(/^0h /, "")
+    : "—";
+  const hotLeads = list.filter((c) => /hot|qualified|interested|demo|proposal/i.test(String(c.outcome || ""))).length;
+  const callbacks = list.filter((c) => /callback|follow/i.test(String(c.outcome || ""))).length;
+  const ratings = list.map((c) => c.rating).filter((r) => r > 0);
+  const quality = ratings.length
+    ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 20)
+    : pickupRate;
+  return { dials, connected, missed, callbacks, pickupRate, quality, missRate, avgDuration, hotLeads, totalTalk };
+}
+
+const DASHBOARD_ACTIVITY_EMOJI = {
+  call: "📞", email: "✉️", whatsapp: "💬", meeting: "📅", note: "📝", proposal: "📄",
+};
+
+export function buildRecentActivityFeed(activities = {}, calls = [], limit = 5) {
+  const items = [];
+  const activityMap = activities && typeof activities === "object" && !Array.isArray(activities)
+    ? activities
+    : {};
+  for (const events of Object.values(activityMap)) {
+    if (!Array.isArray(events)) continue;
+    for (const e of events) {
+      items.push({ emoji: DASHBOARD_ACTIVITY_EMOJI[e.type] || "•", text: e.text, time: e.time });
+    }
+  }
+  for (const c of calls.slice(0, 20)) {
+    const kind = c.type === "miss" ? "Missed call" : c.type === "in" ? "Inbound call" : "Outbound call";
+    items.push({
+      emoji: "📞",
+      text: `${kind}: ${c.name}${c.duration && c.duration !== "—" ? ` (${c.duration})` : ""}`,
+      time: c.date,
+    });
+  }
+  return items.slice(0, limit);
+}
+
+export function buildDashboardAgenda({ meetingsUpcoming = [], tasks = {}, followUps = [] }) {
+  const today = getEmpAppToday();
+  const items = [];
+  const meetings = Array.isArray(meetingsUpcoming) ? meetingsUpcoming : [];
+  const pendingFollowUps = Array.isArray(followUps) ? followUps : [];
+  const taskMap = tasks && typeof tasks === "object" ? tasks : {};
+
+  for (const m of meetings) {
+    if (m.date !== today && !String(m.time || "").startsWith("Today")) continue;
+    const timeMatch = String(m.time || "").match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?|\d{1,2}:\d{2})/i);
+    items.push({
+      time: timeMatch ? timeMatch[1] : "—",
+      title: `Meeting: ${m.lead || m.title}`,
+      sub: m.company || m.agenda || "",
+      hot: false,
+      done: false,
+    });
+  }
+
+  const todayTasks = taskMap[today] || [];
+  for (const t of todayTasks) {
+    if (t.status === "done" || t.status === "completed") continue;
+    items.push({
+      time: t.deadlineTime || t.time || "—",
+      title: t.name || t.title || "Task",
+      sub: t.leadName || t.note || "",
+      hot: t.priority === "high" || t.priority === "urgent",
+      done: false,
+    });
+  }
+
+  for (const f of pendingFollowUps) {
+    if (f.done) continue;
+    items.push({
+      time: f.time || "—",
+      title: `${f.type || "Follow-up"}: ${f.name}`,
+      sub: f.company || f.note || "",
+      hot: f.urgency === "overdue" || f.urgency === "today",
+      done: false,
+    });
+  }
+
+  return items;
+}
+
 export const EMP_PIPELINE = [
   { label: "Not Pick", count: 28, pct: 100, color: "#94a3b8" },
   { label: "Attempted", count: 72, pct: 95, color: "#3b82f6" },
@@ -286,16 +434,27 @@ const MEETING_PLATFORM_LABELS = {
 
 export function meetingToApiPayload(form, employeeId) {
   const platformLabel = MEETING_PLATFORM_LABELS[form.platform] || form.platform || "Google Meet";
-  return {
-    leadId: Number(form.leadId),
-    employeeId: Number(employeeId),
+  const leadId = Number(form.leadId);
+  const empId = Number(employeeId);
+  if (!Number.isFinite(leadId) || leadId <= 0) {
+    throw new Error("Select a valid lead before booking a meeting");
+  }
+  if (!Number.isFinite(empId) || empId <= 0) {
+    throw new Error("Employee session invalid — refresh the page and try again");
+  }
+  const payload = {
+    leadId,
+    employeeId: empId,
     title: form.title.trim(),
     scheduledAt: `${form.date}T${form.time || "09:00"}:00`,
-    meetLink: form.meetLink || null,
     location: platformLabel,
     durationMin: 30,
-    agenda: form.agenda?.trim() || null,
   };
+  const meetLink = String(form.meetLink || "").trim();
+  if (meetLink) payload.meetLink = meetLink;
+  const agenda = String(form.agenda || "").trim();
+  if (agenda) payload.agenda = agenda;
+  return payload;
 }
 
 export function partitionMeetings(apiMeetings, leads = []) {
@@ -376,6 +535,7 @@ export const EMP_TEAM_CALL = [
 ];
 
 export const EMP_KANBAN_STAGES = [
+  { id: "new_lead", label: "New Lead", color: "#e11d48", badgeTone: "primary" },
   { id: "not_pick", label: "Not Pick", color: "#94a3b8", badgeTone: "muted" },
   { id: "attempted", label: "Attempted", color: "#3b82f6", badgeTone: "info" },
   { id: "contacted", label: "Contacted", color: "#7c3aed", badgeTone: "primary" },
@@ -454,8 +614,18 @@ export function empLeadFromDrawerPayload(raw, avatarColors) {
   };
 }
 
+export function isEmployeeNewAssignedLead(lead) {
+  if (!lead) return false;
+  if (lead.acceptedAt || lead.accepted_at) return false;
+  const assignStatus = String(lead.assignmentStatus || lead.assignment_status || "").toLowerCase();
+  if (assignStatus === "assigned") return true;
+  const stage = String(lead.stage || lead.pipelineStage || lead.pipeline_stage || "").toLowerCase();
+  return (stage === "new lead" || stage === "new") && assignStatus !== "accepted" && assignStatus !== "in_progress";
+}
+
 export function mapEmpLeadKanbanStage(stage, status) {
   const s = (stage || "").toLowerCase();
+  if (s === "new lead" || s === "new") return "new_lead";
   if (status === "notpick" || s.includes("not pick")) return "not_pick";
   if (status === "converted" || s.includes("converted")) return "converted";
   if (s.includes("negotiation")) return "negotiation";
@@ -469,7 +639,7 @@ export function mapEmpLeadKanbanStage(stage, status) {
 export function groupEmpLeadsKanban(leads) {
   const map = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, []]));
   leads.forEach((l) => {
-    const id = mapEmpLeadKanbanStage(l.stage, l.status);
+    const id = isEmployeeNewAssignedLead(l) ? "new_lead" : mapEmpLeadKanbanStage(l.stage, l.status);
     if (map[id]) map[id].push(l);
   });
   return map;
@@ -599,6 +769,13 @@ export function priorityFromApi(priority) {
   return "med";
 }
 
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export function tasksMapFromApi(apiTasks, employee) {
   const map = {};
   if (!Array.isArray(apiTasks)) return map;
@@ -607,7 +784,7 @@ export function tasksMapFromApi(apiTasks, employee) {
     const due = t.dueAt ? new Date(t.dueAt) : new Date();
     const date = Number.isNaN(due.getTime())
       ? getEmpAppToday()
-      : due.toISOString().slice(0, 10);
+      : localDateKey(due);
     const deadline = t.dueAt && !Number.isNaN(due.getTime())
       ? `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`
       : "17:00";
@@ -638,6 +815,20 @@ export function getFollowUpUrgency(dateStr) {
   if (d < today) return "overdue";
   if (d.getTime() === today.getTime()) return "today";
   return "upcoming";
+}
+
+export function formatFollowUpCompletedAt(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 export function formatFollowUpSchedule(dateStr, timeStr) {
@@ -854,6 +1045,9 @@ export function followUpFromApi(apiFollowup, leads = [], type) {
     scheduledDate: dateStr,
     scheduledTime: timeStr,
     done: status === "completed" || status === "done",
+    completedWithMom: Boolean(apiFollowup.completedWithMom || apiFollowup.completed_with_mom),
+    completedAt: apiFollowup.completedAt || apiFollowup.completed_at || null,
+    completedTime: formatFollowUpCompletedAt(apiFollowup.completedAt || apiFollowup.completed_at),
     taskId: apiFollowup.taskId,
     leadId: apiFollowup.leadId,
   };
@@ -1439,7 +1633,37 @@ export function normalizeCallSop(sop) {
   }
 }
 
+function normalizeQuestionText(q) {
+  if (typeof q === "string") return q.trim();
+  if (q && typeof q === "object") {
+    return String(q.text || q.question || q.q || q.title || "").trim();
+  }
+  return "";
+}
+
 function sopFromApiRow(api) {
+  const stepsRaw = api.instruction_steps || api.instructionSteps || api.steps || [];
+  const script = api.script || "";
+  const questions = (api.questions || []).map(normalizeQuestionText).filter(Boolean);
+  const frameworks = (api.frameworks || []).filter(Boolean);
+
+  let steps = normalizeSopSteps(stepsRaw);
+  if (steps[0] && (script || questions.length || frameworks.length)) {
+    const first = steps[0];
+    steps = [{
+      ...first,
+      scripts: {
+        ...first.scripts,
+        opening: first.scripts.opening || script,
+        tips: first.scripts.tips || frameworks.join("\n"),
+      },
+      discovery: questions.length
+        ? questions.map((q, i) => ({ id: `d${i}`, q, hint: "" }))
+        : first.discovery,
+      checklist: questions.length && !first.checklist?.length ? questions : first.checklist,
+    }, ...steps.slice(1)];
+  }
+
   return normalizeCallSop({
     id: api.id,
     title: api.title || "SOP",
@@ -1448,41 +1672,68 @@ function sopFromApiRow(api) {
     budgetRange: api.budgetRange || "—",
     duration: api.estimated_time || api.estimatedTime || "—",
     icon: api.icon || "📋",
-    steps: api.instruction_steps || api.instructionSteps || api.steps,
+    status: api.status,
+    description: api.description,
+    steps,
     objections: Array.isArray(api.objections) ? api.objections : [],
     crossSell: api.crossSell || null,
   });
 }
 
-/** Keep rich Call Assistant fields when hydrating SOPs from the API. */
-export function mergeApiSopsWithLocal(apiSops) {
-  if (!Array.isArray(apiSops) || apiSops.length === 0) {
-    return ALL_EMP_SOPS.map(normalizeCallSop);
-  }
+/** Employees see all admin SOPs except archived (read-only). */
+function isEmployeeVisibleSop(api) {
+  const status = String(api?.status || "Active").toLowerCase();
+  return status !== "archived";
+}
 
+export const EMP_SOP_CACHE_KEY = "crm_employee_sops_v1";
+export const ADMIN_SOP_STORAGE_KEY = "admin_dashboard_sops";
+
+/** Parse SOP list from any known API response shape. */
+export function extractApiSopList(response) {
+  if (!response || response.success === false) return null;
+  if (Array.isArray(response.sops)) return response.sops;
+  if (Array.isArray(response.data?.sops)) return response.data.sops;
+  if (Array.isArray(response.data)) return response.data;
+  if (Array.isArray(response)) return response;
+  return [];
+}
+
+export function readCachedEmployeeSops() {
+  if (typeof window === "undefined") return [];
+  const keys = [EMP_SOP_CACHE_KEY, ADMIN_SOP_STORAGE_KEY];
+  for (const key of keys) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    } catch {
+      /* try next key */
+    }
+  }
+  return [];
+}
+
+export function persistEmployeeSops(list) {
+  if (typeof window === "undefined" || !Array.isArray(list) || !list.length) return;
   try {
-    const localById = new Map(ALL_EMP_SOPS.map((s) => [Number(s.id), s]));
-    const apiIds = new Set();
-
-    const merged = apiSops.map((api) => {
-      const id = Number(api.id);
-      apiIds.add(id);
-      const local = localById.get(id);
-      if (local) {
-        return normalizeCallSop({
-          ...local,
-          title: api.title || local.title,
-          category: api.category || local.category,
-          sub: sopSubtitle(api, local.sub),
-          steps: api.instruction_steps || api.instructionSteps || api.steps || local.steps,
-        });
-      }
-      return sopFromApiRow(api);
-    });
-
-    const extras = ALL_EMP_SOPS.filter((s) => !apiIds.has(Number(s.id)));
-    return [...merged, ...extras.map(normalizeCallSop)];
+    window.localStorage.setItem(EMP_SOP_CACHE_KEY, JSON.stringify(list));
   } catch {
-    return ALL_EMP_SOPS.map(normalizeCallSop);
+    /* ignore quota errors */
   }
+}
+
+/** Map admin/API SOP rows to employee read-only playbooks — no local mock merge. */
+export function mapAdminSopsForEmployee(apiSops) {
+  if (!Array.isArray(apiSops)) return [];
+  return apiSops
+    .filter(isEmployeeVisibleSop)
+    .map(sopFromApiRow)
+    .filter(Boolean);
+}
+
+/** @deprecated Use mapAdminSopsForEmployee — kept for imports that expect this name. */
+export function mergeApiSopsWithLocal(apiSops) {
+  return mapAdminSopsForEmployee(apiSops);
 }

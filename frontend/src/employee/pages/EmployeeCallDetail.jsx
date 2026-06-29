@@ -66,6 +66,7 @@ const getCheckedQuestionsForCall = (call, sops) => {
 
   const activeSopId = getSopForCall(call);
   const activeSop = sops.find((s) => s.id === activeSopId) || sops[0];
+  if (!activeSop?.steps) return {};
   const checked = {};
   const outcome = (call.outcome || "").toLowerCase();
   

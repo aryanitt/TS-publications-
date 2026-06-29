@@ -15,15 +15,17 @@ async function proxyApiRequest(request: Request): Promise<Response | null> {
   headers.delete("host");
   headers.delete("connection");
 
-  const init: RequestInit & { duplex?: "half" } = {
+  const init: RequestInit = {
     method: request.method,
     headers,
     redirect: "manual",
   };
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = request.body;
-    init.duplex = "half";
+    const body = await request.arrayBuffer();
+    if (body.byteLength > 0) {
+      init.body = body;
+    }
   }
 
   try {
@@ -32,7 +34,12 @@ async function proxyApiRequest(request: Request): Promise<Response | null> {
     responseHeaders.delete("content-encoding");
     responseHeaders.delete("transfer-encoding");
 
-    return new Response(backendResponse.body, {
+    const responseBody = await backendResponse.arrayBuffer();
+    if (responseBody.byteLength > 0 && !responseHeaders.get("content-type")) {
+      responseHeaders.set("content-type", "application/json; charset=utf-8");
+    }
+
+    return new Response(responseBody, {
       status: backendResponse.status,
       statusText: backendResponse.statusText,
       headers: responseHeaders,

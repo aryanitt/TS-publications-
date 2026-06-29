@@ -3,7 +3,11 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout.jsx";
 import EmployeeLayout from "./employee/layouts/EmployeeLayout.jsx";
 import PageLoader from "./components/PageLoader.jsx";
+import RequireAuth from "./components/RequireAuth.jsx";
+import { AuthProvider } from "./context/AuthContext.jsx";
 
+const Login = lazy(() => import("./pages/Login.jsx"));
+const ChangePassword = lazy(() => import("./pages/ChangePassword.jsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
 const SOP = lazy(() => import("./pages/SOP.jsx"));
 const Sales = lazy(() => import("./pages/Sales.jsx"));
@@ -66,42 +70,54 @@ class CallAssistantErrorBoundary extends Component {
 export default function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/sop" element={<SOP />} />
-            <Route path="/sales" element={<Sales />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/incentives" element={<Incentives />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="/leads" element={<Leads />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/forms/*" element={<Forms />} />
-            <Route path="/services/*" element={<Services />} />
-          </Route>
+      <AuthProvider>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
 
-          <Route path="/employee" element={<EmployeeLayout />}>
-            <Route index element={<EmployeeDashboard />} />
-            <Route path="tasks" element={<EmployeeTasks />} />
-            <Route path="follow-ups" element={<EmployeeFollowUps />} />
-            <Route path="calls" element={<EmployeeCalls />} />
-            <Route path="call-detail" element={<EmployeeCallDetail />} />
-            <Route path="leads" element={<EmployeeLeads />} />
-            <Route path="pipeline" element={<EmployeePipeline />} />
-            <Route path="sales-process" element={<EmployeeSalesProcess />} />
-            <Route path="sales-process/:sopId" element={<EmployeeSopDetail />} />
-            <Route path="call-assistant" element={<CallAssistantErrorBoundary><EmployeeCallAssistant /></CallAssistantErrorBoundary>} />
-            <Route path="assets" element={<EmployeeAssets />} />
-            <Route path="meetings" element={<EmployeeMeetings />} />
-            <Route path="profile" element={<EmployeeProfile />} />
-          </Route>
+            <Route element={<RequireAuth />}>
+              <Route path="/change-password" element={<ChangePassword />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
+            <Route element={<RequireAuth roles={["admin"]} />}>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/sop" element={<SOP />} />
+                <Route path="/sales" element={<Sales />} />
+                <Route path="/team" element={<Team />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/incentives" element={<Incentives />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/admin" element={<Admin />} />
+                <Route path="/leads" element={<Leads />} />
+                <Route path="/pipeline" element={<Pipeline />} />
+                <Route path="/forms/*" element={<Forms />} />
+                <Route path="/services/*" element={<Services />} />
+              </Route>
+            </Route>
+
+            <Route element={<RequireAuth roles={["employee"]} />}>
+              <Route path="/employee" element={<EmployeeLayout />}>
+                <Route index element={<EmployeeDashboard />} />
+                <Route path="tasks" element={<EmployeeTasks />} />
+                <Route path="follow-ups" element={<EmployeeFollowUps />} />
+                <Route path="calls" element={<EmployeeCalls />} />
+                <Route path="call-detail" element={<EmployeeCallDetail />} />
+                <Route path="leads" element={<EmployeeLeads />} />
+                <Route path="pipeline" element={<EmployeePipeline />} />
+                <Route path="sales-process" element={<EmployeeSalesProcess />} />
+                <Route path="sales-process/:sopId" element={<EmployeeSopDetail />} />
+                <Route path="call-assistant" element={<CallAssistantErrorBoundary><EmployeeCallAssistant /></CallAssistantErrorBoundary>} />
+                <Route path="assets" element={<EmployeeAssets />} />
+                <Route path="meetings" element={<EmployeeMeetings />} />
+                <Route path="profile" element={<EmployeeProfile />} />
+              </Route>
+            </Route>
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

@@ -1479,6 +1479,151 @@ function AddDrawer({ open, onClose, onSave, members }) {
   );
 }
 
+function CredentialsModal({ open, credentials, memberName, onClose }) {
+  const copyText = (label, value) => {
+    if (!value) return;
+    navigator.clipboard.writeText(String(value));
+    toast.success(`${label} copied`);
+  };
+
+  const copyAll = () => {
+    if (!credentials) return;
+    const text = [
+      `Name: ${memberName || ""}`,
+      `Login ID: ${credentials.loginId}`,
+      `Email: ${credentials.email}`,
+      `Password: ${credentials.password}`,
+    ].join("\n");
+    navigator.clipboard.writeText(text);
+    toast.success("All credentials copied");
+  };
+
+  return (
+    <AnimatePresence>
+      {open && credentials && (
+        <motion.div
+          key="cred-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 70,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            background: "rgba(0,0,0,.75)",
+            backdropFilter: "blur(5px)",
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.92, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.92, opacity: 0 }}
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              borderRadius: 18,
+              padding: 22,
+              background: "#fff",
+              border: "1px solid #bbf7d0",
+            }}
+          >
+            <p style={{ fontWeight: 700, fontSize: 15, color: "#15803d", marginBottom: 4 }}>
+              Login credentials created
+            </p>
+            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
+              Share these with <strong>{memberName}</strong> once. The password will not be shown again.
+            </p>
+
+            {[
+              ["Login ID", credentials.loginId],
+              ["Email", credentials.email],
+              ["Password", credentials.password],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: 10, textTransform: "uppercase", color: "#94a3b8", letterSpacing: ".08em" }}>
+                    {label}
+                  </p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", wordBreak: "break-all" }}>{value}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyText(label, value)}
+                  style={{
+                    flexShrink: 0,
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    background: "#fff",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Copy
+                </button>
+              </div>
+            ))}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={copyAll}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#16a34a",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Copy all
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function DeleteModal({ open, emp, onConfirm, onCancel, busy }) {
   return (
     <AnimatePresence>
@@ -1585,6 +1730,237 @@ function DeleteModal({ open, emp, onConfirm, onCancel, busy }) {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+const MAX_AI_COACH_INSIGHTS = 2;
+
+function buildAiCoachInsights({
+  firstName,
+  assigned,
+  converted,
+  qualified,
+  followups,
+  contacted,
+  overallPerfClamped,
+  revenue,
+  fmtINR,
+  funnel,
+}) {
+  const insights = [];
+
+  insights.push({
+    id: "pipeline",
+    body: (
+      <>
+        {firstName} has <strong>{assigned} assigned leads</strong>
+        {qualified > 0 && <> with <strong>{qualified} qualified</strong></>}
+        {converted > 0 && <> and <strong>{converted} conversions</strong></>}
+        {assigned === 0 && <> — no active pipeline yet</>}
+        .
+      </>
+    ),
+  });
+
+  if (followups > 0) {
+    insights.push({
+      id: "followups",
+      body: (
+        <>
+          <strong>{followups} leads</strong> need follow-up — prioritize callbacks to improve conversion.
+        </>
+      ),
+    });
+  } else if (funnel?.length >= 2) {
+    const top = Number(funnel[0]?.value) || 0;
+    const next = Number(funnel[1]?.value) || 0;
+    if (top > 0 && top > next) {
+      const dropPct = Math.round(((top - next) / top) * 100);
+      insights.push({
+        id: "funnel",
+        body: (
+          <>
+            <strong>{dropPct}% drop</strong> from {funnel[0].name} to {funnel[1].name}
+            {contacted > 0 && <> — {contacted} contacted so far</>}.
+          </>
+        ),
+      });
+    }
+  }
+
+  if (insights.length < MAX_AI_COACH_INSIGHTS) {
+    insights.push({
+      id: "kra",
+      body: (
+        <>
+          <strong>KRA progress:</strong> {Math.round(overallPerfClamped)}% overall · {fmtINR(revenue)} collected.
+        </>
+      ),
+    });
+  }
+
+  return insights.slice(0, MAX_AI_COACH_INSIGHTS);
+}
+
+function AiCoachInsightsPanel({ compact, insights }) {
+  const rows = (insights || []).slice(0, MAX_AI_COACH_INSIGHTS);
+
+  return (
+    <div style={{
+      background: "#fff",
+      border: "1.5px solid #e11d48",
+      borderRadius: compact ? 12 : 16,
+      padding: compact ? "10px 12px" : "20px 24px",
+      boxShadow: "0 4px 14px rgba(244,63,94,0.08)",
+      minWidth: 0,
+    }}>
+      <h3 style={{
+        fontSize: compact ? 10 : 12,
+        fontWeight: 800,
+        textTransform: "uppercase",
+        letterSpacing: ".08em",
+        color: "#be123c",
+        margin: "0 0 8px",
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+      }}>
+        <Sparkles style={{ width: compact ? 12 : 14, height: compact ? 12 : 14 }} />
+        AI Coach Insights
+      </h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            style={{
+              background: "#fff1f2",
+              padding: compact ? "8px 9px" : "10px 12px",
+              borderRadius: compact ? 8 : 10,
+              borderLeft: "3px solid #e11d48",
+              fontSize: compact ? 10 : 11.5,
+              color: "#1e293b",
+              lineHeight: 1.35,
+            }}
+          >
+            {row.body}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** SVG pipeline funnel with readable labels on every stage. */
+function PipelineFunnelGraphic({ funnelData, compact }) {
+  const stages = (funnelData || []).slice(0, 5);
+  if (!stages.length) return null;
+
+  const svgW = 280;
+  const segH = compact ? 52 : 58;
+  const segGap = compact ? 8 : 10;
+  const padTop = 8;
+  const svgH = padTop + stages.length * segH + (stages.length - 1) * segGap + 10;
+  const cx = svgW / 2;
+  const maxHalf = 128;
+
+  const gradStops = [
+    ["#be123c", "#9f1239"],
+    ["#e11d48", "#be123c"],
+    ["#dc2626", "#b91c1c"],
+    ["#c2185b", "#9d174d"],
+    ["#881337", "#701a35"],
+  ];
+
+  const funnelLabel = (name) => {
+    const n = String(name || "").toLowerCase();
+    if (n === "converted") return "WON";
+    if (n === "meeting") return "MEET";
+    if (n === "contacted") return "CONTACT";
+    return String(name || "").toUpperCase();
+  };
+
+  const segments = stages.map((_, idx) => {
+    const t0 = idx / stages.length;
+    const t1 = (idx + 1) / stages.length;
+    const topHalf = Math.max(28, maxHalf * (1 - t0 * 0.78));
+    const botHalf = Math.max(22, maxHalf * (1 - t1 * 0.78));
+    const y0 = padTop + idx * (segH + segGap);
+    const y1 = y0 + segH;
+    const [c0, c1] = gradStops[idx] || gradStops[gradStops.length - 1];
+    const narrow = botHalf < 38;
+    const countSize = narrow ? (compact ? 17 : 19) : (compact ? 20 : 24);
+    const labelSize = narrow ? (compact ? 9 : 10) : (compact ? 11 : 12);
+
+    return {
+      points: `${cx - topHalf},${y0} ${cx + topHalf},${y0} ${cx + botHalf},${y1} ${cx - botHalf},${y1}`,
+      countY: y0 + segH * 0.4,
+      labelY: y0 + segH * 0.74,
+      c0,
+      c1,
+      countSize,
+      labelSize,
+      label: funnelLabel(stages[idx]?.label),
+    };
+  });
+
+  return (
+    <svg
+      width="100%"
+      viewBox={`0 0 ${svgW} ${svgH}`}
+      preserveAspectRatio="xMidYMin meet"
+      fill="none"
+      style={{ display: "block", height: "auto", maxWidth: "100%" }}
+      aria-hidden
+    >
+      <defs>
+        {segments.map((seg, i) => (
+          <linearGradient key={`g-${i}`} id={`funnelGrad${i}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={seg.c0} />
+            <stop offset="100%" stopColor={seg.c1} />
+          </linearGradient>
+        ))}
+        <filter id="funnelTextShadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#450a0a" floodOpacity="0.7" />
+        </filter>
+      </defs>
+
+      {segments.map((seg, i) => (
+        <g key={i}>
+          <polygon
+            points={seg.points}
+            fill={`url(#funnelGrad${i})`}
+            style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.12))" }}
+          />
+          <text
+            x={cx}
+            y={seg.countY}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#ffffff"
+            filter="url(#funnelTextShadow)"
+            style={{ fontSize: seg.countSize, fontWeight: 900, pointerEvents: "none" }}
+          >
+            {stages[i]?.value?.split(" ")[0] ?? "0"}
+          </text>
+          <text
+            x={cx}
+            y={seg.labelY}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#ffffff"
+            filter="url(#funnelTextShadow)"
+            style={{
+              fontSize: seg.labelSize,
+              fontWeight: 800,
+              letterSpacing: "0.08em",
+              pointerEvents: "none",
+            }}
+          >
+            {seg.label}
+          </text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -1748,6 +2124,22 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     potential: l.revenue || l.expected_revenue ? fmtINR(l.revenue || l.expected_revenue) : "₹0",
     prob: l.win_probability ? `${l.win_probability}%` : "—",
   }));
+
+  const aiCoachInsights = useMemo(
+    () => buildAiCoachInsights({
+      firstName: activeEmp.name.split(" ")[0],
+      assigned,
+      converted,
+      qualified,
+      followups,
+      contacted: calls,
+      overallPerfClamped,
+      revenue,
+      fmtINR,
+      funnel,
+    }),
+    [activeEmp.name, assigned, converted, qualified, followups, calls, overallPerfClamped, revenue, funnel],
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? 10 : 16, color: "#1e293b", padding: compact ? "4px 0" : "8px 0" }}>
@@ -2177,17 +2569,17 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           background: "#fff",
           border: "1px solid #ffe4e6",
           borderRadius: compact ? 12 : 16,
-          padding: compact ? "12px 14px" : "20px 24px",
+          padding: compact ? "10px 12px" : "14px 18px",
           display: "flex",
           flexDirection: "column",
-          gap: compact ? 10 : 16,
+          gap: compact ? 6 : 8,
           minWidth: 0,
         }}>
           <div>
             <h3 style={{ fontSize: compact ? 11 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: 0 }}>
               Sales Pipeline Funnel
             </h3>
-            <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: "3px 0 0", lineHeight: 1.3 }}>
+            <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: "2px 0 0", lineHeight: 1.3 }}>
               Deal conversion progression and conversion efficiency
             </p>
           </div>
@@ -2195,111 +2587,30 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           <div style={{
             display: "flex",
             flexDirection: compact ? "column" : "row",
-            gap: compact ? 12 : 24,
-            alignItems: compact ? "stretch" : "stretch",
-            marginTop: compact ? 4 : 10,
+            gap: compact ? 10 : 16,
+            alignItems: "flex-start",
             minWidth: 0,
           }}>
             {/* Left: SVG Sloping Funnel */}
             <div style={{
-              width: compact ? "100%" : 140,
-              maxWidth: compact ? 148 : 140,
-              height: compact ? 210 : undefined,
-              alignSelf: compact ? "center" : "stretch",
+              width: compact ? "100%" : 220,
+              maxWidth: compact ? 280 : 220,
+              minWidth: compact ? 200 : 200,
+              alignSelf: "flex-start",
               flexShrink: 0,
               position: "relative",
-              display: "flex",
             }}>
-              <svg width="140" height="100%" viewBox="0 0 240 254" preserveAspectRatio="none" fill="none" style={{ display: "block" }}>
-                <defs>
-                  <linearGradient id="funnelGrad0" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#e11d48" />
-                    <stop offset="100%" stopColor="#be123c" />
-                  </linearGradient>
-                  <linearGradient id="funnelGrad1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f43f5e" />
-                    <stop offset="100%" stopColor="#e11d48" />
-                  </linearGradient>
-                  <linearGradient id="funnelGrad2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#fb7185" />
-                    <stop offset="100%" stopColor="#f43f5e" />
-                  </linearGradient>
-                  <linearGradient id="funnelGrad3" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#fda4af" />
-                    <stop offset="100%" stopColor="#fb7185" />
-                  </linearGradient>
-                  
-                  <filter id="funnelShadow" x="-10%" y="-10%" width="120%" height="120%">
-                    <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.08" />
-                  </filter>
-                </defs>
-
-                {/* Segment 0 */}
-                <polygon
-                  points="11.9,5 228.1,5 207.5,60 32.5,60"
-                  fill="url(#funnelGrad0)"
-                  filter="url(#funnelShadow)"
-                  style={{ cursor: "pointer", transition: "all 0.2s" }}
-                />
-                <text x="120" y="30" textAnchor="middle" fill="#ffffff" style={{ fontSize: 13, fontWeight: 800, pointerEvents: "none" }}>
-                  {funnelData[0]?.value.split(" ")[0]}
-                </text>
-                <text x="120" y="44" textAnchor="middle" fill="rgba(255,255,255,0.85)" style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", pointerEvents: "none" }}>
-                  {funnelData[0]?.label}
-                </text>
-
-                {/* Segment 1 */}
-                <polygon
-                  points="35.5,68 204.5,68 183.9,123 56.1,123"
-                  fill="url(#funnelGrad1)"
-                  filter="url(#funnelShadow)"
-                  style={{ cursor: "pointer", transition: "all 0.2s" }}
-                />
-                <text x="120" y="93" textAnchor="middle" fill="#ffffff" style={{ fontSize: 12, fontWeight: 800, pointerEvents: "none" }}>
-                  {funnelData[1]?.value.split(" ")[0]}
-                </text>
-                <text x="120" y="107" textAnchor="middle" fill="rgba(255,255,255,0.85)" style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", pointerEvents: "none" }}>
-                  {funnelData[1]?.label}
-                </text>
-
-                {/* Segment 2 */}
-                <polygon
-                  points="59.1,131 180.9,131 160.3,186 79.8,186"
-                  fill="url(#funnelGrad2)"
-                  filter="url(#funnelShadow)"
-                  style={{ cursor: "pointer", transition: "all 0.2s" }}
-                />
-                <text x="120" y="156" textAnchor="middle" fill="#ffffff" style={{ fontSize: 11, fontWeight: 800, pointerEvents: "none" }}>
-                  {funnelData[2]?.value.split(" ")[0]}
-                </text>
-                <text x="120" y="170" textAnchor="middle" fill="rgba(255,255,255,0.85)" style={{ fontSize: 8.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", pointerEvents: "none" }}>
-                  {funnelData[2]?.label}
-                </text>
-
-                {/* Segment 3 */}
-                <polygon
-                  points="82.8,194 157.3,194 136.6,249 103.4,249"
-                  fill="url(#funnelGrad3)"
-                  filter="url(#funnelShadow)"
-                  style={{ cursor: "pointer", transition: "all 0.2s" }}
-                />
-                <text x="120" y="219" textAnchor="middle" fill="#9f1239" style={{ fontSize: 11, fontWeight: 800, pointerEvents: "none" }}>
-                  {funnelData[3]?.value.split(" ")[0]}
-                </text>
-                <text x="120" y="233" textAnchor="middle" fill="#9f1239" style={{ fontSize: 8.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", pointerEvents: "none" }}>
-                  {funnelData[3]?.label}
-                </text>
-              </svg>
+              <PipelineFunnelGraphic funnelData={funnelData} compact={compact} />
             </div>
 
             {/* Right: Detailed Legend */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: compact ? 6 : 10, justifyContent: "center", minWidth: 0 }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: compact ? 5 : 8, justifyContent: "flex-start", minWidth: 0 }}>
               {funnelData.map((item, idx) => {
                 const count = item.value.split(" ")[0];
                 const stageName = item.label;
-                const colors = ["#e11d48", "#f43f5e", "#fb7185", "#fda4af"];
-                const bgs = ["#fff1f2", "#fff5f6", "#fff8f8", "#fffafb"];
-                const borders = ["#fecdd3", "#ffe4e6", "#ffe4e6", "#ffe4e6"];
+                const colors = ["#be123c", "#e11d48", "#dc2626", "#c2185b", "#881337"];
+                const bgs = ["#fff1f2", "#fff5f6", "#fff8f8", "#fffafb", "#ffffff"];
+                const borders = ["#fecdd3", "#ffe4e6", "#ffe4e6", "#ffe4e6", "#fecdd3"];
                 
                 return (
                   <div key={idx} style={{
@@ -2358,27 +2669,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           gap: compact ? 8 : 16,
           minWidth: 0,
         }}>
-          {/* AI Insights */}
-          <div style={{
-            background: "#fff",
-            border: "1.5px solid #e11d48",
-            borderRadius: compact ? 12 : 16,
-            padding: compact ? "10px 12px" : "20px 24px",
-            boxShadow: "0 4px 14px rgba(244,63,94,0.08)",
-            minWidth: 0,
-          }}>
-            <h3 style={{ fontSize: compact ? 10 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles style={{ width: compact ? 12 : 14, height: compact ? 12 : 14 }} /> AI Coach Insights
-            </h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
-              <div style={{ background: "#fff1f2", padding: compact ? "8px 9px" : "10px 12px", borderRadius: compact ? 8 : 10, borderLeft: "3px solid #e11d48", fontSize: compact ? 10 : 11.5, color: "#1e293b", lineHeight: 1.35 }}>
-                {activeEmp.name.split(" ")[0]} has <strong>{assigned} assigned leads</strong> with <strong>{converted} conversions</strong>.
-              </div>
-              <div style={{ background: "#fff1f2", padding: compact ? "8px 9px" : "10px 12px", borderRadius: compact ? 8 : 10, borderLeft: "3px solid #e11d48", fontSize: compact ? 10 : 11.5, color: "#1e293b", lineHeight: 1.35 }}>
-                <strong>KRA progress:</strong> {Math.round(overallPerfClamped)}% overall · {fmtINR(revenue)} collected.
-              </div>
-            </div>
-          </div>
+          <AiCoachInsightsPanel compact={compact} insights={aiCoachInsights} />
 
           {/* Daily Activity */}
           <div style={{
@@ -3003,6 +3294,8 @@ export default function Team() {
   const [deleteEmp, setDeleteEmp] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [newCredentials, setNewCredentials] = useState(null);
+  const [newMemberName, setNewMemberName] = useState("");
   const [kpiData, setKpiData] = useState(null);
 
   useEffect(() => {
@@ -3174,6 +3467,11 @@ export default function Team() {
     const normalized = normalizeEmployee(data.employee);
     setMembers((prev) => [normalized, ...prev]);
     fetchKPIs();
+
+    if (data.credentials) {
+      setNewMemberName(formFields.name);
+      setNewCredentials(data.credentials);
+    }
   };
 
   // ── save edit ───────────────────────────────────────────────────────────
@@ -3353,6 +3651,15 @@ export default function Team() {
         onConfirm={confirmDel}
         onCancel={() => setDeleteEmp(null)}
         busy={deleting}
+      />
+      <CredentialsModal
+        open={!!newCredentials}
+        credentials={newCredentials}
+        memberName={newMemberName}
+        onClose={() => {
+          setNewCredentials(null);
+          setNewMemberName("");
+        }}
       />
     </div>
   );

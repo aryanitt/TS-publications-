@@ -193,9 +193,11 @@ export const PIPELINE_LEADS = [
 ];
 
 export function formatPipelineValue(amount) {
-  if (amount >= 100000) return `₹${Math.round(amount / 1000)}K`;
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(0)}K`;
-  return `₹${amount.toLocaleString("en-IN")}`;
+  const n = Number(amount) || 0;
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
+  if (n >= 100000) return `₹${(n / 100000).toFixed(0)}L`;
+  if (n >= 1000) return `₹${(n / 1000).toFixed(0)}K`;
+  return `₹${Math.round(n).toLocaleString("en-IN")}`;
 }
 
 export function timeAgoShort(iso) {

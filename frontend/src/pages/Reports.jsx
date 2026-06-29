@@ -23,6 +23,7 @@ import {
 } from "../data/mock.js";
 import { motion } from "framer-motion";
 import { apiGet, readCachedJson } from "../lib/api.js";
+import { formatINR } from "../lib/indianFormat.js";
 
 /* ─── global style injections ─────────────────────────────────── */
 const globalStyles = `
@@ -87,17 +88,17 @@ const globalStyles = `
 `;
 
 const goals = [
-  { label: "Revenue target",  current: 1240, target: 1500, unit: "k" },
+  { label: "Revenue target",  current: 1240, target: 1500, unit: "L" },
   { label: "Closed deals",    current: 84,   target: 120,  unit: ""  },
   { label: "Qualified leads", current: 146,  target: 180,  unit: ""  },
   { label: "Customer NPS",    current: 64,   target: 70,   unit: ""  },
 ];
 
 const kpiCards = [
-  { label: "Total Revenue",   value: "$1.24M", Icon: DollarSign },
+  { label: "Total Revenue",   value: "₹1.24Cr", Icon: DollarSign },
   { label: "Conversion Rate", value: "24.6%",  Icon: Activity   },
   { label: "MoM Growth",      value: "12.8%",  Icon: TrendingUp },
-  { label: "Forecast Q3",     value: "$1.62M", Icon: FileText   },
+  { label: "Forecast Q3",     value: "₹1.62Cr", Icon: FileText   },
 ];
 function TeamTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -139,7 +140,7 @@ function TeamTooltip({ active, payload, label }) {
         },
         {
           label: "Revenue",
-          value: `$${d?.revenue ?? "—"}k`,
+          value: d?.revenue != null ? formatINR(d.revenue) : "—",
           color: "oklch(0.7 0.14 230)",
           dot:   "oklch(0.7 0.14 230)",
         },
@@ -612,7 +613,7 @@ export default function Reports() {
                 productivity:   e.productivity,
                 callsDone:      e.callsDone,
                 convertedLeads: e.convertedLeads,
-                revenue:        Math.round((e.revenue || 0) / 1000),
+                revenue:        e.revenue || 0,
               }))}
               margin={{ top: 10, right: 16, left: -4, bottom: 0 }}
               barCategoryGap="30%"
@@ -652,7 +653,7 @@ export default function Reports() {
                         { label: "Productivity",    value: d.productivity + "%", dot: "#f43f5e" },
                         { label: "Calls done",      value: d.callsDone,          dot: "#3b82f6" },
                         { label: "Converted leads", value: d.convertedLeads,     dot: "#22c55e" },
-                        { label: "Revenue",         value: "₹" + d.revenue + "k",dot: "#a855f7" },
+                        { label: "Revenue",         value: formatINR(d.revenue), dot: "#a855f7" },
                       ].map(({ label, value, dot }) => (
                         <div key={label} style={{
                           display: "flex", justifyContent: "space-between",
