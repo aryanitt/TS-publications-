@@ -61,7 +61,7 @@ export function StatCard({
   return (
     <GlassCard
       hover={hover}
-      className={`${compact ? "p-2.5 sm:p-4 min-h-[88px] sm:min-h-[108px]" : "p-4 sm:p-5 min-h-[108px] sm:min-h-[118px]"} flex flex-col justify-between !bg-white !border-slate-200/80 !from-white !via-white !to-white !shadow-[0_2px_8px_rgba(15,23,42,0.04)] ${className}`}
+      className={`h-full ${compact ? "p-2.5 sm:p-4 min-h-[88px] sm:min-h-[108px]" : "p-4 sm:p-5 min-h-[108px] sm:min-h-[118px]"} flex flex-col justify-between !bg-white !border-slate-200/80 !from-white !via-white !to-white !shadow-[0_2px_8px_rgba(15,23,42,0.04)] ${className}`}
     >
       <div className="flex justify-between items-start gap-1.5 sm:gap-2">
         <div className="min-w-0 flex-1">

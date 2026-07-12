@@ -68,12 +68,12 @@ export const pipelineLeads = [
 ];
 
 export const salesKpis = [
-  { label: "Pickup Rate", value: "78%", change: "+5%" },
+  { label: "Leads Assigned", value: "450", change: "+45" },
+  { label: "Calls Done", value: "320", change: "+24" },
   { label: "Qualified Leads", value: "146", change: "+12" },
-  { label: "Missing Ratio", value: "9%", change: "-2%" },
+  { label: "Meetings Done", value: "45", change: "+5" },
   { label: "Proposal Sent", value: "62", change: "+8" },
-  { label: "Revenue", value: "₹1.24Cr", change: "+18%" },
-  { label: "Avg Closing Time", value: "21d", change: "-3d" },
+  { label: "Revenue", value: "₹1.24Cr", change: "+18%" }
 ];
 
 export const revenueSeries = [

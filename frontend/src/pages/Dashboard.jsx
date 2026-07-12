@@ -7,7 +7,7 @@ import {
   ArrowRight, Sparkles, AlertTriangle, TrendingUp, TrendingDown,
   BellRing, Brain, CheckCircle2,
   CalendarDays, Zap, ChevronDown, Search, X, Info as InfoIcon,
-  Medal, Trophy, GitBranch, BarChart3, Bell
+  Medal, Trophy, GitBranch, BarChart3, Bell, Phone
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -23,12 +23,12 @@ import {
   kpis, recentLeads, aiInsights, performers, revenueSeries
 } from "../data/mock.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
-import { apiGet } from "../lib/api.js";
+import { apiGet, readCachedJson, readStaleCachedJson } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
 import { formatINR } from "../lib/indianFormat.js";
 
 // ─── Icon maps ────────────────────────────────────────────────────────────────
-const iconMap = { DollarSign, Users, Activity, FileText };
+const iconMap = { DollarSign, Users, Activity, FileText, Phone, Trophy };
 
 const PANEL = "rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]";
 
@@ -61,6 +61,55 @@ const SERVICE_OPTIONS = [
 ];
 
 const PIPELINE_STAGES = ["Leads", "Contacted", "Qualified", "Proposal", "Negotiation", "Conversion"];
+
+const ADMIN_DASH_CACHE_TTL = 3 * 60 * 1000;
+
+function hydrateDashboardCache() {
+  const cached = readCachedJson("/api/dashboard") ?? readStaleCachedJson("/api/dashboard");
+  if (!cached) return null;
+  return {
+    filterData: cached.filterData ?? null,
+    aiInsights: Array.isArray(cached.aiInsights) ? cached.aiInsights : [],
+    revenueSeries: cached.revenueSeries?.length ? cached.revenueSeries : [],
+  };
+}
+
+function hydrateTeamCache() {
+  const cached = readCachedJson("/api/team/employees") ?? readStaleCachedJson("/api/team/employees");
+  if (cached?.success && cached.employees?.length) return cached.employees;
+  return [];
+}
+
+function hydrateActivityCache() {
+  const cached = readCachedJson("/api/activity") ?? readStaleCachedJson("/api/activity");
+  if (!cached?.success || !cached.activities?.length) return null;
+  return cached.activities.slice(0, 8).map((row) => ({
+    text: row.user_name ? `${row.action} — ${row.user_name}` : row.action,
+    createdAt: row.created_at,
+  }));
+}
+
+const EMPTY_FILTER_RANGE = {
+  kpis: [
+    { label: "Total Revenue", value: "₹0", icon: "DollarSign" },
+    { label: "Cash Collected", value: "₹0", icon: "DollarSign" },
+    { label: "Total Leads", value: "0", icon: "Users" },
+    { label: "Total Calls Made", value: "0", icon: "Phone" },
+    { label: "Qualified Leads", value: "0", icon: "FileText" },
+    { label: "Pipeline Value", value: "₹0", icon: "DollarSign" },
+    { label: "Closings", value: "0", icon: "Trophy" },
+  ],
+  leaderboard: [],
+  metrics: { pickup: 0, qualification: 0, conversion: 0 },
+  insights: [],
+  activity: [],
+};
+
+const EMPTY_FILTER_DATA = {
+  today: EMPTY_FILTER_RANGE,
+  week: EMPTY_FILTER_RANGE,
+  month: EMPTY_FILTER_RANGE,
+};
 
 // ─── Per-filter mock data ─────────────────────────────────────────────────────
 // Pipeline data per service per filter
@@ -146,11 +195,13 @@ const SERVICE_BREAKDOWN = {
 const FILTER_DATA = {
   today: {
     kpis: [
-      { label: "Revenue", value: "₹31.4L", icon: "DollarSign" },
-      { label: "Cash Collected", value: "₹18.7L", icon: "Users" },
-      { label: "Conversion Rate", value: "24%", icon: "Activity" },
-      { label: "Qualified Leads", value: "2,840", icon: "FileText" },
-      { label: "Pipeline Value", value: "₹19.2L", icon: "DollarSign" },
+      { label: "Total Revenue", value: "₹12.0L", icon: "DollarSign" },
+      { label: "Cash Collected", value: "₹1.2L", icon: "DollarSign" },
+      { label: "Total Leads", value: "15", icon: "Users" },
+      { label: "Total Calls Made", value: "48", icon: "Phone" },
+      { label: "Qualified Leads", value: "7", icon: "FileText" },
+      { label: "Pipeline Value", value: "₹91.3L", icon: "DollarSign" },
+      { label: "Closings", value: "3", icon: "Trophy" },
     ],
     leaderboard: [
       { name: "Aryan S.", leads: 18, resp: "1h 20m", qualR: "72%", convR: "19%", conv: 3,  rev: "₹0.3L" },
@@ -182,11 +233,13 @@ const FILTER_DATA = {
   },
   week: {
     kpis: [
-      { label: "Revenue",         value: "₹7.9L",  sub: "Growth: +18.4%",      icon: "DollarSign", trend: +18,  trendVal: "+18.4%" },
-      { label: "Cash Collected",  value: "₹4.2L",  sub: "Lead Q: 31.6%",       icon: "Users",      trend: +11,  trendVal: "+11%"   },
-      { label: "Conversion Rate", value: "21%",    sub: "Invoice Gen: ₹5.3L",  icon: "Activity",   trend: +2,   trendVal: "+2%"    },
-      { label: "Qualified Leads", value: "721",    sub: "Avg resp: 7h 14m",    icon: "FileText",   trend: -4,   trendVal: "-4%"    },
-      { label: "Pipeline Value",  value: "₹4.7L",  sub: "Schema Ret: 81.2%",   icon: "DollarSign", trend: +22,  trendVal: "+22%"   },
+      { label: "Total Revenue", value: "₹7.9L", icon: "DollarSign" },
+      { label: "Cash Collected", value: "₹4.2L", icon: "DollarSign" },
+      { label: "Total Leads", value: "112", icon: "Users" },
+      { label: "Total Calls Made", value: "342", icon: "Phone" },
+      { label: "Qualified Leads", value: "721", icon: "FileText" },
+      { label: "Pipeline Value", value: "₹12.4L", icon: "DollarSign" },
+      { label: "Closings", value: "78", icon: "Trophy" },
     ],
     leaderboard: [
       { name: "Aman T.",  leads: 142, resp: "4h 20m", qualR: "78%", convR: "24%", conv: 34, rev: "₹1.2L" },
@@ -224,11 +277,13 @@ const FILTER_DATA = {
   },
   month: {
     kpis: [
-      { label: "Revenue", value: "₹31.4L", icon: "DollarSign" },
-      { label: "Cash Collected", value: "₹18.7L", icon: "Users" },
-      { label: "Conversion Rate", value: "24%", icon: "Activity" },
+      { label: "Total Revenue", value: "₹31.4L", icon: "DollarSign" },
+      { label: "Cash Collected", value: "₹18.7L", icon: "DollarSign" },
+      { label: "Total Leads", value: "3,520", icon: "Users" },
+      { label: "Total Calls Made", value: "1,240", icon: "Phone" },
       { label: "Qualified Leads", value: "2,840", icon: "FileText" },
-      { label: "Pipeline Value", value: "₹19.2L", icon: "DollarSign" },
+      { label: "Pipeline Value", value: "₹48.6L", icon: "DollarSign" },
+      { label: "Closings", value: "312", icon: "Trophy" },
     ],
     leaderboard: [
       { name: "Aman T.",  leads: 560, resp: "3h 40m", qualR: "82%", convR: "28%", conv: 157, rev: "₹4.8L" },
@@ -523,24 +578,34 @@ const KPI_GRADIENTS = [
     accent: "from-red-200/60 via-pink-100/30",
     glow: "#dc2626",
   },
+  {
+    accent: "from-indigo-200/60 via-pink-100/30",
+    glow: "#6366f1",
+  },
+  {
+    accent: "from-amber-200/60 via-rose-100/30",
+    glow: "#f59e0b",
+  },
 ];
 
 function KPICardsRow({ kpiData, filterKey }) {
   const cardDefaults = [
     { change: "+14.2%", sub: "MoM Gross Payout" },
-    { change: "+8.5%", sub: "Per Active Performer" },
-    { change: "-2.1d", sub: "Awaiting Audit" },
     { change: "+18.4%", sub: "Cash Generated" },
-    { change: "+4.2%", sub: "Target vs Achieved" }
+    { change: "+8.5%",  sub: "New Leads" },
+    { change: "+12.4%", sub: "Call Volume" },
+    { change: "+6.2%",  sub: "Qualified" },
+    { change: "+4.2%",  sub: "Target vs Achieved" },
+    { change: "+10.5%", sub: "Closed Won" },
   ];
 
-  const tones = ["success", "purple", "warning", "info", "primary"];
+  const tones = ["success", "purple", "warning", "info", "primary", "indigo", "success"];
 
   return (
     <AnimatePresence mode="wait">
       <motion.div
         key={filterKey}
-        className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4"
+        className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4"
         initial="hidden"
         animate="show"
         exit="hidden"
@@ -558,7 +623,7 @@ function KPICardsRow({ kpiData, filterKey }) {
               key={k.label}
               variants={fadeUp}
               custom={i}
-              className={i === 0 ? "col-span-2 lg:col-span-1 min-w-0" : "col-span-1 min-w-0"}
+              className="col-span-1 min-w-0 flex flex-col"
             >
               <StatCard
                 label={k.label}
@@ -567,6 +632,7 @@ function KPICardsRow({ kpiData, filterKey }) {
                 sub={subText}
                 icon={Icon}
                 tone={tone}
+                className="h-full"
                 hover
               />
             </motion.div>
@@ -907,39 +973,31 @@ function LeaderBoard({ employees }) {
               <div key={`${emp.name}-${i}`} className="relative min-w-0">
                 <div
                   ref={(el) => { cardRefs.current[i] = el; }}
-                  onMouseEnter={() => setHoveredIdx(i)}
-                  onMouseLeave={() => setHoveredIdx(null)}
-                  onClick={() => setHoveredIdx((prev) => (prev === i ? null : i))}
-                  className="rounded-lg sm:rounded-xl bg-slate-50/60 border border-slate-200/80 hover:border-slate-300 hover:bg-white transition-all duration-200 cursor-default flex flex-col items-center justify-center py-2.5 sm:py-4 px-1 sm:px-3 gap-1.5 sm:gap-2.5 min-h-[128px] sm:min-h-[168px]"
+                  className="rounded-lg sm:rounded-xl bg-slate-50/60 border border-slate-200/80 hover:border-slate-300 hover:bg-white transition-all duration-200 cursor-default flex flex-col py-2.5 sm:py-3.5 px-2 sm:px-3.5 gap-1.5 sm:gap-2 min-h-[128px] sm:min-h-[168px]"
                 >
-                  <div className={`inline-flex items-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9px] font-bold uppercase tracking-wide sm:tracking-widest px-1.5 sm:px-2 py-0.5 rounded-full border ${rank.badge}`}>
-                    <Medal className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${rank.medal}`} />
-                    #{i + 1}
+                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5 sm:pb-2 gap-1.5">
+                    <p className="text-[10px] sm:text-xs font-black text-slate-800 truncate">{emp.name}</p>
+                    <div className={`inline-flex items-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9px] font-bold uppercase tracking-wide sm:tracking-widest px-1.5 sm:px-2 py-0.5 rounded-full border shrink-0 ${rank.badge}`}>
+                      <Medal className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${rank.medal}`} />
+                      #{i + 1}
+                    </div>
                   </div>
 
-                  <LeaderDonut
-                    pct={convPct}
-                    size={donutSize}
-                    stroke={donutStroke}
-                    fontSize={isMobile ? 11 : 16}
-                    gradientId={`leader-gradient-${i}`}
-                    colors={rank.colors}
-                    textColor={rank.textColor}
-                  />
-
-                  <div className="text-center w-full min-w-0 px-0.5">
-                    <p className="text-[10px] sm:text-xs font-bold text-slate-800 truncate">{emp.name}</p>
-                    <p className="text-[8px] sm:text-[10px] text-slate-500 mt-0.5 tabular-nums leading-tight truncate">
-                      {emp.conv} conv · {emp.rev}
-                    </p>
+                  <div className="flex-1 flex flex-col justify-center gap-0.5 sm:gap-1 mt-0.5">
+                    {[
+                      { label: "Leads", val: emp.leads },
+                      { label: "Contact Rate", val: emp.qualR },
+                      { label: "Conv. Rate", val: emp.convR },
+                      { label: "Conversions", val: emp.conv },
+                      { label: "Revenue", val: emp.rev },
+                    ].map((row, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-[8px] sm:text-[10px] leading-none">
+                        <span className="text-slate-400 font-bold uppercase text-[7px] sm:text-[8px] tracking-wider truncate max-w-[65%]">{row.label}</span>
+                        <span className="font-extrabold text-slate-700 tabular-nums text-[8.5px] sm:text-[10.5px]">{row.val}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                <LeaderBoardTooltip
-                  emp={emp}
-                  anchorRef={{ current: cardRefs.current[i] }}
-                  visible={hoveredIdx === i}
-                />
               </div>
             );
           })}
@@ -990,6 +1048,7 @@ function ServiceDropdown({ value, onChange, options }) {
 
   useEffect(() => {
     if (!open || isMobile) return;
+    calcPos();
     const update = () => calcPos();
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
@@ -999,79 +1058,6 @@ function ServiceDropdown({ value, onChange, options }) {
   const handleOpen = () => { if (!open && !isMobile) calcPos(); setOpen(o => !o); setSearch(""); };
   const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
 
-  const desktopMenu = open && !isMobile && typeof document !== "undefined" && ReactDOM.createPortal(
-    <motion.div ref={menuRef}
-      initial={{ opacity: 0, y: menuPos.above ? 6 : -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: menuPos.above ? 6 : -6, scale: 0.97 }} transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-      style={{ position: "absolute", top: menuPos.top, left: menuPos.left, width: menuPos.width, zIndex: 99999, maxHeight: "min(320px, 60vh)" }}
-      className="rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60 overflow-hidden flex flex-col">
-      <div className="p-2 border-b border-slate-100 flex-shrink-0">
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
-          <Search className="w-3 h-3 text-slate-400 flex-shrink-0" />
-          <input type="text" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)}
-            className="bg-transparent text-[11px] text-slate-800 placeholder:text-slate-400 focus:outline-none w-full" autoFocus />
-        </div>
-      </div>
-      <div className="py-1.5 overflow-y-auto">
-        {filtered.map(opt => (
-          <button key={opt} onClick={() => { onChange(opt); setOpen(false); setSearch(""); }}
-            className={`w-full text-left px-3 py-2.5 text-xs transition-all duration-150 flex items-center gap-2
-              ${value === opt
-                ? "text-rose-700 bg-rose-50 font-semibold"
-                : "text-slate-700 hover:bg-slate-50"}`}>
-            {value === opt && (
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0" />
-            )}
-            {value !== opt && <span className="w-1.5 h-1.5 flex-shrink-0" />}
-            {opt}
-          </button>
-        ))}
-        {filtered.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">No results</p>}
-      </div>
-    </motion.div>,
-    document.body
-  );
-
-  const mobileSheet = open && isMobile && typeof document !== "undefined" && ReactDOM.createPortal(
-    <>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-        onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 99998 }} className="bg-black/40 backdrop-blur-sm" />
-      <motion.div ref={menuRef} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 30 }}
-        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        style={{ position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 99999 }}
-        className="rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[70vh] flex flex-col">
-        <div className="flex items-center justify-between p-3 border-b border-slate-100">
-          <span className="text-xs font-semibold text-slate-800 tracking-wide">Select Service</span>
-          <button onClick={() => setOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 transition-colors">
-            <X className="w-4 h-4 text-slate-500" />
-          </button>
-        </div>
-        <div className="p-3 border-b border-slate-100">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200">
-            <Search className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-            <input type="text" placeholder="Search services..." value={search} onChange={e => setSearch(e.target.value)}
-              className="bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none w-full" autoFocus />
-          </div>
-        </div>
-        <div className="overflow-y-auto py-1.5 flex-1">
-          {filtered.map(opt => (
-            <button key={opt} onClick={() => { onChange(opt); setOpen(false); setSearch(""); }}
-              className={`w-full text-left px-4 py-3 text-sm transition-all duration-150 flex items-center gap-3
-                ${value === opt
-                  ? "text-rose-700 bg-rose-50 font-semibold"
-                  : "text-slate-700 hover:bg-slate-50"}`}>
-              {value === opt && <span className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0" />}
-              {value !== opt && <span className="w-2 h-2 flex-shrink-0" />}
-              {opt}
-            </button>
-          ))}
-          {filtered.length === 0 && <p className="px-4 py-3 text-xs text-slate-400">No results</p>}
-        </div>
-      </motion.div>
-    </>,
-    document.body
-  );
-
   return (
     <div className="relative">
       <button ref={btnRef} onClick={handleOpen}
@@ -1080,7 +1066,81 @@ function ServiceDropdown({ value, onChange, options }) {
         <span className="max-w-[110px] truncate">{value}</span>
         <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 text-slate-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
-      <AnimatePresence>{desktopMenu}{mobileSheet}</AnimatePresence>
+      <AnimatePresence>
+        {open && !isMobile && typeof document !== "undefined" && ReactDOM.createPortal(
+          <motion.div ref={menuRef}
+            key="desktop-menu"
+            initial={{ opacity: 0, y: menuPos.above ? 6 : -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: menuPos.above ? 6 : -6, scale: 0.97 }} transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            style={{ position: "absolute", top: menuPos.top, left: menuPos.left, width: menuPos.width, zIndex: 99999, maxHeight: "min(320px, 60vh)" }}
+            className="rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60 overflow-hidden flex flex-col">
+            <div className="p-2 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
+                <Search className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                <input type="text" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)}
+                  className="bg-transparent text-[11px] text-slate-800 placeholder:text-slate-400 focus:outline-none w-full" autoFocus />
+              </div>
+            </div>
+            <div className="py-1.5 overflow-y-auto">
+              {filtered.map(opt => (
+                <button key={opt} onClick={() => { onChange(opt); setOpen(false); setSearch(""); }}
+                  className={`w-full text-left px-3 py-2.5 text-xs transition-all duration-150 flex items-center gap-2
+                    ${value === opt
+                      ? "text-rose-700 bg-rose-50 font-semibold"
+                      : "text-slate-700 hover:bg-slate-50"}`}>
+                  {value === opt && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0" />
+                  )}
+                  {value !== opt && <span className="w-1.5 h-1.5 flex-shrink-0" />}
+                  {opt}
+                </button>
+              ))}
+              {filtered.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">No results</p>}
+            </div>
+          </motion.div>,
+          document.body
+        )}
+
+        {open && isMobile && typeof document !== "undefined" && ReactDOM.createPortal(
+          <>
+            <motion.div key="mobile-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+              onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 99998 }} className="bg-black/40 backdrop-blur-sm" />
+            <motion.div ref={menuRef} key="mobile-sheet" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 30 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              style={{ position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 99999 }}
+              className="rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[70vh] flex flex-col">
+              <div className="flex items-center justify-between p-3 border-b border-slate-100">
+                <span className="text-xs font-semibold text-slate-800 tracking-wide">Select Service</span>
+                <button onClick={() => setOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 transition-colors">
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+              <div className="p-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <Search className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  <input type="text" placeholder="Search services..." value={search} onChange={e => setSearch(e.target.value)}
+                    className="bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none w-full" autoFocus />
+                </div>
+              </div>
+              <div className="overflow-y-auto py-1.5 flex-1">
+                {filtered.map(opt => (
+                  <button key={opt} onClick={() => { onChange(opt); setOpen(false); setSearch(""); }}
+                    className={`w-full text-left px-4 py-3 text-sm transition-all duration-150 flex items-center gap-3
+                      ${value === opt
+                        ? "text-rose-700 bg-rose-50 font-semibold"
+                        : "text-slate-700 hover:bg-slate-50"}`}>
+                    {value === opt && <span className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0" />}
+                    {value !== opt && <span className="w-2 h-2 flex-shrink-0" />}
+                    {opt}
+                  </button>
+                ))}
+                {filtered.length === 0 && <p className="px-4 py-3 text-xs text-slate-400">No results</p>}
+              </div>
+            </motion.div>
+          </>,
+          document.body
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1166,6 +1226,20 @@ function PipelineTooltip({ stage, count, convPct, dropPct, prevStage, anchorRef,
 
 // ─── SALES PIPELINE STATUS: Temperature segmented ribbon visualization ────────
 const SEGMENTED_STAGES = ["Contacted", "Qualified", "Meeting", "Negotiation", "Conversion"];
+
+function buildEmptyPipelineGrid() {
+  const grid = {};
+  for (const temp of ["Hot", "Warm", "Cold"]) {
+    grid[temp] = Object.fromEntries(SEGMENTED_STAGES.map((s) => [s, 0]));
+  }
+  return {
+    grid,
+    totalLeads: 0,
+    conversions: 0,
+    overallConv: 0,
+    source: "empty",
+  };
+}
 
 function PipelineBubble({ stage, count, convPct, dropOff, prevStage, index, rowKey, bubbleRefs, hoveredBubble, setHoveredBubble }) {
   const isHov = hoveredBubble && hoveredBubble.row === rowKey && hoveredBubble.col === index;
@@ -1270,55 +1344,11 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
   const bubbleRefs = useRef({});
 
   const resolved = useMemo(() => {
-    if (pipelineStats?.grid && (pipelineStats.source === "database" || pipelineStats.source === "empty")) {
+    if (pipelineStats?.grid && ["database", "mock", "empty"].includes(pipelineStats.source)) {
       return pipelineStats;
     }
-
-    const data = SERVICE_PIPELINE[filterKey]?.[selectedService]
-      || SERVICE_PIPELINE[filterKey]?.["All Services"]
-      || [0, 0, 0, 0, 0, 0];
-    const contacted = data[1] ?? 0;
-    const qualified = data[2] ?? 0;
-    const meeting = data[3] ?? 0;
-    const negotiation = data[4] ?? 0;
-    const conversion = data[5] ?? 0;
-
-    const hot = [
-      Math.round(contacted * 0.45),
-      Math.round(qualified * 0.55),
-      Math.round(meeting * 0.60),
-      Math.round(negotiation * 0.65),
-      Math.round(conversion * 0.70),
-    ];
-    const warm = [
-      Math.round(contacted * 0.35),
-      Math.round(qualified * 0.30),
-      Math.round(meeting * 0.25),
-      Math.round(negotiation * 0.22),
-      Math.round(conversion * 0.20),
-    ];
-    const cold = SEGMENTED_STAGES.map((_, i) =>
-      Math.max(0, [contacted, qualified, meeting, negotiation, conversion][i] - hot[i] - warm[i]),
-    );
-
-    const grid = {
-      Hot: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, hot[i]])),
-      Warm: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, warm[i]])),
-      Cold: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, cold[i]])),
-    };
-
-    const total = pipelineStats?.totalLeads ?? data[0] ?? 0;
-    const closed = pipelineStats?.conversions ?? conversion;
-    const overallConv = total > 0 ? Math.round((closed / total) * 100) : 0;
-
-    return {
-      grid,
-      totalLeads: total,
-      conversions: closed,
-      overallConv,
-      source: pipelineStats?.source || "mock",
-    };
-  }, [pipelineStats, filterKey, selectedService]);
+    return buildEmptyPipelineGrid();
+  }, [pipelineStats]);
 
   const hotData = SEGMENTED_STAGES.map((s) => resolved.grid?.Hot?.[s] ?? 0);
   const warmData = SEGMENTED_STAGES.map((s) => resolved.grid?.Warm?.[s] ?? 0);
@@ -1352,13 +1382,6 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
         icon={GitBranch}
         title="Sales Pipeline Status"
         sub="Temperature-segmented conversion progression"
-        action={
-          <ServiceDropdown
-            value={selectedService}
-            onChange={onServiceChange}
-            options={SERVICE_OPTIONS}
-          />
-        }
       />
 
       <div className="overflow-x-auto scrollbar-hide -mx-0.5 sm:-mx-1 px-0.5 sm:px-1">
@@ -1423,10 +1446,16 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
 }
 
 // ─── AI Insights Panel ────────────────────────────────────────────────────────
-function AIInsightsPanel({ insights, filterKey }) {
+function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0" }) {
   const isMobile = useIsMobile();
   const [refreshing, setRefreshing] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
+
+  const normalized = (Array.isArray(insights) ? insights : []).map((item) => ({
+    tone: item.tone || item.type || "check",
+    title: item.title || item.text || "Insight",
+    body: item.body || (item.text && item.title ? item.text : ""),
+  }));
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -1456,48 +1485,37 @@ function AIInsightsPanel({ insights, filterKey }) {
       />
 
       <div className="space-y-2 sm:space-y-3 min-w-0">
-        <motion.div
-          whileHover={isMobile ? undefined : { y: -1 }}
-          className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0"
-        >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
-            <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        {normalized.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-8 text-center">
+            <Sparkles className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-slate-600">No insights yet</p>
+            <p className="text-xs text-slate-400 mt-1">Insights appear from your live CRM activity and lead data.</p>
           </div>
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="min-w-0">
-              <p className="text-[11px] sm:text-xs font-bold text-slate-800 leading-snug">Expand Opportunity: Global Logix</p>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 leading-relaxed">
-                High engagement in APAC. Potential ₹10L upsell based on usage patterns.
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <button type="button" className="w-full sm:w-auto px-3.5 py-1.5 bg-rose-600 text-white text-[11px] font-bold rounded-lg hover:bg-rose-700 transition-colors">
-                Open Deal
-              </button>
-              <span className="text-[10px] text-slate-400 text-center sm:text-left">Confidence: 94%</span>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div
-          whileHover={isMobile ? undefined : { y: -1 }}
-          className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0"
-        >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
-            <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          </div>
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="min-w-0">
-              <p className="text-[11px] sm:text-xs font-bold text-slate-800 leading-snug">Lead At Risk: TechNova Inc.</p>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 leading-relaxed">
-                No contact in 14 days. Competitor mentioned in last email thread.
-              </p>
-            </div>
-            <button type="button" className="w-full sm:w-auto px-3.5 py-1.5 border border-slate-300 text-slate-700 hover:border-rose-300 hover:text-rose-700 text-[11px] font-bold rounded-lg bg-white transition-colors">
-              Schedule Follow-up
-            </button>
-          </div>
-        </motion.div>
+        ) : (
+          normalized.slice(0, 2).map((item, idx) => (
+            <motion.div
+              key={`${item.title}-${idx}`}
+              whileHover={isMobile ? undefined : { y: -1 }}
+              className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0"
+            >
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+                item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
+                  ? "bg-amber-50 border-amber-100 text-amber-600"
+                  : "bg-emerald-50 border-emerald-100 text-emerald-600"
+              }`}>
+                {item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
+                  ? <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  : <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+              </div>
+              <div className="space-y-1 flex-1 min-w-0">
+                <p className="text-[11px] sm:text-xs font-bold text-slate-800 leading-snug">{item.title}</p>
+                {item.body && (
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 leading-relaxed">{item.body}</p>
+                )}
+              </div>
+            </motion.div>
+          ))
+        )}
 
         <motion.div
           whileHover={isMobile ? undefined : { y: -1 }}
@@ -1505,13 +1523,10 @@ function AIInsightsPanel({ insights, filterKey }) {
         >
           <div className="flex items-start justify-between gap-2 mb-2 sm:mb-3 w-full min-w-0">
             <div className="min-w-0 flex-1">
-              <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Quarterly Forecast</p>
+              <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Pipeline Forecast</p>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mt-1">
-                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 tabular-nums">₹12.4L</span>
-                <span className="text-[9px] sm:text-[10px] text-emerald-600 font-semibold flex items-center gap-0.5">
-                  <TrendingUp className="w-3 h-3" />
-                  +15% over target
-                </span>
+                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 tabular-nums">{forecastValue}</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-500 font-semibold">from live data</span>
               </div>
             </div>
             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
@@ -1521,7 +1536,7 @@ function AIInsightsPanel({ insights, filterKey }) {
           <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden w-full">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: "80%" }}
+              animate={{ width: normalized.length ? "80%" : "0%" }}
               transition={{ duration: 1, ease: "easeOut" }}
               className="h-full bg-gradient-to-r from-rose-500 to-rose-400 rounded-full"
             />
@@ -1647,18 +1662,18 @@ function ActivityHistoryDrawerContent({ items }) {
   return (
     <div className="space-y-5 flex flex-col h-full">
       {/* Search Input */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-secondary/50 border border-border">
-        <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus-within:border-rose-300 focus-within:ring-2 focus-within:ring-rose-100 transition-all shadow-sm">
+        <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
         <input
           type="text"
           placeholder="Search activity timeline..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none w-full"
+          className="bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none w-full"
         />
         {search && (
-          <button onClick={() => setSearch("")}>
-            <X className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+          <button type="button" onClick={() => setSearch("")} className="text-slate-400 hover:text-slate-700">
+            <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -1668,11 +1683,12 @@ function ActivityHistoryDrawerContent({ items }) {
         {categories.map(cat => (
           <button
             key={cat}
+            type="button"
             onClick={() => setActiveFilter(cat)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
               activeFilter === cat
-                ? "bg-rose-600 text-white shadow-sm"
-                : "bg-secondary/40 border border-border text-gray-500 hover:text-rose-700 hover:border-rose-200"
+                ? "bg-rose-600 text-white shadow-sm shadow-rose-200"
+                : "bg-white border border-slate-200 text-slate-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/60"
             }`}
           >
             {cat}
@@ -1683,7 +1699,7 @@ function ActivityHistoryDrawerContent({ items }) {
       {/* Timeline List */}
       <div className="flex-1 overflow-y-auto pr-1 relative min-h-0">
         {/* Vertical Timeline Bar */}
-        <div className="absolute left-6 top-3 bottom-3 w-0.5 bg-rose-100/60" />
+        <div className="absolute left-6 top-3 bottom-3 w-0.5 bg-rose-200" />
 
         <div className="space-y-4 relative">
           {filteredItems.map((item, i) => {
@@ -1700,18 +1716,18 @@ function ActivityHistoryDrawerContent({ items }) {
               >
                 {/* Timeline node icon */}
                 <div className={`w-8 h-8 rounded-full border flex items-center justify-center flex-shrink-0 z-10 bg-white transition-all shadow-sm ${config.bg}`}>
-                  <Icon className="w-4.5 h-4.5" />
+                  <Icon className="w-4 h-4" />
                 </div>
 
                 {/* Content block */}
-                <div className="flex-1 bg-white/40 border border-rose-100/30 group-hover:border-rose-200 hover:bg-rose-50/20 rounded-2xl p-3.5 transition-all">
+                <div className="flex-1 bg-white border border-rose-100 group-hover:border-rose-200 hover:bg-rose-50/40 rounded-2xl p-3.5 transition-all shadow-sm">
                   <div className="flex items-start justify-between gap-3 mb-1">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-rose-500 bg-rose-50 px-2 py-0.5 rounded-md">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md">
                       {item.catTag}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-bold tracking-tight whitespace-nowrap">{item.time}</span>
+                    <span className="text-[10px] text-slate-400 font-bold tracking-tight whitespace-nowrap">{item.time}</span>
                   </div>
-                  <p className="text-xs text-gray-700 group-hover:text-gray-900 leading-relaxed font-medium">
+                  <p className="text-xs text-slate-700 group-hover:text-slate-900 leading-relaxed font-medium">
                     {item.text}
                   </p>
                 </div>
@@ -1720,7 +1736,7 @@ function ActivityHistoryDrawerContent({ items }) {
           })}
 
           {filteredItems.length === 0 && (
-            <p className="text-center text-xs text-muted-foreground py-8">No activities found matching filters.</p>
+            <p className="text-center text-xs text-slate-500 py-8">No activities found matching filters.</p>
           )}
         </div>
       </div>
@@ -1780,8 +1796,14 @@ const getActivityIconConfig = (text) => {
       icon: CheckCircle2
     };
   }
+  if (t.includes("rahul") || t.includes("priya") || t.includes("aman") || t.includes("aryan") || t.includes("employee") || t.includes("added new")) {
+    return {
+      bg: "bg-slate-50 border-slate-200 text-slate-600 shadow-sm shadow-slate-500/5",
+      icon: InfoIcon
+    };
+  }
   return {
-    bg: "bg-blue-50 border-blue-100 text-blue-600 shadow-sm shadow-blue-500/10",
+    bg: "bg-rose-50 border-rose-200 text-rose-600 shadow-sm shadow-rose-500/10",
     icon: InfoIcon
   };
 };
@@ -2197,48 +2219,76 @@ export default function Dashboard() {
   const [lead,            setLead]           = useState(null);
   const { preset } = useDateRange();
   const [selectedService, setSelectedService] = useState("All Services");
-  const [apiFilterData, setApiFilterData] = useState(null);
-  const [teamEmployees, setTeamEmployees] = useState([]);
-  const [chartRevenue, setChartRevenue] = useState(revenueSeries);
+  const initialDash = hydrateDashboardCache();
+  const [apiFilterData, setApiFilterData] = useState(initialDash?.filterData ?? null);
+  const [aiInsights, setAiInsights] = useState(initialDash?.aiInsights ?? []);
+  const [teamEmployees, setTeamEmployees] = useState(() => hydrateTeamCache());
+  const [chartRevenue, setChartRevenue] = useState(initialDash?.revenueSeries ?? []);
   const [pipelineStats, setPipelineStats] = useState(null);
   const [pipelineLoading, setPipelineLoading] = useState(true);
-  const [liveActivity, setLiveActivity] = useState(null);
+  const [liveActivity, setLiveActivity] = useState(() => hydrateActivityCache());
+  const [dashboardLoading, setDashboardLoading] = useState(!initialDash?.filterData);
+  const [dashboardError, setDashboardError] = useState(null);
 
   const filterKey = preset === "custom" ? "week" : preset;
   const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
-  const fd        = mergedFilter[filterKey];
+  const fd = mergedFilter?.[filterKey] || EMPTY_FILTER_RANGE;
 
   const leaderboardData = useMemo(() => {
     const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
     if (fromTeam.length) return fromTeam;
-    const fromFilter = fd?.leaderboard;
+    const fromFilter = mergedFilter?.[filterKey]?.leaderboard;
     if (fromFilter?.length) return fromFilter.slice(0, 3);
-    const fromMock = FILTER_DATA[filterKey]?.leaderboard;
-    if (fromMock?.length) return fromMock.slice(0, 3);
-    return FILTER_DATA.week.leaderboard.slice(0, 3);
-  }, [fd?.leaderboard, filterKey, teamEmployees]);
+    return [];
+  }, [mergedFilter, filterKey, teamEmployees]);
+
+  const insightItems = aiInsights.length ? aiInsights : (fd.insights || []);
+  const pipelineForecast = fd.kpis?.find((k) => k.label === "Pipeline Value")?.value || "₹0";
+  const activityItems = liveActivity?.length ? liveActivity : (fd.activity || []);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function applyDashboardPayload(data) {
+      if (!data || cancelled) return;
+      if (data.filterData) setApiFilterData(data.filterData);
+      if (Array.isArray(data.aiInsights)) setAiInsights(data.aiInsights);
+      if (data.revenueSeries?.length) setChartRevenue(data.revenueSeries);
+      else setChartRevenue([]);
+      setDashboardError(null);
+    }
+
+    async function loadDashboardBundle() {
+      if (!apiFilterData) setDashboardLoading(true);
       try {
-        const data = await apiGet("/api/dashboard", { skipCache: true, cacheTtl: 0 });
+        const data = await apiGet("/api/dashboard", { cacheTtl: ADMIN_DASH_CACHE_TTL });
+        await applyDashboardPayload(data);
+      } catch (err) {
         if (cancelled) return;
-        if (data.filterData) setApiFilterData(data.filterData);
-        if (data.revenueSeries?.length) setChartRevenue(data.revenueSeries);
-      } catch {
-        // keep inline mock fallback
+        const cached = readStaleCachedJson("/api/dashboard");
+        if (cached?.filterData) {
+          await applyDashboardPayload(cached);
+        } else if (!apiFilterData) {
+          setDashboardError(err?.message || "Could not load dashboard data");
+        }
+      } finally {
+        if (!cancelled) setDashboardLoading(false);
       }
+
       try {
-        const team = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+        const team = await apiGet("/api/team/employees", { cacheTtl: ADMIN_DASH_CACHE_TTL });
         if (!cancelled && team.success && team.employees?.length) {
           setTeamEmployees(team.employees);
         }
       } catch {
-        // ignore
+        if (!cancelled) {
+          const cachedTeam = hydrateTeamCache();
+          if (cachedTeam.length) setTeamEmployees(cachedTeam);
+        }
       }
+
       try {
-        const activity = await apiGet("/api/activity", { skipCache: true, cacheTtl: 0 });
+        const activity = await apiGet("/api/activity", { cacheTtl: ADMIN_DASH_CACHE_TTL });
         if (!cancelled && activity?.success && activity.activities?.length) {
           setLiveActivity(
             activity.activities.slice(0, 8).map((row) => ({
@@ -2248,22 +2298,31 @@ export default function Dashboard() {
           );
         }
       } catch {
-        // keep mock fallback
+        if (!cancelled) {
+          const cachedActivity = hydrateActivityCache();
+          if (cachedActivity?.length) setLiveActivity(cachedActivity);
+        }
       }
-    })();
+    }
+
+    loadDashboardBundle();
     return () => { cancelled = true; };
-  }, [filterKey]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     setPipelineLoading(true);
     const params = new URLSearchParams({ range: filterKey, service: selectedService });
-    apiGet(`/api/dashboard/pipeline-status?${params.toString()}`, { skipCache: true, cacheTtl: 0 })
+    apiGet(`/api/dashboard/pipeline-status?${params.toString()}`, { cacheTtl: ADMIN_DASH_CACHE_TTL })
       .then((data) => {
         if (!cancelled && data?.success) setPipelineStats(data);
       })
       .catch(() => {
-        if (!cancelled) setPipelineStats(null);
+        if (!cancelled) {
+          const cached = readStaleCachedJson(`/api/dashboard/pipeline-status?${params.toString()}`);
+          if (cached?.success) setPipelineStats(cached);
+          else setPipelineStats({ success: true, ...buildEmptyPipelineGrid() });
+        }
       })
       .finally(() => {
         if (!cancelled) setPipelineLoading(false);
@@ -2274,15 +2333,51 @@ export default function Dashboard() {
   // Reset service filter when time filter changes
   useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
 
-  // Resolve service breakdown for the current filter + service selection
   const serviceBreakdownData = SERVICE_BREAKDOWN[filterKey];
-  const services = serviceBreakdownData[selectedService] || serviceBreakdownData["All Services"];
-  const activityItems = liveActivity?.length ? liveActivity : fd.activity;
+  const services = serviceBreakdownData?.[selectedService] || serviceBreakdownData?.["All Services"] || [];
+
+  const totalRevenueCard = fd.kpis?.find(k => k.label === "Total Revenue" || k.label === "Revenue") || 
+                           { label: "Total Revenue", value: "₹0", icon: "DollarSign" };
+  const cashCollectedCard = fd.kpis?.find(k => k.label === "Cash Collected") || 
+                            { label: "Cash Collected", value: "₹0", icon: "DollarSign" };
+  const totalLeadsValue = pipelineStats?.totalLeads != null ? String(pipelineStats.totalLeads) : 
+                          (fd.kpis?.find(k => k.label === "Total Leads")?.value || (filterKey === "today" ? "15" : filterKey === "week" ? "112" : "480"));
+  const totalCallsValue = fd.kpis?.find(k => k.label === "Total Calls Made")?.value || 
+                          (filterKey === "today" ? "48" : filterKey === "week" ? "342" : "1,420");
+  const qualifiedLeadsCard = fd.kpis?.find(k => k.label === "Qualified Leads") || 
+                             { label: "Qualified Leads", value: "0", icon: "FileText" };
+  const pipelineValueCard = fd.kpis?.find(k => k.label === "Pipeline Value") || 
+                            { label: "Pipeline Value", value: "₹0", icon: "DollarSign" };
+  const closingsValue = pipelineStats?.conversions != null ? String(pipelineStats.conversions) : 
+                        (fd.kpis?.find(k => k.label === "Closings")?.value || (filterKey === "today" ? "3" : filterKey === "week" ? "18" : "84"));
+
+  const finalKpis = [
+    { label: "Total Revenue", value: totalRevenueCard.value, icon: "DollarSign", trendVal: totalRevenueCard.trendVal, sub: totalRevenueCard.sub },
+    { label: "Cash Collected", value: cashCollectedCard.value, icon: "DollarSign", trendVal: cashCollectedCard.trendVal, sub: cashCollectedCard.sub },
+    { label: "Total Leads", value: totalLeadsValue, icon: "Users" },
+    { label: "Total Calls Made", value: totalCallsValue, icon: "Phone" },
+    { label: "Qualified Leads", value: qualifiedLeadsCard.value, icon: "FileText", trendVal: qualifiedLeadsCard.trendVal, sub: qualifiedLeadsCard.sub },
+    { label: "Pipeline Value", value: pipelineValueCard.value, icon: "DollarSign", trendVal: pipelineValueCard.trendVal, sub: pipelineValueCard.sub },
+    { label: "Closings", value: closingsValue, icon: "Trophy" },
+  ];
 
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0">
 
-      <KPICardsRow kpiData={fd.kpis} filterKey={filterKey} />
+      {dashboardError && !apiFilterData && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-sm font-semibold text-rose-800">{dashboardError}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-[#be123c] text-white text-xs font-bold hover:bg-[#a20f32]"
+          >
+            Retry load
+          </button>
+        </div>
+      )}
+
+      <KPICardsRow kpiData={dashboardLoading && !apiFilterData ? EMPTY_FILTER_RANGE.kpis : finalKpis} filterKey={filterKey} />
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start min-w-0">
 
@@ -2301,7 +2396,7 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0 w-full">
-          <AIInsightsPanel insights={fd.insights} filterKey={filterKey} />
+          <AIInsightsPanel insights={insightItems} filterKey={filterKey} forecastValue={pipelineForecast} />
           <ImpMetrics metrics={fd.metrics} filterKey={filterKey} />
           <RecentActivityPanel items={activityItems} filterKey={filterKey} />
         </div>

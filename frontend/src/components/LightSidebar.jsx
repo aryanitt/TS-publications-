@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ChevronRight, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen, X, LogOut } from "lucide-react";
 
 export const SIDEBAR_SHELL = `
   fixed lg:sticky top-0 left-0 z-50 h-screen shrink-0
@@ -110,7 +110,7 @@ export function SidebarSwitchLink({ to, onClick, icon: Icon, label, isExpanded }
   );
 }
 
-export function SidebarProfileCard({ isExpanded, onClick, avatar, name, role, title }) {
+export function SidebarProfileCard({ isExpanded, onClick, avatar, name, role, title, onSignOut }) {
   if (!isExpanded) {
     return (
       <div className="flex justify-center py-1">
@@ -127,20 +127,34 @@ export function SidebarProfileCard({ isExpanded, onClick, avatar, name, role, ti
   }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg bg-slate-800/70 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 transition text-left"
+    <div
+      className="group w-full flex items-center justify-between gap-1.5 px-2 py-2 rounded-lg bg-slate-800/70 border border-slate-700 hover:border-slate-600 transition"
     >
-      <div className="shrink-0 scale-90 origin-left">{avatar}</div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[12px] font-bold text-slate-100 truncate leading-tight">{name}</div>
-        <div className="text-[10px] text-slate-500 font-medium truncate">{role}</div>
-      </div>
-      <div className="flex flex-col items-center gap-1 shrink-0">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-2.5 flex-1 min-w-0 text-left focus:outline-none group/info"
+      >
+        <div className="shrink-0 scale-90 origin-left">{avatar}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[12px] font-bold text-slate-100 truncate leading-tight group-hover/info:text-rose-400 transition">{name}</div>
+          <div className="text-[10px] text-slate-500 font-medium truncate">{role}</div>
+        </div>
+      </button>
+      <div className="flex items-center gap-2 shrink-0">
+        {onSignOut && (
+          <button
+            type="button"
+            onClick={onSignOut}
+            title="Sign out"
+            className="w-7 h-7 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-slate-600 flex items-center justify-center transition"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        )}
         <div className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" title="Online" />
       </div>
-    </button>
+    </div>
   );
 }
 

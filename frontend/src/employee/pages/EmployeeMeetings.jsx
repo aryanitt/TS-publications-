@@ -36,6 +36,24 @@ const EMPTY_FORM = {
   agenda: "",
 };
 
+const parseTime12 = (time24 = "14:00") => {
+  const [hStr, mStr] = (time24 || "14:00").split(":");
+  let h = parseInt(hStr || "14", 10);
+  const m = mStr || "00";
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return { hour: String(h), minute: m, ampm };
+};
+
+const formatTime24 = (hour, minute, ampm) => {
+  let h = parseInt(hour || "12", 10);
+  if (ampm === "PM" && h < 12) h += 12;
+  if (ampm === "AM" && h === 12) h = 0;
+  const hStr = String(h).padStart(2, "0");
+  return `${hStr}:${minute}`;
+};
+
 const INPUT = "w-full h-10 px-3 rounded-xl bg-white border border-rose-100 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition";
 const LABEL = "block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5";
 
@@ -90,7 +108,47 @@ function BookMeetingDrawer({
             <input type="date" className={INPUT} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
           </Field>
           <Field label="Time">
-            <input type="time" className={INPUT} value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} />
+            <div className="flex gap-1.5 items-center">
+              <select
+                className={`${INPUT} flex-1 text-center px-1`}
+                value={parseTime12(form.time).hour}
+                onChange={(e) => {
+                  const { minute, ampm } = parseTime12(form.time);
+                  const newTime = formatTime24(e.target.value, minute, ampm);
+                  setForm((f) => ({ ...f, time: newTime }));
+                }}
+              >
+                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
+              <span className="text-slate-400 font-bold">:</span>
+              <select
+                className={`${INPUT} flex-1 text-center px-1`}
+                value={parseTime12(form.time).minute}
+                onChange={(e) => {
+                  const { hour, ampm } = parseTime12(form.time);
+                  const newTime = formatTime24(hour, e.target.value, ampm);
+                  setForm((f) => ({ ...f, time: newTime }));
+                }}
+              >
+                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <select
+                className={`${INPUT} w-20 text-center px-1`}
+                value={parseTime12(form.time).ampm}
+                onChange={(e) => {
+                  const { hour, minute } = parseTime12(form.time);
+                  const newTime = formatTime24(hour, minute, e.target.value);
+                  setForm((f) => ({ ...f, time: newTime }));
+                }}
+              >
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
           </Field>
         </div>
 

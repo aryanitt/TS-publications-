@@ -46,6 +46,7 @@ import {
   unwrapApiList,
   mergeFetchedList,
   replaceFetchedList,
+  unwrapWorkspacePayload,
 } from "../lib/leadSync.js";
 
 const EmployeeContext = createContext(null);
@@ -207,12 +208,15 @@ export function EmployeeProvider({ children }) {
       const res = await apiGet(dashboardPath, {
         headers: getCrmHeaders("employee", empProfile),
         cacheTtl: forceRefresh ? 0 : EMPLOYEE_CACHE_TTL,
-        skipCache: forceRefresh || Boolean(authEmployeeId),
+        skipCache: forceRefresh,
       });
       if (res?.success === false) {
         throw new Error(res.message || "Dashboard API failed");
       }
-      const data = unwrapApiData(res) || res.data || res;
+      const data = unwrapWorkspacePayload(res);
+      if (!data) {
+        throw new Error("Dashboard API returned an invalid payload");
+      }
       const scopeId = authEmployeeId || resolvedId;
       const workspaceLeads = Array.isArray(data.leads)
         ? filterLeadsForEmployee(
@@ -270,10 +274,11 @@ export function EmployeeProvider({ children }) {
       }
       setUsingApi(true);
       setWorkspaceError(null);
-      return true;
+      return "ok";
     } catch (err) {
       setWorkspaceError(err.message || "Could not load your workspace data");
-      return false;
+      if (err.status === 429) return "rate_limited";
+      return "error";
     }
   }, [resolveApiEmployeeId]);
 
@@ -289,7 +294,6 @@ export function EmployeeProvider({ children }) {
       const res = await apiGet(leadsPath, {
         headers: getCrmHeaders("employee", empProfile),
         cacheTtl: EMPLOYEE_CACHE_TTL,
-        skipCache: Boolean(authEmployeeId),
       });
       const items = unwrapApiList(res);
       if (!items) return false;
@@ -476,13 +480,14 @@ export function EmployeeProvider({ children }) {
     return false;
   }, []);
 
-  const refreshSops = useCallback(async () => {
+  const refreshSops = useCallback(async (options = {}) => {
+    const { force = false } = options;
     const endpoints = ["/api/v1/sops", "/api/sop/all"];
     for (const path of endpoints) {
       try {
         const sopRes = await apiGet(path, {
-          skipCache: true,
-          cacheTtl: 0,
+          skipCache: force,
+          cacheTtl: force ? 0 : EMPLOYEE_CACHE_TTL,
           headers: getCrmHeaders("employee", employee),
         });
         const list = extractApiSopList(sopRes);
@@ -493,7 +498,8 @@ export function EmployeeProvider({ children }) {
           setSopsState((prev) => (prev.length ? prev : []));
           return false;
         }
-      } catch {
+      } catch (err) {
+        if (err?.status === 429) return false;
         /* try next endpoint */
       }
     }
@@ -779,7 +785,7 @@ export function EmployeeProvider({ children }) {
           name,
           company: form.company || "—",
           status: form.status || "warm",
-          stage: form.stage || "Attempted",
+          stage: form.stage || "Conversation",
           source: form.source || "Website",
           budget: form.budget || "—",
           last: "Just now",
@@ -877,6 +883,25 @@ export function EmployeeProvider({ children }) {
     }
   }, [usingApi]);
 
+  const editLeadDetails = useCallback(async (leadId, updates) => {
+    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates } : l)));
+
+    if (shouldPersistToApi(usingApi)) {
+      try {
+        const payload = {};
+        if (updates.name !== undefined) payload.leadName = updates.name;
+        if (updates.status !== undefined) payload.temperature = temperatureToApi(updates.status);
+        if (updates.phone !== undefined) payload.phone = updates.phone;
+        if (updates.email !== undefined) payload.email = updates.email;
+
+        await apiPut(`/api/v1/leads/${leadId}`, payload, { headers: getCrmHeaders() });
+        invalidateCache("/api/v1");
+      } catch (err) {
+        toast.error(err.message || "Lead details update failed");
+      }
+    }
+  }, [usingApi]);
+
   const refreshTeamEmployees = useCallback(async () => {
     try {
       const empRes = await apiGet("/api/v1/employees", {
@@ -952,15 +977,15 @@ export function EmployeeProvider({ children }) {
 
       const loaded = await loadEmployeeWorkspace(profile.id, profile, { forceRefresh });
       if (cancelled) return;
-      if (!loaded) {
+      if (loaded === "error") {
         await refreshLeads(profile.id, profile);
-      }
-      if (cancelled) return;
-      await refreshTasks(profile.id, profile);
-      try {
-        await refreshSops();
-      } catch {
-        /* SOPs optional */
+        if (cancelled) return;
+        await refreshTasks(profile.id, profile);
+        try {
+          await refreshSops();
+        } catch {
+          /* SOPs optional */
+        }
       }
     }
 
@@ -985,21 +1010,22 @@ export function EmployeeProvider({ children }) {
 
         if (authProfile) {
           const stored = getStoredEmployee();
-          if (stored?.id && Number(stored.id) !== Number(authProfile.id)) {
+          const employeeChanged = stored?.id && Number(stored.id) !== Number(authProfile.id);
+          if (employeeChanged) {
             clearEmployeeStorage();
+            setLeads([]);
+            setTasksState({});
+            setFollowUpsState([]);
+            setCalls([]);
+            setMeetingsUpcoming([]);
+            setMeetingsHistory([]);
+            setActivities({});
+            invalidateCache("/api/v1/employee/");
           }
 
-          setLeads([]);
-          setTasksState({});
-          setFollowUpsState([]);
-          setCalls([]);
-          setMeetingsUpcoming([]);
-          setMeetingsHistory([]);
-          setActivities({});
-          invalidateCache("/api/v1/employee/");
           setWorkspaceError(null);
 
-          await hydrateWorkspace(authProfile, true);
+          await hydrateWorkspace(authProfile, employeeChanged);
           if (cancelled) return;
 
           try {
@@ -1085,18 +1111,26 @@ export function EmployeeProvider({ children }) {
     const employeeId = getAuthenticatedEmployeeId();
     if (!employeeId || linkError) return undefined;
 
+    let debounceTimer = null;
+
     const syncAssignedWork = () => {
       if (document.visibilityState !== "visible") return;
-      invalidateCache("/api/v1/employee/");
-      refreshLeads(employeeId, employee);
-      refreshTasks(employeeId, employee);
-      refreshMeetings(employeeId, leads);
-      refreshFollowUps(employeeId, leads);
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        invalidateCache("/api/v1/employee/");
+        refreshLeads(employeeId, employee);
+        refreshTasks(employeeId, employee);
+        refreshMeetings(employeeId, leads);
+        refreshFollowUps(employeeId, leads);
+      }, 800);
     };
 
     document.addEventListener("visibilitychange", syncAssignedWork);
-    return () => document.removeEventListener("visibilitychange", syncAssignedWork);
-  }, [employee, leads, linkError, refreshLeads, refreshTasks, refreshMeetings, refreshFollowUps]);
+    return () => {
+      clearTimeout(debounceTimer);
+      document.removeEventListener("visibilitychange", syncAssignedWork);
+    };
+  }, [employee?.id, linkError, refreshLeads, refreshTasks, refreshMeetings, refreshFollowUps]);
 
   const createMeeting = useCallback(async (form) => {
     const lead = leads.find((l) => String(l.id) === String(form.leadId));
@@ -1176,14 +1210,44 @@ export function EmployeeProvider({ children }) {
     setLoading(true);
     setWorkspaceError(null);
     try {
-      const ok = await loadEmployeeWorkspace(profile.id, profile, { forceRefresh: true });
-      if (!ok) await refreshLeads(profile.id, profile);
-      await refreshTasks(profile.id, profile);
-      return true;
+      const result = await loadEmployeeWorkspace(profile.id, profile, { forceRefresh: true });
+      if (result === "error") {
+        await refreshLeads(profile.id, profile);
+        await refreshTasks(profile.id, profile);
+      }
+      return result === "ok";
     } finally {
       setLoading(false);
     }
   }, [employee, loadEmployeeWorkspace, refreshLeads, refreshTasks]);
+
+  const startCallyzerCall = useCallback(async (lead) => {
+    if (!lead?.id) {
+      toast.error("Select a valid lead to call");
+      return null;
+    }
+    if (!lead.phone) {
+      toast.error("Add a phone number to this lead before calling");
+      return null;
+    }
+
+    const employeeId = await resolveApiEmployeeId(employee.id, employee);
+    try {
+      const res = await apiPost(
+        "/api/v1/employee/callyzer/start-call",
+        { leadId: lead.id, employeeId },
+        { headers: getCrmHeaders() },
+      );
+      const data = unwrapApiData(res) || res?.data || res;
+      if (data?.dialUrl) {
+        window.location.href = data.dialUrl;
+      }
+      return data;
+    } catch (err) {
+      toast.error(err.message || "Could not start Callyzer call");
+      return null;
+    }
+  }, [employee, resolveApiEmployeeId]);
 
   const value = useMemo(() => ({
     employee,
@@ -1205,6 +1269,7 @@ export function EmployeeProvider({ children }) {
     addLead,
     updateLeadStage,
     updateLeadTemperature,
+    editLeadDetails,
     refreshLeads,
     reassignLead,
     teamEmployees,
@@ -1213,6 +1278,7 @@ export function EmployeeProvider({ children }) {
     calls,
     setCalls,
     addCallRecord,
+    startCallyzerCall,
     activities,
     addActivityRecord,
     sops,
@@ -1229,9 +1295,9 @@ export function EmployeeProvider({ children }) {
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
-    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
+    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, refreshLeads,
     reassignLead, teamEmployees, refreshTeamEmployees,
-    usingApi, calls, addCallRecord, activities, addActivityRecord, sops, refreshSops,
+    usingApi, calls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
     workspaceError, reloadWorkspace,
   ]);

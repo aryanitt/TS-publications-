@@ -18,6 +18,7 @@ import {
   timeAgoShort,
 } from "../../data/pipelineMock.js";
 import { getAssignmentState, getLeadEmployeeName } from "../../lib/leadAssignment.js";
+import CashCollectedPanel from "../CashCollectedPanel.jsx";
 
 const ACTIVITY_ICONS = {
   created: StickyNote,
@@ -409,6 +410,13 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                 </div>
               </div>
             </div>
+
+            <CashCollectedPanel
+              leadId={dbLeadId || lead.id}
+              leadName={lead.name}
+              employeeId={lead.employeeId || lead.assignedTo}
+              compact
+            />
 
             {/* Latest Call MoM Section */}
             <div className="rounded-xl border border-rose-150/70 bg-gradient-to-br from-rose-50/20 via-white to-amber-50/10 p-4 space-y-3 relative overflow-hidden shadow-sm">

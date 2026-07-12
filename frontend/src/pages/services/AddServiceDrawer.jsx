@@ -188,25 +188,7 @@ export default function AddServiceDrawer({ open, onClose }) {
               ))}
             </div>
           </div>
-          <div>
-            <label className={labelClass}>Catalog Badge</label>
-            <div className="flex flex-wrap gap-2">
-              {BADGE_OPTIONS.map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => update("badge", b)}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition ${
-                    form.badge === b
-                      ? "bg-rose-50 border-rose-400 text-rose-800"
-                      : "bg-white border-rose-100 text-slate-600 hover:border-rose-200"
-                  }`}
-                >
-                  {b}
-                </button>
-              ))}
-            </div>
-          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Tag 1</label>

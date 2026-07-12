@@ -11,17 +11,17 @@ import { apiLeadToAdmin, unwrapApiData } from "../lib/leadSync.js";
 import { createLocalLead } from "../data/leadManagementMock.js";
 
 const INDIAN_STATES = [
-  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
-  "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
-  "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab",
-  "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh",
-  "Uttarakhand", "West Bengal", "Delhi", "Jammu & Kashmir", "Ladakh", "Puducherry",
-];
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa",
+  "Gujarat", "Haryana", "Himachal Pradesh", "Jammu & Kashmir", "Jharkhand", "Karnataka",
+  "Kerala", "Ladakh", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+  "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
 
-export function AddLead({ onClose, showToast }) {
+export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "New Lead" }) {
     const [activeTab, setActiveTab] = useState("basic");
     const [warmth, setWarmth] = useState("Hot Lead");
-    const [stage, setStage] = useState("New Lead");
+    const [stage, setStage] = useState(defaultStage);
     const [prob, setProb] = useState(50);
     const [dealVal, setDealVal] = useState("");
     const [countryCode, setCountryCode] = useState("+91");
@@ -82,9 +82,6 @@ export function AddLead({ onClose, showToast }) {
         else if (!/^\d{10}$/.test(formData.phone.trim())) errs.phone = "Phone must be exactly 10 digits";
         if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.(com|in|org|net|co|io|edu|gov|uk|au|us)$/i.test(formData.email.trim()))
           errs.email = "Enter a valid email (e.g. name@domain.com)";
-        if (!formData.city.trim()) errs.city = "City is required";
-        if (!formData.state.trim()) errs.state = "State is required";
-        if (!formData.company_name.trim()) errs.company_name = "Business name is required";
       }
       if (tabId === "marketing") {
         if (!formData.source) errs.source = "Lead source is required";
@@ -212,7 +209,7 @@ export function AddLead({ onClose, showToast }) {
   
     const iconFieldWrap = { position: "relative" };
     const iconStyle = { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#f43f5e", pointerEvents: "none" };
-    const pipelineStagesList = ["New Lead","Contacted","Qualified","Proposal Sent","Negotiation","Converted"];
+    const pipelineStagesList = pipelineStages || ["New Lead","Contacted","Qualified","Proposal Sent","Negotiation","Converted"];
     const warmthOptions = [
       { label: "🔥 Hot",  value: "Hot Lead",  style: { background: warmth === "Hot Lead" ? "#be123c" : "#fff1f2", color: warmth === "Hot Lead" ? "#fff" : "#be123c", borderColor: warmth === "Hot Lead" ? "#be123c" : "#fda4af" } },
       { label: "🌡 Warm", value: "Warm Lead", style: { background: warmth === "Warm Lead" ? "#ea580c" : "#fff7ed", color: warmth === "Warm Lead" ? "#fff" : "#c2410c", borderColor: warmth === "Warm Lead" ? "#ea580c" : "#fdba74" } },
@@ -358,7 +355,7 @@ export function AddLead({ onClose, showToast }) {
                   <ErrMsg field="email" />
                 </FormField>
 
-                <FormField label="Business Name" required fullWidth>
+                <FormField label="Business Name" fullWidth>
                   <input className={`al-input ${errors.company_name ? "error" : ""}`} placeholder="e.g. Penguin India Pvt. Ltd." value={formData.company_name} onChange={e => setField("company_name", e.target.value)} />
                   <ErrMsg field="company_name" />
                 </FormField>
@@ -368,12 +365,12 @@ export function AddLead({ onClose, showToast }) {
               <SectionDivider label="Location" />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
 
-                <FormField label="City" required>
+                <FormField label="City">
                   <input className={`al-input ${errors.city ? "error" : ""}`} placeholder="e.g. Mumbai" value={formData.city} onChange={e => setField("city", e.target.value)} />
                   <ErrMsg field="city" />
                 </FormField>
 
-                <FormField label="State" required>
+                <FormField label="State">
                   <ALSelect options={INDIAN_STATES} value={formData.state} onChange={val => setField("state", val)} error={!!errors.state} placeholder="Select state" />
                   <ErrMsg field="state" />
                 </FormField>
@@ -677,6 +674,8 @@ export function AddLead({ onClose, showToast }) {
     title = "New Lead",
     subtitle,
     width = "drawer-panel",
+    pipelineStages,
+    defaultStage,
   }) {
     const handleClose = (result) => onClose?.(result);
 
@@ -685,7 +684,12 @@ export function AddLead({ onClose, showToast }) {
         {subtitle && (
           <p className="text-xs text-slate-500 mb-4 pb-3 border-b border-rose-50">{subtitle}</p>
         )}
-        <AddLead onClose={handleClose} showToast={showToast} />
+        <AddLead
+          onClose={handleClose}
+          showToast={showToast}
+          pipelineStages={pipelineStages}
+          defaultStage={defaultStage}
+        />
       </Drawer>
     );
   }

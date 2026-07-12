@@ -65,7 +65,7 @@ function CustomDatePopover({ fromDate, setFromDate, toDate, setToDate, onApply, 
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="w-full border border-rose-100 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-rose-400"
+            className="w-full border border-rose-100 rounded-lg px-3 py-2 text-xs text-slate-800 bg-white focus:outline-none focus:border-rose-400"
           />
         </div>
         <div>
@@ -74,7 +74,7 @@ function CustomDatePopover({ fromDate, setFromDate, toDate, setToDate, onApply, 
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="w-full border border-rose-100 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-rose-400"
+            className="w-full border border-rose-100 rounded-lg px-3 py-2 text-xs text-slate-800 bg-white focus:outline-none focus:border-rose-400"
           />
         </div>
         <button

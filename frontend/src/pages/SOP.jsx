@@ -651,15 +651,35 @@ function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchiv
       </div>
     )}
 
-    {sop.script && (
-      <div>
-        <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-          <MessageSquare className="w-3 h-3" /> Script
+    {sop.scripts?.length > 0 ? (
+      <div className="space-y-3">
+        <div className="text-xs uppercase tracking-wider text-rose-700 flex items-center gap-1">
+          <MessageSquare className="w-3 h-3" /> Scripts
         </div>
-        <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
-          {sop.script}
-        </pre>
+        {sop.scripts.map((scr, idx) => (
+          <div key={idx} className="space-y-1">
+            {scr.heading && (
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide px-1">
+                {scr.heading}
+              </div>
+            )}
+            <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
+              {scr.content}
+            </pre>
+          </div>
+        ))}
       </div>
+    ) : (
+      sop.script && (
+        <div>
+          <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
+            <MessageSquare className="w-3 h-3" /> Script
+          </div>
+          <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
+            {sop.script}
+          </pre>
+        </div>
+      )
     )}
 
     {sop.questions?.length > 0 && (
@@ -803,7 +823,7 @@ function makeBlankForm() {
     title: "", description: "", category: "Sales Call", status: "Draft",
     priority: "Medium", tags: [], steps: Array.from({ length: 3 }, () => makeStep()),
     department: "", estimatedTime: "", attachments: [],
-    script: "", questions: [""], frameworks: [""],
+    script: "", scripts: [{ heading: "", content: "" }], questions: [""], frameworks: [""],
   };
 }
 function sopToForm(s) {
@@ -813,6 +833,7 @@ function sopToForm(s) {
     department: s.department || "", estimatedTime: s.estimatedTime || "",
     attachments: [...(s.attachments || [])],
     script: s.script || "",
+    scripts: s.scripts?.length ? s.scripts : [{ heading: "", content: "" }],
     questions: s.questions?.length ? s.questions : [""],
     frameworks: s.frameworks?.length ? s.frameworks : [""],
   };
@@ -831,6 +852,7 @@ function formToSop(base, form, isEdit) {
     estimatedTime: form.estimatedTime,
     attachments: form.attachments,
     script: form.script || null,
+    scripts: form.scripts ? form.scripts.filter(scr => scr.heading.trim() || scr.content.trim()) : [],
     questions: form.questions.filter(Boolean),
     frameworks: form.frameworks.filter(Boolean),
     updated: new Date().toISOString().split("T")[0],
@@ -860,6 +882,8 @@ function normalizeApiSop(sop) {
     questions:         sop.questions || [],
     frameworks:        sop.frameworks || [],
     tags:              sop.tags || [],
+    script:            sop.script || "",
+    scripts:           sop.scripts || [],
     comments:          (sop.comments || []).map(c => ({
       id:     c.id,
       author: c.author || "Unknown",
@@ -941,6 +965,7 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
           department: f.department.trim() ? f.department : generated.department,
           estimatedTime: f.estimatedTime.trim() ? f.estimatedTime : generated.estimatedTime,
           script: f.script.trim() ? f.script : generated.script,
+          scripts: f.scripts.length <= 1 && (!f.scripts[0] || (!f.scripts[0].heading && !f.scripts[0].content)) ? [{ heading: "Standard Call Script", content: generated.script }] : f.scripts,
           questions: f.questions.length <= 1 && !f.questions[0] ? generated.questions : f.questions,
           frameworks: f.frameworks.length <= 1 && !f.frameworks[0] ? generated.frameworks : f.frameworks,
           tags: f.tags.length === 0 ? generated.tags : f.tags,
@@ -1134,6 +1159,7 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
           department: generated.department,
           estimatedTime: generated.estimatedTime,
           script: generated.script,
+          scripts: [{ heading: "Standard Call Script", content: generated.script }],
           questions: generated.questions,
           frameworks: generated.frameworks,
           tags: generated.tags,
@@ -1196,6 +1222,7 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
           department: generated.department,
           estimatedTime: generated.estimatedTime,
           script: generated.script,
+          scripts: [{ heading: "Standard Call Script", content: generated.script }],
           questions: generated.questions,
           frameworks: generated.frameworks,
           tags: generated.tags,
@@ -1284,14 +1311,50 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
       </Field>
       {(form.category === "Sales Call" || form.category === "During Meeting") && (
   <>
-    <Field label="Script">
-      <textarea
-        value={form.script}
-        onChange={e => set("script", e.target.value)}
-        rows={4}
-        className="sop-input resize-none font-mono text-xs"
-        placeholder="Write the call/meeting script here…"
-      />
+    <Field label="Scripts">
+      <div className="space-y-3">
+        {(form.scripts || []).map((scr, i) => (
+          <div key={i} className="p-3 border border-rose-100 rounded-xl bg-white space-y-2 relative">
+            <div className="flex items-center justify-between">
+              <input
+                value={scr.heading}
+                onChange={e => {
+                  const updated = [...form.scripts];
+                  updated[i] = { ...updated[i], heading: e.target.value };
+                  set("scripts", updated);
+                }}
+                className="sop-input flex-1 font-bold text-xs bg-transparent border-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-slate-400"
+                placeholder={`Script Heading ${i + 1} (e.g. Opening Script)`}
+              />
+              <button
+                type="button"
+                onClick={() => set("scripts", form.scripts.filter((_, x) => x !== i))}
+                className="text-gray-400 hover:text-red-500 transition-colors p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <textarea
+              value={scr.content}
+              onChange={e => {
+                const updated = [...form.scripts];
+                updated[i] = { ...updated[i], content: e.target.value };
+                set("scripts", updated);
+              }}
+              rows={3}
+              className="sop-input w-full resize-none font-mono text-xs"
+              placeholder="Write the dialogue script here…"
+            />
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => set("scripts", [...(form.scripts || []), { heading: "", content: "" }])}
+          className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline"
+        >
+          <Plus className="w-3 h-3" /> Add script
+        </button>
+      </div>
     </Field>
 
     <Field label="Questions">
@@ -1688,6 +1751,16 @@ export default function SOP() {
   }, [location.search]);
 
   useEffect(() => {
+    const openId = new URLSearchParams(location.search).get("openSop");
+    if (openId && sops.length) {
+      const found = sops.find((s) => String(s.id) === String(openId));
+      if (found) {
+        setDetailSop(found);
+      }
+    }
+  }, [location.search, sops]);
+
+  useEffect(() => {
     const fetchSops = async () => {
       try {
         const data = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
@@ -2011,114 +2084,9 @@ export default function SOP() {
 
   return (
     <div className="space-y-6 page-shell min-w-0">
-      {/* ── KPI Grid ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-  {sopCategories.map((c) => <KPICard key={c.name} c={c} />)}
-</div>
 
-      {/* ── Search / Filter bar ── */}
-      <GlassCard className="p-2 md:p-3 border border-rose-500">
-  {/* Desktop */}
-  <div className="hidden lg:flex items-center gap-2">
-    <div className="relative flex-1 max-w-xs">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-      <input
-        value={q}
-        onChange={e => setQ(e.target.value)}
-        placeholder="Search SOPs…"
-        className="w-full pl-9 pr-8 py-2 rounded-xl bg-white border border-rose-200 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-300/40 placeholder:text-gray-400"
-      />
-      {q && <button onClick={() => setQ("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3 h-3" /></button>}
-    </div>
 
-    <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-      {["All", "Sales Call", "After Call", "During Meeting", "After Meeting", "After Closing"].map(c => (
-        <button key={c} onClick={() => setFilter(c)}
-          className={cn("shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all",
-            filter === c
-              ? "bg-gradient-to-br from-rose-600 to-rose-800 text-white  border border-rose-700 shadow-sm"
-              : "border-rose-300 text-gray-700 hover:text-rose-600 hover:border-rose-300 bg-white"
-          )}>{c}</button>
-      ))}
-    </div>
 
-    {/* Status filter */}
-    <div className="relative">
-      <select
-        value={statusFilter}
-        onChange={e => setStatusFilter(e.target.value)}
-        className="appearance-none pl-2.5 pr-7 py-1.5 rounded-lg border border-rose-500 text-[11px] bg-white text-gray-800 focus:outline-none cursor-pointer"
-      >
-        {["All", "Active", "Review", "Draft", "Archived"].map(s => <option key={s}>{s}</option>)}
-      </select>
-      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-rose-800 pointer-events-none" />
-    </div>
-
-    {/* Sort */}
-    <div className="relative">
-      <select
-        value={sortBy}
-        onChange={e => setSortBy(e.target.value)}
-        className="appearance-none pl-2.5 pr-7 py-1.5 rounded-lg border border-rose-500 text-[11px] bg-white text-gray-800 focus:outline-none cursor-pointer"
-      >
-        {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <SortAsc className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-rose-800 pointer-events-none" />
-    </div>
-
-    <div className="flex items-center gap-1 bg-rose-50 border border-rose-100 rounded-xl p-1 ml-auto">
-      <button onClick={() => setView("grid")} className={cn("p-1.5 rounded-lg transition-all", view === "grid" ? "bg-rose-100 text-rose-600 shadow-sm" : "text-gray-400 hover:text-rose-500")}>
-        <LayoutGrid className="w-3.5 h-3.5" />
-      </button>
-      <button onClick={() => setView("list")} className={cn("p-1.5 rounded-lg transition-all", view === "list" ? "bg-rose-100 text-rose-600 shadow-sm" : "text-gray-400 hover:text-rose-500")}>
-        <List className="w-3.5 h-3.5" />
-      </button>
-    </div>
-
-    <button onClick={() => setAddOpen(true)} className="shrink-0 px-3 py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-medium inline-flex items-center gap-1.5 hover-lift whitespace-nowrap">
-      <Plus className="w-3.5 h-3.5" /> Add SOP
-    </button>
-  </div>
-
-  {/* Mobile/Tablet */}
-  <div className="lg:hidden flex flex-col gap-2">
-    <div className="flex items-center gap-2">
-      <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search SOPs…"
-          className="w-full pl-9 pr-8 py-2 rounded-xl bg-white border border-rose-200 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-300/40 placeholder:text-gray-400" />
-        {q && <button onClick={() => setQ("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3 h-3" /></button>}
-      </div>
-      <div className="flex items-center gap-1 bg-rose-50 border border-rose-100 rounded-xl p-1">
-        <button onClick={() => setView("grid")} className={cn("p-1.5 rounded-lg transition-all", view === "grid" ? "bg-rose-100 text-rose-600 shadow-sm" : "text-gray-400 hover:text-rose-500")}><LayoutGrid className="w-3.5 h-3.5" /></button>
-        <button onClick={() => setView("list")} className={cn("p-1.5 rounded-lg transition-all", view === "list" ? "bg-rose-100 text-rose-600 shadow-sm" : "text-gray-400 hover:text-rose-500")}><List className="w-3.5 h-3.5" /></button>
-      </div>
-      <button onClick={() => setAddOpen(true)} className="shrink-0 px-3 py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-medium inline-flex items-center gap-1.5 hover-lift whitespace-nowrap">
-        <Plus className="w-3.5 h-3.5" /><span className="hidden sm:inline">Add SOP</span><span className="sm:hidden">Add</span>
-      </button>
-    </div>
-    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-      {["All", "Sales Call", "After Call", "During Meeting", "After Meeting", "After Closing"].map(c => (
-        <button key={c} onClick={() => setFilter(c)}
-          className={cn("shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-all",
-            filter === c
-              ? "bg-rose-600 text-white border-transparent shadow-sm"
-              : "border-rose-200 text-gray-500 hover:text-rose-600 bg-white"
-          )}>{c}</button>
-      ))}
-    </div>
-    <div className="flex items-center gap-2">
-      <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-        className="flex-1 px-2.5 py-1.5 rounded-lg border border-rose-200 text-[11px] bg-white text-gray-500 focus:outline-none">
-        {["All", "Active", "Review", "Draft", "Archived"].map(s => <option key={s}>{s}</option>)}
-      </select>
-      <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-        className="flex-1 px-2.5 py-1.5 rounded-lg border border-rose-200 text-[11px] bg-white text-gray-500 focus:outline-none">
-        {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  </div>
-</GlassCard>
 
      {/* ── Content ── */}
 {view === "grid" ? (
@@ -2186,7 +2154,7 @@ export default function SOP() {
       {/* ── Detail Drawer (z-60) ── */}
       <SOPDetailDrawer
         sop={detailSop}
-        onClose={() => setDetailSop(null)}
+        onClose={() => { setDetailSop(null); navigate(location.pathname, { replace: true }); }}
         onEdit={(sop) => setEditSop(sop)}
         onDelete={setDeleteTarget}
         onDuplicate={handleDuplicate}

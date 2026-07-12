@@ -286,17 +286,8 @@ export default function ServiceEdit() {
                   />
                 </div>
               </FormSection>
-
               <FormSection title="Catalog Settings" subtitle="How this service appears and behaves in the catalog">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className={labelClass}>Catalog Badge</label>
-                    <SegmentedControl
-                      options={BADGE_OPTIONS}
-                      value={draft.badge}
-                      onChange={(badge) => patch({ badge })}
-                    />
-                  </div>
+                <div className="grid grid-cols-1 gap-4">
                   <div>
                     <label className={labelClass}>Status</label>
                     <SegmentedControl

@@ -17,7 +17,7 @@ export default function ChangePassword() {
     event.preventDefault();
 
     if (!currentPassword) {
-      toast.error("Enter your current password (temporary password: Admin@12345)");
+      toast.error("Enter your current password");
       return;
     }
     if (newPassword.length < 6) {
@@ -62,7 +62,7 @@ export default function ChangePassword() {
           </p>
           {user?.mustChangePassword && (
             <p className="text-xs text-slate-500 mt-2">
-              Current password is your temporary one: <span className="font-mono">Admin@12345</span>
+              Use the temporary password that was shared with you as the current password.
             </p>
           )}
         </div>

@@ -105,17 +105,8 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
             role={admin.role}
             title={`${admin.fullName} — ${admin.role}`}
             avatar={<AdminDoodleAvatar size={32} shape="circle" />}
+            onSignOut={() => { logout(); onClose(); navigate("/login", { replace: true }); }}
           />
-          {isExpanded && (
-            <button
-              type="button"
-              onClick={() => { logout(); onClose(); navigate("/login", { replace: true }); }}
-              className="mt-2 w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[11px] font-semibold text-slate-400 hover:text-rose-300 hover:bg-slate-800 border border-transparent hover:border-slate-700 transition"
-            >
-              <LogOut className="w-3.5 h-3.5 shrink-0" />
-              <span>Sign out</span>
-            </button>
-          )}
         </SidebarFooter>
 
         <SidebarCollapseHint show={collapsed && !hovered} />

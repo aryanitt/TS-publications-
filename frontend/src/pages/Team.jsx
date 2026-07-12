@@ -3,8 +3,11 @@ import { useLocation } from "react-router-dom";
 import { Maximize2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiGet, apiPost, apiDelete, invalidateCache } from "../lib/api.js";
+import { formatCashINR, formatCashDateTime, resolveSlipUrl } from "../components/CashCollectedPanel.jsx";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
+import CallyzerStatsPanel, { CallyzerTeamTable } from "../components/CallyzerStatsPanel.jsx";
+import { useCallyzerStats, useCallyzerTeamStats } from "../lib/useCallyzerStats.js";
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
   const s = document.createElement("style");
@@ -431,6 +434,7 @@ function useEmployeeDetails(emp) {
       ...normalized,
       stats: detail?.stats || null,
       achieved: detail?.achieved || null,
+      cashCollections: detail?.cashCollections || [],
       responseTimeMin: perf.responseTimeMin,
       pickupRate: perf.pickupRate,
       qualificationRate: perf.qualificationRate,
@@ -1149,8 +1153,11 @@ function MemberForm({ fields, errors, set, blur }) {
               style={inputBase(false)}
               value={fields.callyserId}
               onChange={(e) => set("callyserId", e.target.value)}
-              placeholder="Optional"
+              placeholder="91-9462265230 (from Callyzer employee phone)"
             />
+            <p style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
+              Copy from Callyzer → Employees list. Example: Sushmit Air (+91-9462265230) → enter <strong>91-9462265230</strong>
+            </p>
           </div>
           <div>
             <label style={labelStyle}>Employee ID</label>
@@ -1238,13 +1245,39 @@ function MemberForm({ fields, errors, set, blur }) {
           <div key={label} style={{ marginBottom: 12 }}>
             <label style={labelStyle}>{label}</label>
             <div style={kpiBox}>
-              <input
-                style={{ ...inputBase(false), fontSize: 12 }}
-                placeholder="Target"
-                value={fields[t]}
-                onChange={(e) => set(t, e.target.value)}
-                inputMode="numeric"
-              />
+              {t === "cashTarget" ? (
+                <div style={{ position: "relative" }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      fontSize: 12,
+                      color: "#be123c",
+                      fontWeight: 600,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    ₹
+                  </span>
+                  <input
+                    style={{ ...inputBase(false), fontSize: 12, paddingLeft: 22 }}
+                    placeholder="Target"
+                    value={fields[t]}
+                    onChange={(e) => set(t, e.target.value)}
+                    inputMode="numeric"
+                  />
+                </div>
+              ) : (
+                <input
+                  style={{ ...inputBase(false), fontSize: 12 }}
+                  placeholder="Target"
+                  value={fields[t]}
+                  onChange={(e) => set(t, e.target.value)}
+                  inputMode="numeric"
+                />
+              )}
               <input
                 style={{ ...inputBase(false), fontSize: 12 }}
                 placeholder="Weightage %"
@@ -1584,10 +1617,10 @@ function CredentialsModal({ open, credentials, memberName, onClose }) {
               borderRadius: 18,
               padding: 22,
               background: "#fff",
-              border: "1px solid #bbf7d0",
+              border: "1px solid #fecdd3",
             }}
           >
-            <p style={{ fontWeight: 700, fontSize: 15, color: "#15803d", marginBottom: 4 }}>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "#be123c", marginBottom: 4 }}>
               Login credentials created
             </p>
             <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
@@ -1647,7 +1680,7 @@ function CredentialsModal({ open, credentials, memberName, onClose }) {
                   padding: "10px",
                   borderRadius: 10,
                   border: "none",
-                  background: "#16a34a",
+                  background: "#be123c",
                   color: "#fff",
                   fontSize: 12,
                   fontWeight: 700,
@@ -2050,6 +2083,8 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   }, []);
 
   const { leads, stats, activity, funnel, stageBreakdown, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
+  const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
+    useCallyzerStats(activeEmp?.id, "today", Boolean(activeEmp?.id));
 
   // KRA & Remuneration Calculator States
   const [baseSalary, setBaseSalary] = useState(12000);
@@ -2089,11 +2124,11 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     setCashW(parseFloat(activeEmp.cashWeightage || activeEmp.cash_weightage) || 0);
 
     const achieved = activeEmp.achieved || {};
-    setCallA(achieved.calls ?? stats?.contacted ?? 0);
+    setCallA(callyzerStats?.totalCalls ?? achieved.calls ?? stats?.contacted ?? 0);
     setLeadA(achieved.qualifiedLeads ?? stats?.qualified ?? 0);
     setMeetA(achieved.meetings ?? stats?.totalMeetings ?? 0);
     setCashA(achieved.cash ?? stats?.revenue ?? 0);
-  }, [activeEmp, stats]);
+  }, [activeEmp, stats, callyzerStats]);
 
   const parseVal = (val) => {
     const parsed = parseFloat(val);
@@ -2331,7 +2366,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               cursor: "pointer",
               border: "1px solid #ffe4e6",
               color: "#be123c",
-              background: "var(--secondary)",
+              background: "#fff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2353,9 +2388,9 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               fontSize: compact ? 10 : 11.5,
               fontWeight: 700,
               cursor: "pointer",
-              border: "1px solid #ffe4e6",
-              color: "#ef4444",
-              background: "var(--secondary)",
+              border: "1px solid #ef4444",
+              color: "#fff",
+              background: "#ef4444",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2363,8 +2398,14 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               flex: compact ? 1 : undefined,
               transition: "all .15s",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#fef2f2"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            onMouseEnter={(e) => { 
+              e.currentTarget.style.background = "#dc2626"; 
+              e.currentTarget.style.borderColor = "#dc2626"; 
+            }}
+            onMouseLeave={(e) => { 
+              e.currentTarget.style.background = "#ef4444"; 
+              e.currentTarget.style.borderColor = "#ef4444"; 
+            }}
           >
             <Trash2 style={{ width: 11, height: 11 }} />
             Remove
@@ -2426,6 +2467,19 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           </div>
         ))}
       </div>
+
+      {callyzerConfigured && (
+        <div style={{ marginBottom: compact ? 10 : 14 }}>
+          <CallyzerStatsPanel
+            stats={callyzerStats}
+            loading={callyzerLoading}
+            configured={callyzerConfigured}
+            message={callyzerMessage}
+            title="Callyzer Call Stats (Today)"
+            compact
+          />
+        </div>
+      )}
 
       {/* ── KRA & Compensation Calculator Card ── */}
       <GlassCard className={compact ? "p-3" : "p-5"}>
@@ -2641,6 +2695,77 @@ function EmpDetail({ emp, onEdit, onDelete }) {
         })()}
       </GlassCard>
 
+      {/* ── Cash Collections (all payments recorded by this employee) ── */}
+      <GlassCard className={compact ? "p-3" : "p-5"}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: compact ? 8 : 12, flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ fontSize: compact ? 11 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#047857", margin: 0 }}>
+              Cash Collected
+            </h3>
+            <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: "3px 0 0", lineHeight: 1.3 }}>
+              All payments recorded under {activeEmp.name}
+            </p>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <p style={{ fontSize: 9, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".06em", margin: 0 }}>Total</p>
+            <p style={{ fontSize: compact ? 16 : 20, fontWeight: 900, color: "#047857", margin: "2px 0 0", fontVariantNumeric: "tabular-nums" }}>
+              {formatCashINR(activeEmp.achieved?.cash ?? cashA ?? 0)}
+            </p>
+          </div>
+        </div>
+
+        {!activeEmp.cashCollections?.length ? (
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: 0, padding: compact ? "8px 0" : "12px 0" }}>
+            No cash payments recorded yet. Record payments from any lead drawer under this employee.
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: compact ? 10 : 11.5 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #d1fae5", color: "#047857", textTransform: "uppercase", letterSpacing: ".04em", fontSize: compact ? 8.5 : 9.5 }}>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Lead</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Amount</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Mode</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Date & Time</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Txn / Slip</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeEmp.cashCollections.map((row) => (
+                  <tr key={row.id} style={{ borderBottom: "1px solid #ecfdf5" }}>
+                    <td style={{ padding: "10px 6px", minWidth: 120 }}>
+                      <p style={{ margin: 0, fontWeight: 700, color: "#1e293b" }}>{row.leadName || "Lead"}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8" }}>{row.companyName || "—"}</p>
+                    </td>
+                    <td style={{ padding: "10px 6px", fontWeight: 800, color: "#047857", fontVariantNumeric: "tabular-nums" }}>
+                      {formatCashINR(row.amount)}
+                    </td>
+                    <td style={{ padding: "10px 6px", color: "#334155", fontWeight: 600 }}>{row.paymentMode}</td>
+                    <td style={{ padding: "10px 6px", color: "#64748b", whiteSpace: "nowrap" }}>{formatCashDateTime(row.paymentAt)}</td>
+                    <td style={{ padding: "10px 6px" }}>
+                      {row.transactionId ? (
+                        <span style={{ fontSize: 10, fontWeight: 600, color: "#475569" }}>{row.transactionId}</span>
+                      ) : row.slipUrl ? (
+                        <a
+                          href={resolveSlipUrl(row.slipUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: 10, fontWeight: 700, color: "#047857", textDecoration: "none" }}
+                        >
+                          View slip
+                        </a>
+                      ) : (
+                        <span style={{ color: "#cbd5e1" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassCard>
+
       {/* ── Funnel & Insights Grid ── */}
       <div style={{
         display: "grid",
@@ -2673,8 +2798,8 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: compact ? "minmax(96px, 34%) 1fr" : "200px 1fr",
-              gap: compact ? 6 : 14,
+              gridTemplateColumns: compact ? "minmax(96px, 34%) 1fr" : "minmax(110px, 1fr) 1.5fr",
+              gap: compact ? 6 : 10,
               alignItems: "center",
               minWidth: 0,
             }}
@@ -2682,7 +2807,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             {/* SVG funnel — left */}
             <div style={{
               width: "100%",
-              maxWidth: compact ? 120 : 200,
+              maxWidth: compact ? 120 : 180,
               justifySelf: compact ? "center" : "start",
               flexShrink: 0,
             }}>
@@ -2698,7 +2823,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             <div style={{
               display: "flex",
               flexDirection: "column",
-              gap: compact ? 2 : 6,
+              gap: compact ? 2 : 4,
               justifyContent: "space-between",
               minWidth: 0,
               minHeight: compact ? 118 : undefined,
@@ -2709,9 +2834,9 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                 const colors = ["#be123c", "#e11d48", "#dc2626", "#c2185b", "#881337"];
                 const bgs = ["#fff1f2", "#fff5f6", "#fff8f8", "#fffafb", "#ffffff"];
                 const borders = ["#fecdd3", "#ffe4e6", "#ffe4e6", "#ffe4e6", "#fecdd3"];
-                const rowPad = compact ? "2px 6px" : "10px 12px";
-                const convLabel = compact && item.sub !== "Top Funnel"
-                  ? item.sub.replace(" Conversion", "")
+                const rowPad = compact ? "2px 6px" : "6px 10px";
+                const convLabel = item.sub !== "Top Funnel"
+                  ? item.sub.replace(" Conversion", " Conv")
                   : item.sub;
                 
                 return (
@@ -2933,16 +3058,43 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                     </span>
                   </td>
                   <td style={{ padding: "12px 8px" }}>
-                    <div style={{ display: "flex", gap: 2.5 }}>
-                      {Array.from({ length: 4 }).map((_, tIdx) => (
-                        <div key={tIdx} style={{
-                          width: 4,
-                          height: 12,
-                          borderRadius: 2,
-                          background: tIdx < lead.temp ? (lead.priority === 'Hot' ? "#ef4444" : lead.priority === 'Warm' ? "#f59e0b" : "#22c55e") : "#f1f5f9"
-                        }} />
-                      ))}
-                    </div>
+                    {(() => {
+                      const temp = String(lead.priority || lead.temperature || "Medium").toLowerCase();
+                      const isHot = temp.includes("critical") || temp.includes("high") || temp.includes("hot") || lead.temp === 4;
+                      const isWarm = temp.includes("medium") || temp.includes("warm") || lead.temp === 3;
+                      
+                      let label = "Cold Lead";
+                      let color = "#2563eb";
+                      let bg = "#eff6ff";
+                      let border = "#bfdbfe";
+
+                      if (isHot) {
+                        label = "Hot Lead";
+                        color = "#be123c";
+                        bg = "#fff1f2";
+                        border = "#fecdd3";
+                      } else if (isWarm) {
+                        label = "Warm Lead";
+                        color = "#d97706";
+                        bg = "#fef3c7";
+                        border = "#fde68a";
+                      }
+
+                      return (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          color,
+                          background: bg,
+                          border: `1.2px solid ${border}`,
+                          whiteSpace: "nowrap"
+                        }}>
+                          {label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td style={{ padding: "12px 8px" }}>{lead.next}</td>
                   <td style={{ padding: "12px 8px", fontWeight: 700, color: "#1e293b" }}>{lead.potential}</td>
@@ -3436,6 +3588,9 @@ export default function Team() {
   const [newCredentials, setNewCredentials] = useState(null);
   const [newMemberName, setNewMemberName] = useState("");
   const [kpiData, setKpiData] = useState(null);
+  const [callyzerTeamPeriod, setCallyzerTeamPeriod] = useState("today");
+  const { stats: callyzerTeamStats, loading: callyzerTeamLoading, configured: callyzerTeamConfigured } =
+    useCallyzerTeamStats(callyzerTeamPeriod, true);
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get("action") === "addMember") {
@@ -3688,7 +3843,7 @@ export default function Team() {
       <div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {kpis.map((k, i) => (
-            <div key={k.label}>
+            <div key={k.label} className="h-full">
               <KpiCard {...k} index={i} isActive={i === 0} />
             </div>
           ))}
@@ -3721,6 +3876,8 @@ export default function Team() {
           </button>
         </div>
       </GlassCard>
+
+
 
       {/* ── Member cards list ── */}
       <div

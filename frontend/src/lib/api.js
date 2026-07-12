@@ -10,7 +10,7 @@ const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
 const inflightGets = new Map();
 let lastFetchAt = 0;
-const MIN_FETCH_GAP_MS = 120;
+const MIN_FETCH_GAP_MS = 350;
 const DEFAULT_FETCH_TIMEOUT_MS = 20000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,12 +33,13 @@ function isLocalDevHost() {
   return host === "localhost" || host === "127.0.0.1";
 }
 
-/** Deployed browser builds call Hostinger directly for auth (avoids shared Vercel proxy IP). */
-function shouldUseDirectAuthUrl() {
-  return typeof window !== "undefined" && !isLocalDevHost();
+function shouldUseDirectBackendUrl() {
+  if (typeof window === "undefined") return false;
+  if (isLocalDevHost()) return false;
+  return true;
 }
 
-function resolveDirectAuthBase() {
+function resolveDirectApiBase() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl != null && String(envUrl).trim() !== "") {
     return String(envUrl).replace(/\/$/, "");
@@ -72,10 +73,10 @@ export function shouldPersistToApi(usingApi = false) {
 export function apiUrl(path) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   if (typeof window !== "undefined") {
-    // Auth hits Hostinger directly so concurrent logins are not throttled by one
-    // shared Vercel proxy IP (Hostinger returns 429 for burst traffic on one IP).
-    if (shouldUseDirectAuthUrl() && isAuthApiPath(normalized)) {
-      return `${resolveDirectAuthBase()}${normalized}`;
+    // Production browsers call Hostinger directly. Vercel /api rewrites share one
+    // egress IP; Hostinger rate-limits bursts (429) and the dashboard shows zeros.
+    if (shouldUseDirectBackendUrl()) {
+      return `${resolveDirectApiBase()}${normalized}`;
     }
     return normalized;
   }
@@ -100,6 +101,28 @@ function readSession(key) {
   } catch {
     return null;
   }
+}
+
+function readStaleSession(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readStaleCache(key) {
+  const mem = memoryCache.get(key);
+  if (mem?.data != null) return mem.data;
+  return readStaleSession(key);
+}
+
+function staleGetFallback(key) {
+  const stale = readStaleCache(key);
+  return stale != null ? stale : null;
 }
 
 function writeSession(key, data, ttl) {
@@ -222,15 +245,27 @@ function parseApiResponseBody(text, contentType) {
 function describeNonJsonResponse(status, contentType, preview) {
   if (preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")) {
     if (status === 404) {
-      return "Auth API not found (404). Deploy the latest backend with auth routes to Hostinger.";
+      return "Auth API not found (404). Start the backend: cd backend && npm run dev";
     }
-    return "API request hit the frontend instead of the backend. Check VITE_API_URL.";
+    return "API request hit the frontend instead of the backend. Start the backend on port 5000.";
   }
   if (status === 429) return "Too many API requests — wait a moment and try again.";
   if (status === 502 || status === 503 || status === 504) {
-    return "Backend API is temporarily unavailable. Try again in a few seconds.";
+    if (preview.trim()) {
+      try {
+        const body = JSON.parse(preview);
+        if (body?.message) return body.message;
+      } catch {
+        /* fall through */
+      }
+    }
+    return "Backend API is temporarily unavailable. Start the backend (cd backend && npm run dev) and check DB credentials.";
   }
   if (status === 204 || !preview.trim()) {
+    const isJson = String(contentType || "").includes("application/json");
+    if (isJson) {
+      return "API returned an empty JSON response. Is the backend running on port 5000?";
+    }
     return `API returned ${status} with an empty response. Try again.`;
   }
   return `Expected JSON from API but got ${contentType || "unknown type"}`;
@@ -280,7 +315,7 @@ export async function apiJson(path, options = {}) {
   }
 
   let response;
-  const skipThrottle = httpMethod !== "GET" || isAuthApiPath(path);
+  const skipThrottle = httpMethod !== "GET";
   try {
     response = await performFetch(url, {
       ...fetchOptions,
@@ -291,26 +326,28 @@ export async function apiJson(path, options = {}) {
   } catch (err) {
     const isNetwork = err instanceof TypeError
       || String(err?.message || "").toLowerCase().includes("failed to fetch");
+    if (isGet && isNetwork) {
+      const stale = staleGetFallback(key);
+      if (stale != null) return stale;
+    }
     if (!isNetwork) throw err;
-    const target = typeof window !== "undefined"
-      ? `${window.location.origin}${apiUrl(path).split("?")[0]}`
-      : apiUrl(path);
+    const target = apiUrl(path).split("?")[0];
     throw new Error(
       `Cannot reach the API at ${target}. `
       + (typeof window !== "undefined"
-        ? "Redeploy the frontend and ensure VITE_API_URL is empty in Vercel (uses /api proxy). "
+        ? "Check your connection and that the Hostinger backend is running. "
           + "If testing locally, start the backend: cd backend && npm run dev"
         : "Check your connection and backend deploy."),
     );
   }
 
   const contentType = response.headers.get("content-type") || "";
-  const text = await response.text();
+  const text = await response.clone().text();
   const { parsed, data } = parseApiResponseBody(text, contentType);
 
   if (!parsed) {
     const preview = text.slice(0, 80);
-    if (isGet && response.status === 429 && _retry429 < 2) {
+    if (isGet && response.status === 429 && _retry429 < 1 && isAuthApiPath(path)) {
       await sleep(2000 * (_retry429 + 1));
       return apiJson(path, {
         cacheTtl,
@@ -332,6 +369,10 @@ export async function apiJson(path, options = {}) {
         _retry429: _retry429 + 1,
         ...fetchOptions,
       });
+    }
+    if (isGet && response.status === 429) {
+      const stale = staleGetFallback(key);
+      if (stale != null) return stale;
     }
     const err = new Error(describeNonJsonResponse(response.status, contentType, preview));
     err.status = response.status;
@@ -339,7 +380,7 @@ export async function apiJson(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (isGet && response.status === 429 && _retry429 < 2) {
+    if (isGet && response.status === 429 && _retry429 < 1 && isAuthApiPath(path)) {
       await sleep(2000 * (_retry429 + 1));
       return apiJson(path, {
         cacheTtl,
@@ -361,6 +402,10 @@ export async function apiJson(path, options = {}) {
         _retry429: _retry429 + 1,
         ...fetchOptions,
       });
+    }
+    if (isGet && response.status === 429) {
+      const stale = staleGetFallback(key);
+      if (stale != null) return stale;
     }
     const message = formatApiError(data, response.statusText || "Request failed");
     const err = new Error(message);
@@ -388,6 +433,15 @@ export async function apiPost(path, body, options = {}) {
     ...options,
     method: "POST",
     body: JSON.stringify(body),
+    cacheTtl: 0,
+  });
+}
+
+export async function apiPostForm(path, formData, options = {}) {
+  return apiJson(path, {
+    ...options,
+    method: "POST",
+    body: formData,
     cacheTtl: 0,
   });
 }
@@ -421,4 +475,13 @@ export function readCachedJson(path) {
   const mem = memoryCache.get(key);
   if (mem && Date.now() < mem.expires) return mem.data;
   return readSession(key);
+}
+
+/** Read last cached GET payload even if TTL expired (429 / offline fallback). */
+export function readStaleCachedJson(path) {
+  const url = apiUrl(path);
+  const key = cacheKey(url);
+  const fresh = readCachedJson(path);
+  if (fresh != null) return fresh;
+  return readStaleCache(key);
 }

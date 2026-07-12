@@ -27,8 +27,8 @@ const ICON_MAP = {
   code: Code,
 };
 
-function normalizeCatalogService(service) {
-  return {
+function normalizeCatalogService(service = {}) {
+  const merged = {
     badge: "ACTIVE",
     clients: 0,
     tags: [],
@@ -36,11 +36,14 @@ function normalizeCatalogService(service) {
     priceNum: 0,
     price: "",
     ...service,
-    tags: Array.isArray(service?.tags) ? service.tags : [],
-    clients: Number(service?.clients) || 0,
-    priceNum: Number(service?.priceNum) || 0,
-    badge: service?.badge || "ACTIVE",
-    icon: service?.icon || "bot",
+  };
+  return {
+    ...merged,
+    tags: Array.isArray(merged.tags) ? merged.tags : [],
+    clients: Number(merged.clients) || 0,
+    priceNum: Number(merged.priceNum) || 0,
+    badge: merged.badge || "ACTIVE",
+    icon: merged.icon || "bot",
   };
 }
 
@@ -75,18 +78,30 @@ export default function ServicesDashboard() {
     })();
   }, []);
 
-  const topSalesLine = useMemo(
-    () => [...SALES_DISTRIBUTION].sort((a, b) => b.sales - a.sales)[0],
-    [],
-  );
+  const salesDistribution = useMemo(() => {
+    const COLORS = ["#be123c", "#881337", "#e11d48", "#fda4af", "#fecdd3", "#f43f5e", "#fb7185"];
+    return catalog.map((service, index) => ({
+      name: service.name,
+      sales: service.converted || 0,
+      color: COLORS[index % COLORS.length],
+    }));
+  }, [catalog]);
 
-  const salesWithPct = useMemo(
-    () => SALES_DISTRIBUTION.map((item) => ({
+  const salesTotal = useMemo(() => {
+    return salesDistribution.reduce((sum, item) => sum + item.sales, 0);
+  }, [salesDistribution]);
+
+  const salesWithPct = useMemo(() => {
+    return salesDistribution.map((item) => ({
       ...item,
-      pct: Math.round((item.sales / SALES_TOTAL) * 100),
-    })),
-    [],
-  );
+      pct: salesTotal ? Math.round((item.sales / salesTotal) * 100) : 0,
+    }));
+  }, [salesDistribution, salesTotal]);
+
+  const topSalesLine = useMemo(() => {
+    if (!salesWithPct.length) return null;
+    return [...salesWithPct].sort((a, b) => b.sales - a.sales)[0];
+  }, [salesWithPct]);
 
   const revenueStats = useMemo(() => {
     const values = REVENUE_TRAJECTORY.map((d) => d.revenue);
@@ -169,7 +184,7 @@ export default function ServicesDashboard() {
                     ))}
                   </Pie>
                   <text x="50%" y="46%" textAnchor="middle" dominantBaseline="middle" fill="#881337" fontSize={16} fontWeight="800">
-                    {SALES_TOTAL.toLocaleString()}
+                    {salesTotal.toLocaleString()}
                   </text>
                   <text x="50%" y="58%" textAnchor="middle" dominantBaseline="middle" fill="#94a3b8" fontSize={8} fontWeight="600">
                     Total Sales
@@ -200,12 +215,14 @@ export default function ServicesDashboard() {
               ))}
             </div>
           </div>
-          <p className="text-[9px] text-slate-500 pt-2.5 mt-2 border-t border-rose-50 leading-snug">
-            <span className="font-semibold text-slate-700">{topSalesLine.name}</span>
-            {" "}leads with{" "}
-            <span className="font-black text-rose-800 tabular-nums">{topSalesLine.sales.toLocaleString()} sales</span>
-            {" "}({Math.round((topSalesLine.sales / SALES_TOTAL) * 100)}% of catalog).
-          </p>
+          {topSalesLine && (
+            <p className="text-[9px] text-slate-500 pt-2.5 mt-2 border-t border-rose-50 leading-snug">
+              <span className="font-semibold text-slate-700">{topSalesLine.name}</span>
+              {" "}leads with{" "}
+              <span className="font-black text-rose-800 tabular-nums">{topSalesLine.sales.toLocaleString()} sales</span>
+              {" "}({topSalesLine.pct}% of catalog).
+            </p>
+          )}
         </GlassCard>
 
         <GlassCard className="p-3.5 sm:p-4 flex flex-col min-h-[260px]">
@@ -214,18 +231,7 @@ export default function ServicesDashboard() {
             subtitle="Catalog revenue trend (₹ lakh)"
           />
 
-          <div className="grid grid-cols-3 gap-1.5 mb-2.5">
-            {[
-              { label: "Cycle Start", value: `₹${revenueStats.start}L`, tone: "text-slate-700" },
-              { label: "Peak", value: `₹${revenueStats.peak}L`, tone: "text-rose-800" },
-              { label: "Growth", value: `+${revenueStats.growth}%`, tone: "text-emerald-700" },
-            ].map((stat) => (
-              <div key={stat.label} className="rounded-lg bg-rose-50/60 border border-rose-100 px-2 py-1.5 text-center">
-                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wide">{stat.label}</p>
-                <p className={`text-[11px] font-black tabular-nums mt-0.5 ${stat.tone}`}>{stat.value}</p>
-              </div>
-            ))}
-          </div>
+
 
           <div className="flex-1 min-h-[148px]">
             <ResponsiveContainer width="100%" height="100%">

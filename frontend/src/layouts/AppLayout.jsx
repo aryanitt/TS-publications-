@@ -18,18 +18,29 @@ export default function AppLayout() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.employees,
-      queryFn: () => apiGet("/api/team/employees"),
-    });
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.activities,
-      queryFn: () => apiGet("/api/activity"),
-    });
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.notifications,
-      queryFn: () => apiGet("/api/activity/notifications"),
-    });
+    let cancelled = false;
+
+    async function prefetchAdminQueries() {
+      await queryClient.prefetchQuery({
+        queryKey: queryKeys.employees,
+        queryFn: () => apiGet("/api/team/employees"),
+      });
+      if (cancelled) return;
+      await new Promise((r) => setTimeout(r, 450));
+      await queryClient.prefetchQuery({
+        queryKey: queryKeys.activities,
+        queryFn: () => apiGet("/api/activity"),
+      });
+      if (cancelled) return;
+      await new Promise((r) => setTimeout(r, 450));
+      await queryClient.prefetchQuery({
+        queryKey: queryKeys.notifications,
+        queryFn: () => apiGet("/api/activity/notifications"),
+      });
+    }
+
+    prefetchAdminQueries();
+    return () => { cancelled = true; };
   }, [queryClient]);
 
   const quickActions = [

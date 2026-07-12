@@ -8,6 +8,7 @@ export const PIPELINE_STAGES = [
   { id: "proposal", label: "Proposal", badgeTone: "warning" },
   { id: "negotiation", label: "Negotiation", badgeTone: "purple" },
   { id: "closed_won", label: "Closed Won", badgeTone: "success" },
+  { id: "not_interested", label: "Not Interested", badgeTone: "danger" },
 ];
 
 export const PRIORITY_BADGE = {
@@ -26,6 +27,7 @@ function lead(id, stage, name, company, value, priority, updatedHours, extra = {
     company,
     value,
     priority,
+    status: extra.status || stage,
     updatedAt: hoursAgo(updatedHours),
     phone: extra.phone || "+919876543210",
     email: extra.email || `${name.split(" ")[0].toLowerCase()}@${company.split(" ")[0].toLowerCase()}.in`,
@@ -245,6 +247,7 @@ const FORM_STAGE_TO_PIPELINE = {
   "Proposal Sent": "proposal",
   Negotiation: "negotiation",
   Converted: "closed_won",
+  "Not Interested": "not_interested",
 };
 
 const FORM_TEMP_TO_PRIORITY = {
@@ -295,9 +298,22 @@ export function leadFromForm(raw) {
 export function getPipelineSummary(leads) {
   const total = leads.length;
   const hot = leads.filter((l) => l.priority === "HOT").length;
+  const warm = leads.filter((l) => l.priority === "WARM").length;
+  const cold = leads.filter((l) => l.priority === "COLD").length;
   const value = leads.reduce((s, l) => s + l.value, 0);
-  const active = leads.filter((l) => l.stage !== "closed_won").length;
-  const won = leads.filter((l) => l.stage === "closed_won").length;
-  const winRate = total ? Math.round((won / total) * 100) : 0;
-  return { total, hot, value, active, winRate };
+  
+  const notInterested = leads.filter((l) => {
+    const status = String(l.status || "").toLowerCase().trim();
+    const stage = String(l.stage || "").toLowerCase().trim();
+    return (
+      status === "not interested" ||
+      status === "not_interested" ||
+      status === "ni" ||
+      stage === "not interested" ||
+      stage === "not_interested" ||
+      stage === "ni"
+    );
+  }).length;
+
+  return { total, hot, warm, cold, value, notInterested };
 }

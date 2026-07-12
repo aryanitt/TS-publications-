@@ -6,11 +6,25 @@ import { renderErrorPage } from "./lib/error-page";
 const PRODUCTION_API_BASE =
   "https://mediumturquoise-capybara-737767.hostingersite.com";
 
+const LOCAL_API_BASE = "http://localhost:5000";
+
+function resolveApiBase(request: Request): string {
+  const envUrl = process.env.VITE_API_URL || process.env.API_URL;
+  if (envUrl != null && String(envUrl).trim() !== "") {
+    return String(envUrl).replace(/\/$/, "");
+  }
+  const host = new URL(request.url).hostname;
+  if (host === "localhost" || host === "127.0.0.1") {
+    return LOCAL_API_BASE;
+  }
+  return PRODUCTION_API_BASE;
+}
+
 async function proxyApiRequest(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/")) return null;
 
-  const targetUrl = `${PRODUCTION_API_BASE}${url.pathname}${url.search}`;
+  const targetUrl = `${resolveApiBase(request)}${url.pathname}${url.search}`;
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("connection");

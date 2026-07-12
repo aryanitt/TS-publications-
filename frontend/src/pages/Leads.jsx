@@ -150,11 +150,11 @@ export default function Leads() {
     if (cached?.success && cached.leads?.length) return cached.leads;
     return dummyLeads;
   });
-  const [employees, setEmployees] = useState(dummyEmployees);
+  const [employees, setEmployees] = useState([]);
   const [assignState, setAssignState] = useState(() => {
     const existing = getAssignmentState();
     if (Object.keys(existing.assignments || {}).length > 0) return existing;
-    return createDemoAssignmentState(existing, dummyEmployees, dummyLeads);
+    return createDemoAssignmentState(existing, [], dummyLeads);
   });
   const [loading, setLoading] = useState(() => {
     const cached = readCachedJson("/api/sales/leads");
@@ -176,6 +176,11 @@ const [toast, setToast] = useState(null);
   const [sortKey, setSortKey] = useState("created_at");
   const [sortDir] = useState("desc");
 
+  const [bulkTab, setBulkTab] = useState("immediate");
+  const [scheduleEmployeeId, setScheduleEmployeeId] = useState("");
+  const [scheduleStartDate, setScheduleStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [leadsPerDay, setLeadsPerDay] = useState("10");
+
 const showToast = (message, type = "success") => {
   setToast({ message, type });
   setTimeout(() => setToast(null), 3000);
@@ -195,17 +200,35 @@ const showToast = (message, type = "success") => {
           throw new Error("empty");
         })
         .catch(() => apiGet("/api/sales/leads").catch(() => ({ success: false, leads: [] }))),
-      apiGet("/api/v1/employees", { headers: getAdminCrmHeaders(), skipCache: true, cacheTtl: 0 })
+      // prefer /api/team/employees (real Team page data), fall back to v1
+      apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 })
         .then((res) => {
-          const items = unwrapApiData(res);
-          if (items.length) return { success: true, employees: items.map(apiEmployeeToAdmin) };
+          if (res?.success && Array.isArray(res.employees) && res.employees.length) {
+            return { success: true, employees: res.employees.map((e) => ({
+              id: e.id,
+              name: e.name,
+              email: e.email,
+              role: e.role,
+              department: e.department,
+              status: e.status || "active",
+            })) };
+          }
           throw new Error("empty");
         })
-        .catch(() => apiGet("/api/team/employees").catch(() => ({ success: false, employees: [] }))),
+        .catch(() =>
+          apiGet("/api/v1/employees", { headers: getAdminCrmHeaders(), skipCache: true, cacheTtl: 0 })
+            .then((res) => {
+              const items = unwrapApiData(res);
+              if (items.length) return { success: true, employees: items.map(apiEmployeeToAdmin) };
+              throw new Error("empty");
+            })
+            .catch(() => ({ success: true, employees: [] }))
+        ),
     ])
       .then(([leadData, empData]) => {
         const leadList = resolveDemoLeads(leadData.success ? leadData.leads : []);
-        const empList = resolveDemoEmployees(empData.success ? empData.employees : []);
+        // Use real employees directly — empty array if none, never fake data
+        const empList = empData.employees || [];
         const isDemo = !leadData.success || !leadData.leads?.length;
 
         setLeads(leadList);
@@ -229,9 +252,9 @@ const showToast = (message, type = "success") => {
       })
       .catch(() => {
         setLeads(dummyLeads);
-        setEmployees(dummyEmployees);
+        setEmployees([]);
         setAssignState((prev) => {
-          const s = createDemoAssignmentState(prev, dummyEmployees, dummyLeads);
+          const s = createDemoAssignmentState(prev, [], dummyLeads);
           persistAssignmentState(s);
           return s;
         });
@@ -334,6 +357,40 @@ const showToast = (message, type = "success") => {
       showToast(`${toAssign.length} leads assigned to ${employee.name}`);
     } catch (err) {
       showToast(err.message || "Bulk assign failed", "error");
+    }
+  };
+
+  const handleScheduleAssign = async () => {
+    const toAssign = filtered.filter((l) => selected.has(String(getLeadId(l))));
+    if (!toAssign.length) return showToast("Select leads first", "error");
+    if (!scheduleEmployeeId) return showToast("Select an employee", "error");
+    if (!scheduleStartDate) return showToast("Select a start date", "error");
+    const parsedLpd = parseInt(leadsPerDay);
+    if (!parsedLpd || parsedLpd <= 0) return showToast("Leads per day must be greater than 0", "error");
+
+    const emp = employees.find((e) => String(e.id) === String(scheduleEmployeeId));
+    if (!emp) return showToast("Invalid employee selected", "error");
+
+    const leadIds = toAssign.map((l) => getLeadId(l));
+
+    try {
+      await apiPost("/api/v1/assignment/schedule-assign", {
+        leadIds,
+        employeeId: emp.id,
+        startDate: scheduleStartDate,
+        leadsPerDay: parsedLpd,
+      }, { headers: getAdminCrmHeaders() });
+      invalidateCache("/api/v1");
+
+      const daysCount = Math.ceil(toAssign.length / parsedLpd);
+      showToast(`${toAssign.length} leads scheduled to ${emp.name} over ${daysCount} days.`);
+      
+      setSelected(new Set());
+      setBulkOpen(false);
+      setBulkTab("immediate");
+      setScheduleEmployeeId("");
+    } catch (err) {
+      showToast(err.message || "Failed to schedule leads", "error");
     }
   };
 
@@ -639,8 +696,8 @@ const showToast = (message, type = "success") => {
       {/* Main two-column — right column stretches to match left card height */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4 items-stretch min-w-0">
         {/* Lead queue */}
-        <div className="xl:col-span-2 flex flex-col min-h-0 min-w-0">
-          <div style={cardBase} className="overflow-hidden flex flex-col flex-1 min-w-0">
+        <div className="xl:col-span-2 flex flex-col h-full min-h-0 min-w-0">
+          <div style={cardBase} className="overflow-hidden flex flex-col flex-1 h-full min-w-0">
             <div className="px-3 sm:px-4 py-2.5 border-b border-rose-50">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
                 {/* Search + filters */}
@@ -813,7 +870,7 @@ const showToast = (message, type = "success") => {
           </div>
 
         {/* Employee workload panel */}
-        <div className="flex flex-col min-h-0 min-w-0">
+        <div className="flex flex-col h-full min-h-0 min-w-0">
           <div style={cardBase} className="flex flex-col flex-1 overflow-hidden h-full min-w-0">
             <div className="px-3 sm:px-4 py-2.5 border-b border-rose-50 shrink-0">
               <p className="text-xs font-bold text-slate-900">Employee Workload</p>
@@ -860,83 +917,7 @@ const showToast = (message, type = "success") => {
         </div>
       </div>
 
-      {/* Analytics */}
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowAnalytics((v) => !v)}
-          className="flex items-center gap-2 text-sm font-bold text-rose-700 mb-4"
-        >
-          {showAnalytics ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          Analytics & Performance
-        </button>
-        <AnimatePresence>
-          {showAnalytics && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5"
-            >
-              <GlassCard className="p-5">
-                <SectionHeader title="Lead Source Performance" subtitle="Volume & conversions by channel" />
-                <ResponsiveContainer width="100%" height={220} className="chart-wrap">
-                  <BarChart data={sourcePerformance}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                    <XAxis dataKey="source" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="leads" fill="#fda4af" name="Leads" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="converted" fill="#be123c" name="Converted" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </GlassCard>
 
-              <GlassCard className="p-5">
-                <SectionHeader title="Lead Distribution" subtitle="Assigned vs unassigned" />
-                <ResponsiveContainer width="100%" height={220} className="chart-wrap">
-                  <PieChart>
-                    <Pie data={distributionPie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                      {distributionPie.map((_, i) => (
-                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </GlassCard>
-
-              <GlassCard className="p-5">
-                <SectionHeader title="Employee Workload" subtitle="Assigned & converted per rep" />
-                <ResponsiveContainer width="100%" height={220} className="chart-wrap">
-                  <BarChart data={employeeChartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="assigned" fill="#fb7185" name="Assigned" />
-                    <Bar dataKey="converted" fill="#16a34a" name="Converted" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </GlassCard>
-
-              <GlassCard className="p-5">
-                <SectionHeader title="Unassigned Lead Trend" subtitle="Last 7 days" />
-                <ResponsiveContainer width="100%" height={220} className="chart-wrap">
-                  <AreaChart data={unassignedTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                    <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="unassigned" stroke="#be123c" fill="#fecdd3" name="Unassigned" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </GlassCard>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
 
       <AddLeadDrawer open={addOpen} onClose={handleAddClose} showToast={showToast} />
 
@@ -974,21 +955,111 @@ const showToast = (message, type = "success") => {
         </ul>
       </Drawer>
 
-      <Drawer open={bulkOpen} onClose={() => setBulkOpen(false)} title={`Bulk Assign (${selected.size} leads)`}>
-        <p className="text-sm text-slate-500 mb-4">Choose an employee to receive selected leads.</p>
-        <div className="grid gap-2">
-          {employees.map((emp) => (
-            <button
-              key={emp.id}
-              type="button"
-              onClick={() => handleBulkAssign(emp)}
-              className="w-full text-left px-4 py-3 rounded-xl border border-rose-100 hover:border-rose-400 hover:bg-rose-50 font-semibold text-slate-800 transition"
-            >
-              {emp.name}
-              <span className="text-xs text-slate-400 block">{emp.department || emp.role}</span>
-            </button>
-          ))}
+      <Drawer open={bulkOpen} onClose={() => setBulkOpen(false)} title={`Bulk Actions (${selected.size} leads)`}>
+        <div className="flex border-b border-rose-100 mb-4">
+          <button
+            type="button"
+            className={`flex-1 pb-2 text-xs font-bold transition-all border-b-2 ${
+              bulkTab === "immediate"
+                ? "border-rose-600 text-rose-600"
+                : "border-transparent text-slate-400 hover:text-slate-600"
+            }`}
+            onClick={() => setBulkTab("immediate")}
+          >
+            Assign Immediately
+          </button>
+          <button
+            type="button"
+            className={`flex-1 pb-2 text-xs font-bold transition-all border-b-2 ${
+              bulkTab === "schedule"
+                ? "border-rose-600 text-rose-600"
+                : "border-transparent text-slate-400 hover:text-slate-600"
+            }`}
+            onClick={() => setBulkTab("schedule")}
+          >
+            Schedule Distribution
+          </button>
         </div>
+
+        {bulkTab === "immediate" ? (
+          <div>
+            <p className="text-xs text-slate-500 mb-3">Select an employee to assign all {selected.size} leads immediately.</p>
+            <div className="grid gap-2 max-h-[300px] overflow-y-auto pr-1">
+              {employees.map((emp) => (
+                <button
+                  key={emp.id}
+                  type="button"
+                  onClick={() => handleBulkAssign(emp)}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-rose-100 hover:border-rose-400 hover:bg-rose-50 font-semibold text-slate-800 transition"
+                >
+                  {emp.name}
+                  <span className="text-xs text-slate-400 block">{emp.department || emp.role}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4 text-slate-700 text-xs">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Assign to Employee</label>
+              <select
+                value={scheduleEmployeeId}
+                onChange={(e) => setScheduleEmployeeId(e.target.value)}
+                className="w-full border border-rose-100 rounded-lg px-3 py-2 text-xs text-slate-800 bg-white focus:outline-none focus:border-rose-400"
+              >
+                <option value="">-- Choose Employee --</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} ({emp.department || emp.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Date</label>
+              <input
+                type="date"
+                value={scheduleStartDate}
+                onChange={(e) => setScheduleStartDate(e.target.value)}
+                className="w-full border border-rose-100 rounded-lg px-3 py-2 text-xs text-slate-800 bg-white focus:outline-none focus:border-rose-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Leads Per Day</label>
+              <input
+                type="number"
+                min="1"
+                value={leadsPerDay}
+                onChange={(e) => setLeadsPerDay(e.target.value)}
+                className="w-full border border-rose-100 rounded-lg px-3 py-2 text-xs text-slate-800 bg-white focus:outline-none focus:border-rose-400"
+              />
+            </div>
+
+            {scheduleEmployeeId && parseInt(leadsPerDay) > 0 && (
+              <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-rose-800 text-[11px] leading-relaxed">
+                <strong>Schedule Summary:</strong>
+                <p className="mt-1">
+                  Distributing <strong>{selected.size}</strong> leads to <strong>
+                    {employees.find((e) => String(e.id) === String(scheduleEmployeeId))?.name}
+                  </strong> at <strong>{leadsPerDay}</strong> leads per day.
+                </p>
+                <p className="mt-1 text-[10px] text-rose-600/90 font-medium">
+                  This will take <strong>{Math.ceil(selected.size / parseInt(leadsPerDay))} days</strong> to complete.
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleScheduleAssign}
+              className="w-full py-2.5 rounded-lg gradient-primary text-white text-xs font-bold shadow-glow hover:opacity-95 transition"
+            >
+              Schedule Distribution
+            </button>
+          </div>
+        )}
       </Drawer>
 
       {toast && (

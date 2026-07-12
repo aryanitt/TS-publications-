@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Download, Plus, Search, Flame, ClipboardList,
   CheckCircle2, Calendar, Filter, ChevronLeft, ChevronRight as ChevronRightIcon,
-  DollarSign, Clock,
+  IndianRupee, Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import AddLeadDrawer from "../../components/AddLeadDrawer.jsx";
@@ -127,7 +127,7 @@ export default function FormLeads() {
         <StatCard label="Assigned" value={String(kpis.assigned)} change={`${kpis.assignedPct}%`} sub="of total" icon={CheckCircle2} iconBg="bg-emerald-50" iconColor="text-emerald-600" hover={false} />
         <StatCard label="Pending" value={String(kpis.pending)} icon={Clock} iconBg="bg-amber-50" iconColor="text-amber-600" hover={false} />
         <StatCard label="Converted" value={String(kpis.converted)} change={`${kpis.convertedPct}%`} sub="rate" icon={CheckCircle2} iconBg="bg-sky-50" iconColor="text-sky-600" hover={false} />
-        <StatCard label="Revenue Pot." value={formatFormRevenue(kpis.revenue)} change="Pipeline" sub="potential" icon={DollarSign} iconBg="bg-rose-50" iconColor="text-rose-600" hover={false} />
+        <StatCard label="Revenue Pot." value={formatFormRevenue(kpis.revenue)} change="Pipeline" sub="potential" icon={IndianRupee} iconBg="bg-rose-50" iconColor="text-rose-600" hover={false} />
       </div>
 
       <div className="space-y-4">

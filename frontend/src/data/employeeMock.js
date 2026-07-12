@@ -72,16 +72,7 @@ export const EMP_LEADS = [
 export function buildPipelineChartFromLeads(leads = []) {
   const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
   for (const lead of leads) {
-    const stageId = isEmployeeNewAssignedLead(lead)
-      ? "new_lead"
-      : (() => {
-        const raw = String(lead.stage || lead.pipelineStage || "attempted").toLowerCase();
-        const found = EMP_KANBAN_STAGES.find((s) => s.id === raw.replace(/\s+/g, "_"))
-          || EMP_KANBAN_STAGES.find((s) => s.label.toLowerCase() === raw)
-          || EMP_KANBAN_STAGES.find((s) => raw.includes(s.label.toLowerCase()))
-          || EMP_KANBAN_STAGES[2];
-        return found.id;
-      })();
+    const stageId = mapEmpLeadKanbanStage(lead.stage, lead.status);
     counts[stageId] = (counts[stageId] || 0) + 1;
   }
   const max = Math.max(1, ...Object.values(counts));
@@ -249,52 +240,91 @@ export function buildDashboardAgenda({ meetingsUpcoming = [], tasks = {}, follow
   const pendingFollowUps = Array.isArray(followUps) ? followUps : [];
   const taskMap = tasks && typeof tasks === "object" ? tasks : {};
 
+  const formatMeetingTime = (meeting) => {
+    if (meeting.scheduledAt) {
+      const d = new Date(meeting.scheduledAt);
+      if (!Number.isNaN(d.getTime())) {
+        return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+      }
+    }
+    const timeMatch = String(meeting.time || "").match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/i);
+    return timeMatch ? timeMatch[1] : "—";
+  };
+
+  const isMeetingToday = (meeting) => {
+    if (meeting.date === today) return true;
+    if (String(meeting.time || "").toLowerCase().startsWith("today")) return true;
+    if (meeting.scheduledAt) {
+      const d = new Date(meeting.scheduledAt);
+      if (!Number.isNaN(d.getTime()) && localDateKey(d) === today) return true;
+    }
+    return false;
+  };
+
   for (const m of meetings) {
-    if (m.date !== today && !String(m.time || "").startsWith("Today")) continue;
-    const timeMatch = String(m.time || "").match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?|\d{1,2}:\d{2})/i);
+    if (m.status === "cancelled" || m.status === "completed") continue;
+    if (!isMeetingToday(m)) continue;
     items.push({
-      time: timeMatch ? timeMatch[1] : "—",
+      id: `meeting-${m.id}`,
+      kind: "meeting",
+      time: formatMeetingTime(m),
+      sortAt: m.scheduledAt ? new Date(m.scheduledAt).getTime() : Number.MAX_SAFE_INTEGER,
       title: `Meeting: ${m.lead || m.title}`,
       sub: m.company || m.agenda || "",
       hot: false,
-      done: false,
+      meetLink: m.meetLink || "",
     });
   }
 
   const todayTasks = taskMap[today] || [];
   for (const t of todayTasks) {
-    if (t.status === "done" || t.status === "completed") continue;
+    if (t.done || t.status === "done" || t.status === "completed") continue;
     items.push({
-      time: t.deadlineTime || t.time || "—",
+      id: `task-${t.id}`,
+      kind: "task",
+      time: t.deadline || t.deadlineTime || t.time || "—",
+      sortAt: parseAgendaSortTime(t.deadline || t.deadlineTime || t.time),
       title: t.name || t.title || "Task",
       sub: t.leadName || t.note || "",
       hot: t.priority === "high" || t.priority === "urgent",
-      done: false,
     });
   }
 
   for (const f of pendingFollowUps) {
     if (f.done) continue;
+    if (f.date && f.date !== today && f.urgency !== "today" && f.urgency !== "overdue") continue;
     items.push({
+      id: `followup-${f.id}`,
+      kind: "followup",
       time: f.time || "—",
+      sortAt: parseAgendaSortTime(f.time),
       title: `${f.type || "Follow-up"}: ${f.name}`,
       sub: f.company || f.note || "",
       hot: f.urgency === "overdue" || f.urgency === "today",
-      done: false,
     });
   }
 
-  return items;
+  return items.sort((a, b) => (a.sortAt || 0) - (b.sortAt || 0));
+}
+
+function parseAgendaSortTime(raw) {
+  const s = String(raw || "").trim();
+  if (!s || s === "—") return Number.MAX_SAFE_INTEGER;
+  const match = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = (match[3] || "").toLowerCase();
+  if (meridiem === "pm" && hours < 12) hours += 12;
+  if (meridiem === "am" && hours === 12) hours = 0;
+  return hours * 60 + minutes;
 }
 
 export const EMP_PIPELINE = [
-  { label: "Not Pick", count: 28, pct: 100, color: "#94a3b8" },
-  { label: "Attempted", count: 72, pct: 95, color: "#3b82f6" },
-  { label: "Contacted", count: 58, pct: 78, color: "#7c3aed" },
-  { label: "Booked", count: 44, pct: 59, color: "#0ea5e9" },
-  { label: "Proposal", count: 32, pct: 43, color: "#f59e0b" },
-  { label: "Negotiation", count: 18, pct: 24, color: "#f97316" },
-  { label: "Converted", count: 24, pct: 32, color: "#10b981" },
+  { label: "Conversation", count: 72, pct: 100, color: "#3b82f6" },
+  { label: "Booked", count: 44, pct: 61, color: "#0ea5e9" },
+  { label: "Showed up", count: 32, pct: 44, color: "#7c3aed" },
+  { label: "Proposal Sent", count: 18, pct: 25, color: "#f59e0b" },
 ];
 
 export const EMP_AGENDA = [
@@ -557,7 +587,7 @@ export function meetingFromApi(apiMeeting, leads = []) {
   const today = getEmpAppToday();
   const schedDay = Number.isNaN(scheduled.getTime())
     ? today
-    : scheduled.toISOString().slice(0, 10);
+    : localDateKey(scheduled);
   const clock24 = Number.isNaN(scheduled.getTime())
     ? "09:00"
     : `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`;
@@ -567,7 +597,7 @@ export function meetingFromApi(apiMeeting, leads = []) {
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const tomorrowStr = localDateKey(tomorrow);
 
   let time;
   if (schedDay === today) time = `Today, ${clock12}`;
@@ -605,14 +635,10 @@ export const EMP_TEAM_CALL = [
 ];
 
 export const EMP_KANBAN_STAGES = [
-  { id: "new_lead", label: "New Lead", color: "#e11d48", badgeTone: "primary" },
-  { id: "not_pick", label: "Not Pick", color: "#94a3b8", badgeTone: "muted" },
-  { id: "attempted", label: "Attempted", color: "#3b82f6", badgeTone: "info" },
-  { id: "contacted", label: "Contacted", color: "#7c3aed", badgeTone: "primary" },
+  { id: "conversation", label: "Conversation", color: "#3b82f6", badgeTone: "info" },
   { id: "booked", label: "Booked", color: "#0ea5e9", badgeTone: "info" },
-  { id: "proposal", label: "Proposal", color: "#f59e0b", badgeTone: "warning" },
-  { id: "negotiation", label: "Negotiation", color: "#f97316", badgeTone: "warning" },
-  { id: "converted", label: "Converted", color: "#10b981", badgeTone: "success" },
+  { id: "showed_up", label: "Showed up", color: "#7c3aed", badgeTone: "primary" },
+  { id: "proposal_sent", label: "Proposal Sent", color: "#f59e0b", badgeTone: "warning" },
 ];
 
 export function parseEmpBudget(budget) {
@@ -637,26 +663,44 @@ export function formatEmpPipelineValue(n) {
 
 export function getEmpPipelineSummary(leads) {
   const total = leads.length;
-  const hot = leads.filter((l) => l.status === "hot").length;
-  const active = leads.filter((l) => !["converted", "ni"].includes(l.status)).length;
+  const hot = leads.filter((l) => String(l.status || "").toLowerCase() === "hot").length;
+  const warm = leads.filter((l) => String(l.status || "").toLowerCase() === "warm").length;
+  const cold = leads.filter((l) => String(l.status || "").toLowerCase() === "cold").length;
   const value = leads.reduce((sum, l) => sum + parseEmpBudget(l.budget), 0);
-  const converted = leads.filter((l) => l.status === "converted").length;
-  const winRate = total ? Math.round((converted / total) * 100) : 0;
-  return { total, hot, active, value, winRate };
+  
+  const notInterested = leads.filter((l) => {
+    const status = String(l.status || "").toLowerCase().trim();
+    const stage = String(l.stage || "").toLowerCase().trim();
+    return (
+      status === "not interested" ||
+      status === "not_interested" ||
+      status === "ni" ||
+      stage === "not interested" ||
+      stage === "not_interested" ||
+      stage === "ni"
+    );
+  }).length;
+
+  return { total, hot, warm, cold, value, notInterested };
 }
 
 export function getEmpStageMeta(stageId) {
-  return EMP_KANBAN_STAGES.find((s) => s.id === stageId) || EMP_KANBAN_STAGES[1];
+  return EMP_KANBAN_STAGES.find((s) => s.id === stageId) || EMP_KANBAN_STAGES[0];
 }
 
 const DRAWER_WARMTH_TO_STATUS = { "Hot Lead": "hot", "Warm Lead": "warm", "Cold Lead": "cold" };
 const DRAWER_STAGE_TO_EMP = {
-  "New Lead": "Attempted",
-  Contacted: "Contacted",
-  Qualified: "Contacted",
+  Conversation: "Conversation",
+  Booked: "Booked",
+  "Showed up": "Showed up",
   "Proposal Sent": "Proposal Sent",
-  Negotiation: "Negotiation",
-  Converted: "Converted",
+  "New Lead": "Conversation",
+  Contacted: "Conversation",
+  Qualified: "Conversation",
+  Attempted: "Conversation",
+  "Not Pick": "Conversation",
+  Negotiation: "Proposal Sent",
+  Converted: "Proposal Sent",
 };
 
 export function empLeadFromDrawerPayload(raw, avatarColors) {
@@ -670,7 +714,7 @@ export function empLeadFromDrawerPayload(raw, avatarColors) {
     name,
     company: raw.company_name || raw.company || "—",
     status: DRAWER_WARMTH_TO_STATUS[raw.temperature] || "warm",
-    stage: DRAWER_STAGE_TO_EMP[raw.pipeline_stage] || raw.pipeline_stage || "Attempted",
+    stage: DRAWER_STAGE_TO_EMP[raw.pipeline_stage] || raw.pipeline_stage || "Conversation",
     source: raw.source || "Website",
     budget: revenue > 0 ? formatEmpPipelineValue(revenue) : "—",
     service: raw.service || raw.interested_service || "—",
@@ -698,28 +742,32 @@ export function isEmployeeNewAssignedLead(lead) {
 export function mapEmpLeadKanbanStage(stage, status) {
   const s = (stage || "").toLowerCase();
   const st = (status || "").toLowerCase();
-  if (s === "new lead" || s === "new") return "new_lead";
-  if (s.includes("not pick")) return "not_pick";
-  if (s.includes("negotiation")) return "negotiation";
-  if (s.includes("proposal")) return "proposal";
-  if (s.includes("converted") || s === "won") return "converted";
+  if (s.includes("proposal sent") || s === "proposal sent") return "proposal_sent";
+  if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up")) return "showed_up";
   if (s.includes("booked") || s.includes("call booked")) return "booked";
-  if (s.includes("contacted") || s.includes("qualified")) return "contacted";
-  if (s.includes("attempted")) return "attempted";
-  if (st === "notpick" || st.includes("not pick")) return "not_pick";
-  if (st === "converted") return "converted";
-  if (st.includes("negotiation")) return "negotiation";
-  if (st.includes("proposal")) return "proposal";
+  if (s.includes("conversation")) return "conversation";
+  if (s.includes("proposal") || s.includes("negotiation") || s.includes("converted") || s === "won") {
+    return "proposal_sent";
+  }
+  if (
+    s.includes("contacted")
+    || s.includes("qualified")
+    || s.includes("attempted")
+    || s.includes("not pick")
+    || s.includes("new lead")
+    || s === "new"
+  ) {
+    return "conversation";
+  }
+  if (st.includes("proposal") || st === "converted") return "proposal_sent";
   if (st.includes("booked")) return "booked";
-  if (st.includes("contacted")) return "contacted";
-  if (st.includes("attempted")) return "attempted";
-  return "attempted";
+  return "conversation";
 }
 
 export function groupEmpLeadsKanban(leads) {
   const map = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, []]));
   leads.forEach((l) => {
-    const id = isEmployeeNewAssignedLead(l) ? "new_lead" : mapEmpLeadKanbanStage(l.stage, l.status);
+    const id = mapEmpLeadKanbanStage(l.stage, l.status);
     if (map[id]) map[id].push(l);
   });
   return map;
@@ -1008,6 +1056,14 @@ export function callToApiPayload(call, employeeId) {
   };
 }
 
+export function phonesMatchLoose(a, b) {
+  const da = String(a || "").replace(/\D/g, "");
+  const db = String(b || "").replace(/\D/g, "");
+  if (!da || !db) return false;
+  if (da === db) return true;
+  return da.slice(-10) === db.slice(-10);
+}
+
 export function callFromApi(apiCall, leads = []) {
   const lead = leads.find((l) => String(l.id) === String(apiCall.leadId));
   const created = apiCall.startedAt || apiCall.createdAt;
@@ -1034,7 +1090,7 @@ export function callFromApi(apiCall, leads = []) {
   return {
     id: apiCall.id,
     leadId: apiCall.leadId,
-    name: lead?.name || lead?.leadName || "Unknown Lead",
+    name: lead?.name || lead?.leadName || apiCall.clientName || "Unknown Lead",
     company: lead?.company || lead?.companyName || "—",
     duration: formatDurationFromSeconds(apiCall.durationSec),
     type: dir,
@@ -1046,9 +1102,11 @@ export function callFromApi(apiCall, leads = []) {
     hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),
     rating: 0,
     mood: "neutral",
-    phone: lead?.phone || "",
+    phone: lead?.phone || apiCall.clientPhone || "",
     note: apiCall.aiSummary || apiCall.notes || "",
     sopId: apiCall.sopId,
+    recordingUrl: apiCall.recordingUrl || null,
+    source: apiCall.source || null,
   };
 }
 

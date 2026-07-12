@@ -15,6 +15,24 @@ import {
   FormLabel, FormInput, FormSelect, FormGroup, FormRow, MOBILE_ACTION,
 } from "../components/EmpUI.jsx";
 
+const parseTime12 = (time24 = "14:00") => {
+  const [hStr, mStr] = (time24 || "14:00").split(":");
+  let h = parseInt(hStr || "14", 10);
+  const m = mStr || "00";
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return { hour: String(h), minute: m, ampm };
+};
+
+const formatTime24 = (hour, minute, ampm) => {
+  let h = parseInt(hour || "12", 10);
+  if (ampm === "PM" && h < 12) h += 12;
+  if (ampm === "AM" && h === 12) h = 0;
+  const hStr = String(h).padStart(2, "0");
+  return `${hStr}:${minute}`;
+};
+
 const INPUT = "w-full h-10 px-3 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition";
 const LABEL = "block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5";
 
@@ -182,12 +200,47 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
             />
           </Field>
           <Field label="Deadline">
-            <input
-              type="time"
-              className={INPUT}
-              value={newTask.deadline}
-              onChange={(e) => setNewTask((p) => ({ ...p, deadline: e.target.value }))}
-            />
+            <div className="flex gap-1.5 items-center">
+              <select
+                className={`${INPUT} flex-1 text-center px-1`}
+                value={parseTime12(newTask.deadline).hour}
+                onChange={(e) => {
+                  const { minute, ampm } = parseTime12(newTask.deadline);
+                  const newTime = formatTime24(e.target.value, minute, ampm);
+                  setNewTask((p) => ({ ...p, deadline: newTime }));
+                }}
+              >
+                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
+              <span className="text-slate-400 font-bold">:</span>
+              <select
+                className={`${INPUT} flex-1 text-center px-1`}
+                value={parseTime12(newTask.deadline).minute}
+                onChange={(e) => {
+                  const { hour, ampm } = parseTime12(newTask.deadline);
+                  const newTime = formatTime24(hour, e.target.value, ampm);
+                  setNewTask((p) => ({ ...p, deadline: newTime }));
+                }}
+              >
+                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <select
+                className={`${INPUT} w-20 text-center px-1`}
+                value={parseTime12(newTask.deadline).ampm}
+                onChange={(e) => {
+                  const { hour, minute } = parseTime12(newTask.deadline);
+                  const newTime = formatTime24(hour, minute, e.target.value);
+                  setNewTask((p) => ({ ...p, deadline: newTime }));
+                }}
+              >
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
           </Field>
         </div>
 
@@ -268,10 +321,21 @@ export default function EmployeeTasks() {
     toast.success("Checklist updated");
   };
 
+  const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
-    if (loading || !employee?.id) return;
-    refreshTasks(employee.id, employee);
-  }, [loading, employee?.id, employee?.name, refreshTasks]);
+    if (loading || !employee?.id || loaded) return;
+    const hasTasks = Object.values(tasks || {}).some(
+      (items) => Array.isArray(items) && items.length > 0,
+    );
+    if (hasTasks) {
+      setLoaded(true);
+      return;
+    }
+    refreshTasks(employee.id, employee).finally(() => {
+      setLoaded(true);
+    });
+  }, [loading, employee?.id, tasks, refreshTasks, loaded]);
 
   const today = new Date(`${getEmpAppToday()}T00:00:00`);
 
@@ -318,11 +382,7 @@ export default function EmployeeTasks() {
       .filter(([, items]) => items.length > 0)
       .sort(([a], [b]) => new Date(a) - new Date(b));
     entries = tab === "upcoming"
-      ? entries.filter(([d, items]) => {
-        const day = new Date(`${d}T00:00:00`);
-        if (day >= today) return true;
-        return items.some((t) => !t.done);
-      })
+      ? entries.filter(([d]) => new Date(`${d}T00:00:00`) >= today)
       : entries.filter(([d]) => new Date(`${d}T00:00:00`) < today);
 
     if (search.trim()) {

@@ -64,8 +64,9 @@ export default function EmployeeSalesProcess() {
   const [checks, setChecks] = useState({});
 
   useEffect(() => {
+    if (sops.length) return;
     refreshSops();
-  }, [refreshSops]);
+  }, [refreshSops, sops.length]);
 
   const categories = useMemo(() => {
     const set = new Set(sops.map((s) => s.category).filter(Boolean));

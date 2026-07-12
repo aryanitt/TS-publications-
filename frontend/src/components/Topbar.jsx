@@ -15,7 +15,7 @@ import AdminDoodleAvatar from "./AdminDoodleAvatar.jsx";
 
 const titles = {
   "/":           { title: "Dashboard",             sub: "Overview of your CRM activity",            cta: "Quick Action" },
-  "/sop":        { title: "SOP Management",        sub: "Standardize operations across teams",       cta: "Upload SOP"   },
+  "/sop":        { title: "SOP Management",        sub: "Standardize operations across teams",       cta: "Add SOP"      },
   "/sales":      { title: "Sales Funnel",          sub: "Track every deal across your pipeline",     cta: "Add Deal"     },
   "/team":       { title: "Team Management",       sub: "Visibility into your people and performance", cta: "Add Member" },
   "/incentives": { title: "Incentive Calculations",sub: "Payouts, slabs and team performance",       cta: "Calculate"    },
@@ -52,6 +52,9 @@ function resolvePageMeta(pathname) {
   if (pathname === "/pipeline") {
     return { ...base, ctaTo: "/pipeline?action=addLead" };
   }
+  if (pathname === "/sop") {
+    return { ...base, ctaTo: "/sop?action=addSOP" };
+  }
   return base;
 }
 
@@ -61,6 +64,7 @@ function hideDateRange(pathname) {
   return HIDE_DATE_RANGE_ROUTES.includes(pathname)
     || pathname.startsWith("/forms")
     || pathname.startsWith("/services")
+    || pathname.startsWith("/sop")
     || pathname === "/pipeline";
 }
 
@@ -86,6 +90,7 @@ function timeAgo(dateStr) {
 const TYPE_ICON = {
   employee: { Icon: Users,     bg: "#fff0f6", color: "#e11d48" },
   lead:     { Icon: Briefcase, bg: "#eff6ff", color: "#2563eb" },
+  sop:      { Icon: FileText,  bg: "#faf5ff", color: "#9333ea" },
 };
 
 export default function Topbar({ onMenu }) {
@@ -128,13 +133,45 @@ export default function Topbar({ onMenu }) {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
+      let localSops = [];
+      try {
+        const raw = localStorage.getItem("admin_dashboard_sops");
+        if (raw) {
+          const list = JSON.parse(raw);
+          const qLow = searchQ.toLowerCase();
+          localSops = list
+            .filter((s) => s.title?.toLowerCase().includes(qLow) || s.description?.toLowerCase().includes(qLow))
+            .map((s) => ({
+              id: s.id,
+              name: s.title,
+              sub: s.description || "",
+              status: s.status || "",
+              type: "sop",
+            }));
+        }
+      } catch (e) {
+        console.error("Local search parse error:", e);
+      }
+
       try {
         const data = await apiGet(
           `/api/activity/search?q=${encodeURIComponent(searchQ)}`,
           { cacheTtl: 30 * 1000 },
         );
-        if (data.success) setSearchResults(data.results);
-      } catch (_) {}
+        if (data.success) {
+          const combined = [...(data.results || [])];
+          localSops.forEach((ls) => {
+            if (!combined.some((c) => c.type === "sop" && String(c.id) === String(ls.id))) {
+              combined.push(ls);
+            }
+          });
+          setSearchResults(combined);
+        } else {
+          setSearchResults(localSops);
+        }
+      } catch (_) {
+        setSearchResults(localSops);
+      }
       finally { setSearching(false); }
     }, 300);
     return () => clearTimeout(debounceRef.current);
@@ -245,7 +282,7 @@ export default function Topbar({ onMenu }) {
         </div>
 
         {/* Desktop / tablet search */}
-        <div className="relative hidden md:block flex-1 min-w-0 max-w-md mx-2 lg:mx-4" ref={searchRef}>
+        <div className="relative hidden md:block flex-1 min-w-[140px] lg:min-w-[180px] xl:min-w-[280px] max-w-md mx-2 lg:mx-4" ref={searchRef}>
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#DC143C]" />
           <input
             value={searchQ}
@@ -270,7 +307,7 @@ export default function Topbar({ onMenu }) {
           )}
         </div>
 
-        {showDateRange && <DateRangeFilter className="hidden lg:flex shrink-0" />}
+        {showDateRange && <DateRangeFilter className="hidden xl:flex shrink-0" />}
 
         <div className="hidden md:block flex-grow min-w-0" />
 
@@ -439,7 +476,7 @@ export default function Topbar({ onMenu }) {
       </div>
 
       {showDateRange && (
-        <div className="lg:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+        <div className="xl:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
           <DateRangeFilter compact className="w-full" />
         </div>
       )}
@@ -464,7 +501,9 @@ function SearchDropdown({ searching, searchQ, searchResults, navigate, setSearch
               <button
                 key={`${r.type}-${r.id}`}
                 onClick={() => {
-                  navigate(r.type === "employee" ? "/team" : "/sales");
+                  if (r.type === "employee") navigate("/team");
+                  else if (r.type === "sop") navigate(`/sop?openSop=${r.id}`);
+                  else navigate("/sales");
                   setSearchQ("");
                   setSearchResults([]);
                 }}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Badge } from "../../components/Primitives.jsx";
+import { inputClass, labelClass } from "../../components/SettingsLayout.jsx";
 import { Search } from "lucide-react";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 
@@ -130,7 +131,7 @@ export function BtnPrimary({ children, className = "", ...props }) {
   return (
     <button
       type="button"
-      className={`${BTN_BASE} bg-rose-700 hover:bg-rose-800 text-white shadow-md ${className}`}
+      className={`${BTN_BASE} bg-[#be123c] hover:bg-[#a20f32] text-white shadow-md ${className}`}
       {...props}
     >
       {children}
@@ -163,13 +164,13 @@ export function BtnGhost({ children, className = "", ...props }) {
 }
 
 export function FormLabel({ children }) {
-  return <label className="block text-xs font-bold text-slate-700 mb-1.5">{children}</label>;
+  return <label className={labelClass}>{children}</label>;
 }
 
 export function FormInput({ className = "", ...props }) {
   return (
     <input
-      className={`w-full min-h-[40px] sm:min-h-[42px] px-3 py-2 rounded-xl bg-[#F5F7FA] border border-[#E5E7EB] text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition ${className}`}
+      className={`${inputClass} ${className}`}
       {...props}
     />
   );
@@ -178,7 +179,7 @@ export function FormInput({ className = "", ...props }) {
 export function FormSelect({ className = "", children, ...props }) {
   return (
     <select
-      className={`w-full min-h-[40px] sm:min-h-[42px] px-3 py-2 rounded-xl bg-[#F5F7FA] border border-[#E5E7EB] text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition ${className}`}
+      className={`${inputClass} ${className}`}
       {...props}
     >
       {children}
@@ -189,7 +190,7 @@ export function FormSelect({ className = "", children, ...props }) {
 export function FormTextarea({ className = "", ...props }) {
   return (
     <textarea
-      className={`w-full px-3 py-2 rounded-xl bg-[#F5F7FA] border border-[#E5E7EB] text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition resize-y ${className}`}
+      className={`${inputClass} resize-y ${className}`}
       {...props}
     />
   );

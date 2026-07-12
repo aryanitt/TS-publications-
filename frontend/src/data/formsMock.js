@@ -121,9 +121,9 @@ export const FORM_LEADS = {
 };
 
 export function formatFormRevenue(val) {
-  if (val >= 100000) return `$${(val / 100000).toFixed(1)}L`;
-  if (val >= 1000) return `$${(val / 1000).toFixed(1)}K`;
-  return `$${val}`;
+  if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
+  if (val >= 1000) return `₹${(val / 1000).toFixed(1)}K`;
+  return `₹${val}`;
 }
 
 export function getFormById(id) {

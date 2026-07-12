@@ -19,6 +19,7 @@ import { apiGet } from "../lib/api.js";
 import { CustomSelect } from "../components/CustomSelect.jsx";
 
 const MONTH_OPTIONS = [
+  { value: "2026-07", label: "July, 2026" },
   { value: "2026-06", label: "June, 2026" },
   { value: "2026-05", label: "May, 2026" },
   { value: "2026-04", label: "April, 2026" },
@@ -406,9 +407,10 @@ function pct(actual, target) {
 
 function formatCash(val) {
   const v = getSafeNum(val);
-  if (v >= 1000) return `$${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}K`;
-  return `$${v.toLocaleString()}`;
+  if (v >= 1000) return `₹${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}K`;
+  return `₹${v.toLocaleString()}`;
 }
+
 
 function getWeekRanges(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
@@ -578,37 +580,181 @@ function buildDraftFromEmployee(emp) {
   };
 }
 
+
+/** Build a blank teammate record from a real API employee — defined outside component */
+function buildBlankTeammate(emp) {
+  return {
+    id: emp.id,
+    name: emp.name,
+    role: emp.role || emp.department || "Sales",
+    team: emp.department || "Sales & Growth",
+    status: "PENDING",
+    baseSalary: emp.salary || 0,
+    callsCompleted: 0,
+    callsTarget: emp.call_target || 50,
+    qualifiedLeads: 0,
+    qualifiedTarget: emp.qualified_lead_target || 20,
+    meetingsScheduled: 0,
+    meetingsTarget: emp.meeting_target || 15,
+    cashCollected: 0,
+    cashTarget: emp.cash_target || 100000,
+    incRate: 3.0,
+    incBonus: 0,
+    penaltyDeduction: 0,
+    responseTimeMin: 0,
+    pickupRate: 0,
+    qualificationRate: 0,
+    objectionHandling: 0,
+    conversionRate: 0,
+    followUpQuality: 0,
+    leadStatus: { Converted: 0, Qualified: 0, "Un-Qualified": 0, "Not Interested": 0 },
+    weeklyLeads: {
+      Converted: [0, 0, 0, 0],
+      Qualified: [0, 0, 0, 0],
+      "Un-Qualified": [0, 0, 0, 0],
+      "Not Interested": [0, 0, 0, 0],
+    },
+    competency: {
+      "Product Value Alignment": 0,
+      "Call Control": 0,
+      "Listening Skills": 0,
+      "KYC Questioning": 0,
+      "Objection Handling": 0,
+    },
+  };
+}
+
 export default function Incentives() {
   const isMobile = useIsMobile();
-  const [teammates, setTeammates] = useState(INITIAL_TEAMMATES);
-  const [selectedId, setSelectedId] = useState(1);
-  const [selectedMonth, setSelectedMonth] = useState("2026-06");
+  const [teammates, setTeammates] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState("2026-07");
   const [leadTab, setLeadTab] = useState("Converted");
   const [activeLead, setActiveLead] = useState(null);
   const [kraRows, setKraRows] = useState(DEFAULT_KRA_ROWS.map((r) => ({ ...r })));
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcDraft, setCalcDraft] = useState(null);
   const [calcResult, setCalcResult] = useState(null);
-
   useEffect(() => {
     (async () => {
+      setLoadingEmployees(true);
       try {
-        const data = await apiGet("/api/incentives/dashboard", { skipCache: true, cacheTtl: 0 });
-        if (data.teammates?.length) {
-          setTeammates((prev) => data.teammates.map((t, i) => ({
-            ...(prev[i] || prev[0]),
-            id: t.id,
-            name: t.name,
-            role: t.role || prev[i]?.role,
-            department: t.department || prev[i]?.department,
-          })));
-          setSelectedId(data.teammates[0].id);
+        // First try incentives dashboard (has performance data)
+        const incData = await apiGet(`/api/incentives/dashboard?month=${selectedMonth}`, { skipCache: true, cacheTtl: 0 });
+        if (incData.teammates?.length) {
+          const mapped = incData.teammates.map((t) => ({
+            ...buildBlankTeammate(t),
+            callsCompleted: t.callsCompleted ?? 0,
+            callsTarget: t.callsTarget ?? 50,
+            qualifiedLeads: t.qualifiedLeads ?? 0,
+            qualifiedTarget: t.qualifiedTarget ?? 20,
+            meetingsScheduled: t.meetingsScheduled ?? 0,
+            meetingsTarget: t.meetingsTarget ?? 15,
+            cashCollected: t.cashCollected ?? 0,
+            cashTarget: t.cashTarget ?? 100000,
+            incRate: t.incRate ?? 3.0,
+            incBonus: t.incBonus ?? 0,
+            penaltyDeduction: t.penaltyDeduction ?? 0,
+            status: t.status || "PENDING",
+            responseTimeMin: t.responseTimeMin ?? 1.8,
+            pickupRate: t.pickupRate ?? 0,
+            qualificationRate: t.qualificationRate ?? 0,
+            objectionHandling: t.objectionHandling ?? 0,
+            conversionRate: t.conversionRate ?? 0,
+            followUpQuality: t.followUpQuality ?? 0,
+          }));
+          setTeammates(mapped);
+          setSelectedId((prev) => {
+            const exists = mapped.some((m) => m.id === prev);
+            return exists ? prev : mapped[0].id;
+          });
+          setLoadingEmployees(false);
+          return;
         }
       } catch {
-        // keep INITIAL_TEAMMATES
+        // fall through to team employees
+      }
+
+      try {
+        // Fall back to /api/team/employees — real employees with blank metrics
+        const teamData = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+        if (teamData?.success && Array.isArray(teamData.employees) && teamData.employees.length) {
+          const mapped = teamData.employees.map(buildBlankTeammate);
+          setTeammates(mapped);
+          setSelectedId((prev) => {
+            const exists = mapped.some((m) => m.id === prev);
+            return exists ? prev : mapped[0].id;
+          });
+        } else {
+          setTeammates([]);
+          setSelectedId(null);
+        }
+      } catch {
+        setTeammates([]);
+        setSelectedId(null);
+      } finally {
+        setLoadingEmployees(false);
       }
     })();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth]);
+
+  // Fetch real Callyzer call stats and cash collections when employee or month changes
+  useEffect(() => {
+    if (!selectedId) return;
+    (async () => {
+      // 1. Fetch Callyzer stats
+      try {
+        const res = await apiGet(
+          `/api/callyzer/employee-stats?employeeId=${selectedId}&month=${selectedMonth}`,
+          { skipCache: true, cacheTtl: 0 }
+        );
+        if (res?.success && res.stats) {
+          const s = res.stats;
+          setTeammates((prev) =>
+            prev.map((t) =>
+              t.id === selectedId
+                ? {
+                    ...t,
+                    callsCompleted: s.total ?? t.callsCompleted,
+                    pickupRate: s.pickupRate ?? t.pickupRate,
+                    responseTimeMin:
+                      s.avgDurationSec != null
+                        ? Math.round((s.avgDurationSec / 60) * 10) / 10
+                        : t.responseTimeMin,
+                  }
+                : t
+            )
+          );
+        }
+      } catch {
+        // silently ignore — keep blank metrics
+      }
+
+      // 2. Fetch Cash Collections
+      try {
+        const cashRes = await apiGet(
+          `/api/incentives/employee/${selectedId}/cash-summary?month=${selectedMonth}`,
+          { skipCache: true, cacheTtl: 0 }
+        );
+        if (cashRes?.success) {
+          setTeammates((prev) =>
+            prev.map((t) =>
+              t.id === selectedId
+                ? {
+                    ...t,
+                    cashCollected: cashRes.cashCollected ?? t.cashCollected,
+                  }
+                : t
+            )
+          );
+        }
+      } catch {
+        // silently ignore
+      }
+    })();
+  }, [selectedId, selectedMonth]);
 
   const selected = useMemo(
     () => teammates.find((t) => t.id === selectedId) || teammates[0],
@@ -623,31 +769,37 @@ export default function Incentives() {
   const weekRanges = useMemo(() => getWeekRanges(selectedMonth), [selectedMonth]);
   const totalKraWeight = useMemo(() => kraRows.reduce((s, r) => s + getSafeNum(r.weight), 0), [kraRows]);
 
-  const insightRows = useMemo(() => kraRows.map((row) => {
-    const { actual, target } = getInsightValues(selected, row.key);
-    const earned = computeKraEarned(actual, target, row.weight);
-    return {
-      ...row,
-      actual,
-      target,
-      display: formatTargetDisplay(row.key, actual, target),
-      earned,
-    };
-  }), [selected, kraRows]);
+  const insightRows = useMemo(() => {
+    if (!selected) return kraRows.map((row) => ({ ...row, actual: 0, target: 0, display: "0/0", earned: 0 }));
+    return kraRows.map((row) => {
+      const { actual, target } = getInsightValues(selected, row.key);
+      const earned = computeKraEarned(actual, target, row.weight);
+      return {
+        ...row,
+        actual,
+        target,
+        display: formatTargetDisplay(row.key, actual, target),
+        earned,
+      };
+    });
+  }, [selected, kraRows]);
 
-  const serviceMetrics = useMemo(() => [
-    { label: "Response Time", shortLabel: "Response", value: `${selected.responseTimeMin} min`, score: Math.max(0, 100 - selected.responseTimeMin * 20), icon: Clock, suffix: "" },
-    { label: "Pickup Rate", shortLabel: "Pickup", value: selected.pickupRate, score: selected.pickupRate, icon: Phone },
-    { label: "Qualification Rate", shortLabel: "Qualify", value: Math.min(99, selected.qualificationRate), score: Math.min(100, selected.qualificationRate), icon: Target },
-    { label: "Objection Handling", shortLabel: "Objection", value: selected.objectionHandling, score: selected.objectionHandling, icon: MessageSquare },
-    { label: "Conversion Rate", shortLabel: "Convert", value: selected.conversionRate, score: selected.conversionRate, icon: TrendingUp },
-    { label: "Follow-up Quality", shortLabel: "Follow-up", value: selected.followUpQuality, score: selected.followUpQuality, icon: Repeat },
-  ], [selected]);
+  const serviceMetrics = useMemo(() => {
+    if (!selected) return [];
+    return [
+      { label: "Response Time", shortLabel: "Response", value: `${selected.responseTimeMin} min`, score: Math.max(0, 100 - selected.responseTimeMin * 20), icon: Clock, suffix: "" },
+      { label: "Pickup Rate", shortLabel: "Pickup", value: selected.pickupRate, score: selected.pickupRate, icon: Phone },
+      { label: "Qualification Rate", shortLabel: "Qualify", value: Math.min(99, selected.qualificationRate), score: Math.min(100, selected.qualificationRate), icon: Target },
+      { label: "Objection Handling", shortLabel: "Objection", value: selected.objectionHandling, score: selected.objectionHandling, icon: MessageSquare },
+      { label: "Conversion Rate", shortLabel: "Convert", value: selected.conversionRate, score: selected.conversionRate, icon: TrendingUp },
+      { label: "Follow-up Quality", shortLabel: "Follow-up", value: selected.followUpQuality, score: selected.followUpQuality, icon: Repeat },
+    ];
+  }, [selected]);
 
   const monthLabel = MONTH_OPTIONS.find((m) => m.value === selectedMonth)?.label ?? selectedMonth;
 
   const leadSnapshot = useMemo(
-    () => getLeadSnapshot(selected, selectedMonth),
+    () => selected ? getLeadSnapshot(selected, selectedMonth) : { leadStatus: {}, weeklyLeads: {} },
     [selected, selectedMonth],
   );
 
@@ -667,7 +819,7 @@ export default function Incentives() {
   );
 
   const filteredLeads = useMemo(
-    () => buildFilteredLeads(leadChartData, leadTab, selected, monthLabel),
+    () => selected ? buildFilteredLeads(leadChartData, leadTab, selected, monthLabel) : [],
     [leadChartData, leadTab, selected, monthLabel],
   );
 
@@ -679,7 +831,7 @@ export default function Incentives() {
   );
 
   const radarData = useMemo(
-    () => Object.entries(selected.competency).map(([skill, score]) => ({ skill, score })),
+    () => selected ? Object.entries(selected.competency).map(([skill, score]) => ({ skill, score })) : [],
     [selected],
   );
 
@@ -706,7 +858,7 @@ export default function Incentives() {
   );
 
   const weightedPerformance = useMemo(
-    () => computeWeightedScore(selected, kraRows),
+    () => selected ? computeWeightedScore(selected, kraRows) : 0,
     [selected, kraRows],
   );
 
@@ -765,6 +917,28 @@ export default function Incentives() {
   const updateDraft = (field, val) => {
     setCalcDraft((prev) => ({ ...prev, [field]: val === "" ? "" : getSafeNum(val) || val }));
   };
+
+  if (loadingEmployees) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 rounded-full border-2 border-rose-300 border-t-rose-700 animate-spin mx-auto" />
+          <p className="text-sm text-slate-400 font-medium">Loading employees…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selected) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-2">
+          <p className="text-base font-bold text-slate-700">No employees found</p>
+          <p className="text-sm text-slate-400">Add team members from the Team page to view incentives.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 page-shell min-w-0">
@@ -1121,8 +1295,8 @@ export default function Incentives() {
                   { field: "qualifiedTarget", label: "Qualified Target" },
                   { field: "meetingsScheduled", label: "Meetings Scheduled" },
                   { field: "meetingsTarget", label: "Meetings Target" },
-                  { field: "cashCollected", label: "Cash Collected ($)" },
-                  { field: "cashTarget", label: "Cash Target ($)" },
+                  { field: "cashCollected", label: "Cash Collected (₹)" },
+                  { field: "cashTarget", label: "Cash Target (₹)" },
                 ].map(({ field, label }) => (
                   <div key={field}>
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block mb-1">{label}</label>

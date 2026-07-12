@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Search, Plus, Kanban, Flame, Target, TrendingUp } from "lucide-react";
+import { Search, Plus, Kanban, Flame, TrendingUp, Thermometer, Snowflake, ThumbsDown } from "lucide-react";
 import toast from "react-hot-toast";
-import { GlassCard, Badge } from "../components/Primitives.jsx";
+import { GlassCard, Badge, StatCard } from "../components/Primitives.jsx";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import PipelineLeadDrawer from "../components/pipeline/PipelineLeadDrawer.jsx";
 import {
@@ -24,20 +24,6 @@ import { getAssignmentState, getLeadEmployeeName } from "../lib/leadAssignment.j
 import useIsMobile from "../lib/useIsMobile.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
 
-function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
-  return (
-    <div className="rounded-xl border border-rose-100 bg-white/90 p-3 flex items-center justify-between gap-2 min-h-[72px]">
-      <div className="min-w-0">
-        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-tight">{label}</p>
-        <p className="text-xl font-black text-slate-900 mt-0.5 tabular-nums leading-none">{value}</p>
-        {sub && <p className="text-[9px] font-bold text-emerald-600 mt-1">{sub}</p>}
-      </div>
-      <div className={`w-9 h-9 rounded-xl grid place-items-center shrink-0 ${iconBg} ${iconColor}`}>
-        <Icon className="w-4 h-4" />
-      </div>
-    </div>
-  );
-}
 
 function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd }) {
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
@@ -113,6 +99,7 @@ export default function Pipeline() {
     }
   }, [location.search]);
 
+  // Fetch leads
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -236,17 +223,60 @@ export default function Pipeline() {
     <div className="space-y-4 page-shell min-w-0">
 
       <GlassCard className="p-4 space-y-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          <MetricTile label="Pipeline Leads" value={String(summary.total)} icon={Kanban} iconBg="bg-rose-50" iconColor="text-rose-600" />
-          <MetricTile label="Active Deals" value={String(summary.active)} icon={Target} iconBg="bg-sky-50" iconColor="text-sky-600" />
-          <MetricTile label="Hot Leads" value={String(summary.hot)} icon={Flame} iconBg="bg-amber-50" iconColor="text-amber-600" />
-          <MetricTile
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <StatCard
             label="Pipeline Value"
             value={formatPipelineValue(summary.value)}
-            sub={`${summary.winRate}% won · closed rate`}
             icon={TrendingUp}
             iconBg="bg-emerald-50"
             iconColor="text-emerald-600"
+            change="+14%"
+            sub="vs last month"
+          />
+          <StatCard
+            label="Total Leads"
+            value={String(summary.total)}
+            icon={Kanban}
+            iconBg="bg-rose-50"
+            iconColor="text-rose-600"
+            change="+8%"
+            sub="this month"
+          />
+          <StatCard
+            label="Hot Leads"
+            value={String(summary.hot)}
+            icon={Flame}
+            iconBg="bg-red-50"
+            iconColor="text-red-600"
+            change="High intent"
+            sub=""
+          />
+          <StatCard
+            label="Warm Leads"
+            value={String(summary.warm)}
+            icon={Thermometer}
+            iconBg="bg-amber-50"
+            iconColor="text-amber-500"
+            change="Medium intent"
+            sub=""
+          />
+          <StatCard
+            label="Cold Leads"
+            value={String(summary.cold)}
+            icon={Snowflake}
+            iconBg="bg-sky-50"
+            iconColor="text-sky-500"
+            change="Low intent"
+            sub=""
+          />
+          <StatCard
+            label="Not Interested"
+            value={String(summary.notInterested)}
+            icon={ThumbsDown}
+            iconBg="bg-slate-50"
+            iconColor="text-slate-500"
+            change="Closed lost"
+            sub=""
           />
         </div>
 

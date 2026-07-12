@@ -13,10 +13,12 @@ import {
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
+import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
+import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
 import {
   AvatarCircle, BtnPrimary, BtnSecondary, EmpEmptyState, LeadStatusBadge,
 } from "../components/EmpUI.jsx";
+import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 
 const PERIOD_LABEL = { today: "Today", week: "This Week", month: "This Month" };
 
@@ -210,13 +212,34 @@ export default function EmployeeCalls() {
   const navigate = useNavigate();
   const period = searchParams.get("period") || "today";
   const { calls: contextCalls = [], employee } = useEmployee();
+  const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
+    useCallyzerStats(employee?.id, period, Boolean(employee?.id));
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const stats = useMemo(
-    () => computeCallStatsFromCalls(contextCalls, period),
-    [contextCalls, period],
-  );
+  const stats = useMemo(() => {
+    if (callyzerStats) {
+      return {
+        dials: callyzerStats.totalCalls,
+        connected: callyzerStats.connectedCalls,
+        missed: callyzerStats.missedCalls,
+        pickupRate: callyzerStats.totalCalls
+          ? Math.round((callyzerStats.connectedCalls / callyzerStats.totalCalls) * 100)
+          : 0,
+        avgDuration: callyzerStats.totalDuration,
+        totalTalk: callyzerStats.workingHours,
+        hotLeads: 0,
+        callbacks: callyzerStats.notPickupByClient,
+        quality: callyzerStats.totalCalls
+          ? Math.round((callyzerStats.connectedCalls / callyzerStats.totalCalls) * 100)
+          : 0,
+        missRate: callyzerStats.totalCalls
+          ? Math.round((callyzerStats.missedCalls / callyzerStats.totalCalls) * 100)
+          : 0,
+      };
+    }
+    return computeCallStatsFromCalls(contextCalls, period);
+  }, [callyzerStats, contextCalls, period]);
 
   const calls = useMemo(() => {
     let list = filterCallsForPeriod(contextCalls, period);
@@ -237,6 +260,16 @@ export default function EmployeeCalls() {
 
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">
+      {callyzerConfigured && (
+        <CallyzerStatsPanel
+          stats={callyzerStats}
+          loading={callyzerLoading}
+          configured={callyzerConfigured}
+          message={callyzerMessage}
+          subtitle={`${PERIOD_LABEL[period] || period} · from Callyzer`}
+          compact
+        />
+      )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
         <StatCard compact label="Total Dials" value={String(stats.dials)} icon={Phone} tone="primary" change={`${stats.connected} connected`} sub="" />
         <StatCard compact label="Pickup Rate" value={`${stats.pickupRate}%`} icon={TrendingUp} tone="success" change={`${stats.missed} missed`} changeTone="warning" sub="" />

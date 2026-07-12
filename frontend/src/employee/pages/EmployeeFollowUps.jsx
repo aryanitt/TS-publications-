@@ -168,6 +168,24 @@ function FollowUpGrid({ items, onCall, onDone }) {
   );
 }
 
+const parseTime12 = (time24 = "14:00") => {
+  const [hStr, mStr] = (time24 || "14:00").split(":");
+  let h = parseInt(hStr || "14", 10);
+  const m = mStr || "00";
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return { hour: String(h), minute: m, ampm };
+};
+
+const formatTime24 = (hour, minute, ampm) => {
+  let h = parseInt(hour || "12", 10);
+  if (ampm === "PM" && h < 12) h += 12;
+  if (ampm === "AM" && h === 12) h = 0;
+  const hStr = String(h).padStart(2, "0");
+  return `${hStr}:${minute}`;
+};
+
 const EMPTY_SCHEDULE = {
   leadName: "",
   date: EMP_APP_TODAY,
@@ -563,11 +581,47 @@ export default function EmployeeFollowUps() {
           </FormGroup>
           <FormGroup>
             <FormLabel>Time</FormLabel>
-            <FormInput
-              type="time"
-              value={form.time}
-              onChange={(e) => setForm((p) => ({ ...p, time: e.target.value }))}
-            />
+            <div className="flex gap-1.5 items-center">
+              <FormSelect
+                value={parseTime12(form.time).hour}
+                onChange={(e) => {
+                  const { minute, ampm } = parseTime12(form.time);
+                  const newTime = formatTime24(e.target.value, minute, ampm);
+                  setForm((p) => ({ ...p, time: newTime }));
+                }}
+                className="flex-1 text-center"
+              >
+                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </FormSelect>
+              <span className="text-slate-400 font-bold">:</span>
+              <FormSelect
+                value={parseTime12(form.time).minute}
+                onChange={(e) => {
+                  const { hour, ampm } = parseTime12(form.time);
+                  const newTime = formatTime24(hour, e.target.value, ampm);
+                  setForm((p) => ({ ...p, time: newTime }));
+                }}
+                className="flex-1 text-center"
+              >
+                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </FormSelect>
+              <FormSelect
+                value={parseTime12(form.time).ampm}
+                onChange={(e) => {
+                  const { hour, minute } = parseTime12(form.time);
+                  const newTime = formatTime24(hour, minute, e.target.value);
+                  setForm((p) => ({ ...p, time: newTime }));
+                }}
+                className="w-20 text-center"
+              >
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </FormSelect>
+            </div>
           </FormGroup>
         </FormRow>
         <FormGroup>

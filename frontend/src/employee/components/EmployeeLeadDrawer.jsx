@@ -3,12 +3,13 @@ import {
   Phone, MessageCircle, Mail, Sparkles, Clock, 
   User, Users, RefreshCw, Shuffle, ChevronDown 
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer } from "../../components/Primitives.jsx";
-import { LEAD_STATUS_LABELS, EMP_TEAM, EMP_LEAD_TEMPERATURES } from "../../data/employeeMock.js";
+import { LEAD_STATUS_LABELS, EMP_TEAM, EMP_LEAD_TEMPERATURES, phonesMatchLoose } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { LeadStatusBadge, AvatarCircle, FormLabel, FormTextarea } from "./EmpUI.jsx";
+import { LeadStatusBadge, AvatarCircle, FormLabel, FormTextarea, BtnPrimary } from "./EmpUI.jsx";
+import CashCollectedPanel from "../../components/CashCollectedPanel.jsx";
 
 const labelClass = "text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2";
 
@@ -31,6 +32,7 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
     refreshTeamEmployees,
     updateLeadTemperature,
     addActivityRecord,
+    startCallyzerCall,
   } = useEmployee();
 
   const liveLead = useMemo(
@@ -39,12 +41,70 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
   );
 
   const leadCalls = useMemo(() => {
-    return calls.filter((c) => String(c.leadId) === String(liveLead.id));
-  }, [calls, liveLead.id]);
+    return calls.filter((c) => {
+      if (String(c.leadId) === String(liveLead.id)) return true;
+      if (liveLead.phone && c.phone && phonesMatchLoose(c.phone, liveLead.phone)) return true;
+      return false;
+    });
+  }, [calls, liveLead.id, liveLead.phone]);
 
   const leadActivities = useMemo(() => {
     return activities[liveLead.id] || [];
   }, [activities, liveLead.id]);
+
+  const [notesList, setNotesList] = useState([]);
+  const [newNote, setNewNote] = useState("");
+  const [noteLoading, setNoteLoading] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
+
+  const fetchNotes = async () => {
+    try {
+      setNoteLoading(true);
+      const { apiGet } = await import("../../lib/api.js");
+      const { getCrmHeaders } = await import("../../lib/crmContext.js");
+      const res = await apiGet(`/api/v1/leads/${liveLead.id}/notes`, {
+        headers: getCrmHeaders(),
+      });
+      if (res?.success !== false) {
+        setNotesList(Array.isArray(res.data) ? res.data : Array.isArray(res) ? res : []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch lead notes", err);
+    } finally {
+      setNoteLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (liveLead?.id) {
+      fetchNotes();
+    }
+  }, [liveLead?.id]);
+
+  const handleAddNote = async (e) => {
+    if (e) e.preventDefault();
+    if (!newNote.trim()) return;
+
+    try {
+      setNoteSaving(true);
+      const { apiPost } = await import("../../lib/api.js");
+      const { getCrmHeaders } = await import("../../lib/crmContext.js");
+      const res = await apiPost(
+        `/api/v1/leads/${liveLead.id}/notes`,
+        { body: newNote.trim() },
+        { headers: getCrmHeaders() }
+      );
+      if (res) {
+        toast.success("Note added successfully");
+        setNewNote("");
+        fetchNotes();
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to add note");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!teamEmployees.length && refreshTeamEmployees) {
@@ -188,6 +248,12 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
           ))}
         </div>
 
+        <CashCollectedPanel
+          leadId={liveLead.id}
+          leadName={liveLead.name}
+          employeeId={liveLead.assigneeId || employee?.id}
+        />
+
         {/* Reassignment Routing Panel */}
         <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4 space-y-3.5 shadow-sm">
           <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
@@ -258,9 +324,13 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
         <div className="flex gap-2.5">
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              const session = await startCallyzerCall(liveLead);
               onClose();
-              navigate(`/employee/call-assistant?lead=${encodeURIComponent(liveLead.name)}`);
+              const leadQuery = encodeURIComponent(liveLead.name);
+              const leadIdQuery = `leadId=${liveLead.id}`;
+              navigate(`/employee/call-assistant?${leadIdQuery}&lead=${leadQuery}`);
+              if (session?.message) toast.success(session.message);
             }}
             className="flex-1 h-10 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition shadow-[0_4px_12px_rgba(220,38,38,0.2)] flex items-center justify-center gap-1.5 cursor-pointer"
           >
@@ -284,12 +354,45 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
           </button>
         </div>
 
-        {/* Quick Notes Textarea */}
-        <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4 space-y-2 shadow-[0_1px_2px_rgba(244,63,94,0.01)]">
-          <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1">
-            ✍️ Add Quick Call Notes
+        {/* Quick Notes / Add Note Section */}
+        <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4 space-y-3.5 shadow-sm">
+          <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
+            ✍️ Lead Notes & Comments
           </label>
-          <FormTextarea rows={3} placeholder="Add call notes..." className="!rounded-xl border-rose-100/60 focus:border-rose-400" />
+          
+          <form onSubmit={handleAddNote} className="space-y-2">
+            <FormTextarea
+              rows={2}
+              placeholder="Type a note or call details..."
+              className="!rounded-xl border-rose-100/60 focus:border-rose-400 text-xs"
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              required
+            />
+            <div className="flex justify-end">
+              <BtnPrimary type="submit" className="!py-1.5 !px-3 !text-[10.5px]" disabled={noteSaving}>
+                {noteSaving ? "Saving..." : "Add Note"}
+              </BtnPrimary>
+            </div>
+          </form>
+
+          {noteLoading ? (
+            <div className="text-center py-2 text-[11px] text-slate-450">Loading notes...</div>
+          ) : notesList.length === 0 ? (
+            <p className="text-[10.5px] text-slate-400 italic pl-1">No notes saved for this lead.</p>
+          ) : (
+            <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
+              {notesList.map((n) => (
+                <div key={n.id} className="bg-white border border-rose-50 rounded-xl p-2.5 space-y-1 text-[11px] shadow-[0_1px_2px_rgba(244,63,94,0.01)]">
+                  <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold">
+                    <span>👤 {n.authorType === "employee" ? "You" : "Admin"}</span>
+                    <span>{new Date(n.createdAt).toLocaleDateString()} {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <p className="text-slate-750 leading-relaxed font-medium whitespace-pre-line">{n.body}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Lead Calls & MoM section */}

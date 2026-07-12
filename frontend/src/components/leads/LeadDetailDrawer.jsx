@@ -1,6 +1,7 @@
 import { Phone, Mail, Calendar, User, History, ArrowRightLeft } from "lucide-react";
 import { Drawer, Badge } from "../Primitives.jsx";
 import { normalizeSource, getLeadEmployeeName, getAssignmentState } from "../../lib/leadAssignment.js";
+import CashCollectedPanel from "../CashCollectedPanel.jsx";
 
 const SOURCE_LABELS = {
   meta_ads: { label: "Meta Ads", tone: "info" },
@@ -76,6 +77,12 @@ export default function LeadDetailDrawer({
           {field("Expected Revenue", lead.expected_revenue ? `₹${Number(lead.expected_revenue).toLocaleString("en-IN")}` : "—", null)}
           {field("Service / Requirements", lead.requirements || "—", null)}
         </div>
+
+        <CashCollectedPanel
+          leadId={lead.id}
+          leadName={lead.lead_name}
+          employeeId={lead.assigned_to || lead.assignedTo?.id || lead.assigneeId}
+        />
 
         <div className="rounded-2xl border border-rose-100 bg-white p-4">
           <p className="text-xs font-bold text-rose-700 mb-3 flex items-center gap-2">

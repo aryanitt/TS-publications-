@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Kanban, Flame, Target, TrendingUp } from "lucide-react";
+import { Search, Plus, Kanban, Flame, TrendingUp, ThumbsDown, Wallet } from "lucide-react";
 import toast from "react-hot-toast";
-import { GlassCard, Badge } from "../../components/Primitives.jsx";
+import { GlassCard, Badge, StatCard } from "../../components/Primitives.jsx";
 import AddLeadDrawer from "../../components/AddLeadDrawer.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
@@ -20,20 +20,6 @@ import useIsMobile from "../../lib/useIsMobile.js";
 import EmployeeLeadDrawer from "../components/EmployeeLeadDrawer.jsx";
 import { LeadStatusBadge } from "../components/EmpUI.jsx";
 
-function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
-  return (
-    <div className="rounded-lg sm:rounded-xl border border-rose-100 bg-white/90 p-2.5 sm:p-3 flex items-center justify-between gap-1.5 sm:gap-2 min-h-[68px] sm:min-h-[72px]">
-      <div className="min-w-0">
-        <p className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-tight">{label}</p>
-        <p className="text-base sm:text-xl font-black text-slate-900 mt-0.5 tabular-nums leading-none">{value}</p>
-        {sub && <p className="text-[8px] sm:text-[9px] font-bold text-emerald-600 mt-0.5 leading-tight line-clamp-1">{sub}</p>}
-      </div>
-      <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl grid place-items-center shrink-0 ${iconBg} ${iconColor}`}>
-        <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-      </div>
-    </div>
-  );
-}
 
 function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd, isNewAssigned }) {
   return (
@@ -71,8 +57,34 @@ function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd, isNewAssig
   );
 }
 
+function isLeadInPeriod(lead, period, now = new Date()) {
+  const dateStr = lead.createdAt || lead.created_at;
+  if (!dateStr) return true;
+  const leadDate = new Date(dateStr);
+  if (Number.isNaN(leadDate.getTime())) return true;
+
+  const nowClone = new Date(now);
+  const startOfToday = new Date(nowClone.getFullYear(), nowClone.getMonth(), nowClone.getDate());
+
+  if (period === "today") {
+    return leadDate >= startOfToday;
+  }
+  if (period === "week") {
+    const day = nowClone.getDay();
+    const diff = nowClone.getDate() - day + (day === 0 ? -6 : 1);
+    const startOfWeek = new Date(nowClone.setDate(diff));
+    startOfWeek.setHours(0, 0, 0, 0);
+    return leadDate >= startOfWeek;
+  }
+  if (period === "month") {
+    const startOfMonth = new Date(nowClone.getFullYear(), nowClone.getMonth(), 1);
+    return leadDate >= startOfMonth;
+  }
+  return true;
+}
+
 export default function EmployeeLeads() {
-  const { leads, addLead, updateLeadStage } = useEmployee();
+  const { leads, addLead, updateLeadStage, employee } = useEmployee();
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("filter");
@@ -82,16 +94,74 @@ export default function EmployeeLeads() {
   const [modalOpen, setModalOpen] = useState(searchParams.get("action") === "add");
   const [dragLeadId, setDragLeadId] = useState(null);
   const [dropStageId, setDropStageId] = useState(null);
+  const [cashCollections, setCashCollections] = useState([]);
   const columnRefs = useRef({});
+  const period = searchParams.get("period") || "month";
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setModalOpen(true);
   }, [searchParams]);
 
+  // Fetch cash collections list for this employee
+  useEffect(() => {
+    if (!employee?.id) return;
+    let cancelled = false;
+    import("../../lib/api.js").then(({ apiGet }) => {
+      apiGet(`/api/v1/employees/${employee.id}/cash-collections`, { skipCache: true, cacheTtl: 0 })
+        .then((res) => {
+          if (!cancelled && res?.success) {
+            setCashCollections(Array.isArray(res.data) ? res.data : []);
+          }
+        })
+        .catch(() => {});
+    });
+    return () => { cancelled = true; };
+  }, [employee?.id]);
+
+  const totalCash = useMemo(() => {
+    const list = Array.isArray(cashCollections) ? cashCollections : [];
+    const filteredList = list.filter((cc) => {
+      const dateStr = cc.paymentAt || cc.createdAt;
+      if (!dateStr) return false;
+      const payDate = new Date(dateStr);
+      if (Number.isNaN(payDate.getTime())) return false;
+
+      const now = new Date();
+      const nowClone = new Date(now);
+      const startOfToday = new Date(nowClone.getFullYear(), nowClone.getMonth(), nowClone.getDate());
+
+      if (period === "today") {
+        return payDate >= startOfToday;
+      }
+      if (period === "week") {
+        const day = nowClone.getDay();
+        const diff = nowClone.getDate() - day + (day === 0 ? -6 : 1);
+        const startOfWeek = new Date(nowClone.setDate(diff));
+        startOfWeek.setHours(0, 0, 0, 0);
+        return payDate >= startOfWeek;
+      }
+      if (period === "month") {
+        const startOfMonth = new Date(nowClone.getFullYear(), nowClone.getMonth(), 1);
+        return payDate >= startOfMonth;
+      }
+      return true;
+    });
+
+    return filteredList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  }, [cashCollections, period]);
+
+  function formatCashCard(val) {
+    if (val >= 10000000) return `₹${(val / 10000000).toFixed(1)}Cr`;
+    if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
+    if (val >= 1000) return `₹${(val / 1000).toFixed(1)}K`;
+    return `₹${val.toLocaleString("en-IN")}`;
+  }
+
   const baseLeads = useMemo(() => {
-    if (!statusFilter || statusFilter === "all") return leads;
-    return leads.filter((l) => l.status === statusFilter);
-  }, [leads, statusFilter]);
+    const periodFilteredLeads = leads.filter((l) => isLeadInPeriod(l, period));
+    if (!statusFilter || statusFilter === "all") return periodFilteredLeads;
+    return periodFilteredLeads.filter((l) => l.status === statusFilter);
+  }, [leads, statusFilter, period]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -120,21 +190,15 @@ export default function EmployeeLeads() {
     const lead = leads.find((l) => l.id === Number(leadId) || l.id === leadId);
     if (!lead) return;
     const target = getEmpStageMeta(stageId);
-    const currentStageId = isEmployeeNewAssignedLead(lead)
-      ? "new_lead"
-      : mapEmpLeadKanbanStage(lead.stage, lead.status);
-    if (stageId === "new_lead" && currentStageId !== "new_lead") {
-      toast.error("Only admin-assigned leads appear in New Lead");
-      return;
-    }
+    const currentStageId = mapEmpLeadKanbanStage(lead.stage, lead.status);
     if (currentStageId === stageId) {
       if (scroll) scrollToStage(stageId);
       return;
     }
-    updateLeadStage(lead.id, target.label, { fromNewAssigned: currentStageId === "new_lead" });
+    updateLeadStage(lead.id, target.label, { fromNewAssigned: isEmployeeNewAssignedLead(lead) });
     if (scroll) scrollToStage(stageId);
     toast.success(
-      currentStageId === "new_lead"
+      isEmployeeNewAssignedLead(lead)
         ? `Accepted · moved to ${target.label}`
         : `Moved to ${target.label}`,
       { id: `lead-move-${lead.id}-${stageId}` },
@@ -165,17 +229,51 @@ export default function EmployeeLeads() {
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">
       <GlassCard className="p-3 sm:p-4 space-y-3 sm:space-y-4">
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-2.5">
-          <MetricTile label="Pipeline Leads" value={String(summary.total)} icon={Kanban} iconBg="bg-rose-50" iconColor="text-rose-600" />
-          <MetricTile label="Active Deals" value={String(summary.active)} icon={Target} iconBg="bg-sky-50" iconColor="text-sky-600" />
-          <MetricTile label="Hot Leads" value={String(summary.hot)} icon={Flame} iconBg="bg-amber-50" iconColor="text-amber-600" />
-          <MetricTile
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-2.5">
+          <StatCard
             label="Pipeline Value"
             value={formatEmpPipelineValue(summary.value)}
-            sub={`${summary.winRate}% won · closed rate`}
             icon={TrendingUp}
             iconBg="bg-emerald-50"
             iconColor="text-emerald-600"
+            change="+14%"
+            sub="vs last month"
+          />
+          <StatCard
+            label="Total Leads"
+            value={String(summary.total)}
+            icon={Kanban}
+            iconBg="bg-rose-50"
+            iconColor="text-rose-600"
+            change="+8%"
+            sub="this month"
+          />
+          <StatCard
+            label="Hot Leads"
+            value={String(summary.hot)}
+            icon={Flame}
+            iconBg="bg-red-50"
+            iconColor="text-red-600"
+            change="High intent"
+            sub=""
+          />
+          <StatCard
+            label="Not Interested"
+            value={String(summary.notInterested)}
+            icon={ThumbsDown}
+            iconBg="bg-slate-50"
+            iconColor="text-slate-500"
+            change="Closed lost"
+            sub=""
+          />
+          <StatCard
+            label="Total Cash Collected"
+            value={formatCashCard(totalCash)}
+            icon={Wallet}
+            iconBg="bg-green-50"
+            iconColor="text-green-600"
+            change="This month"
+            sub=""
           />
         </div>
 
@@ -272,7 +370,7 @@ export default function EmployeeLeads() {
                   {columnLeads.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-rose-200 bg-white/60 p-4 text-center shrink-0 w-[min(72vw,200px)] min-h-[88px] flex items-center justify-center">
                       <p className="text-[11px] text-slate-400">
-                        {stage.id === "new_lead" ? "Admin-assigned leads appear here" : "No leads here"}
+                        {stage.id === "conversation" ? "New & active leads start here" : "No leads here"}
                       </p>
                     </div>
                   ) : (
@@ -339,7 +437,7 @@ export default function EmployeeLeads() {
                     {columnLeads.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-rose-200 bg-white/60 p-4 text-center">
                         <p className="text-[11px] text-slate-400">
-                          {stage.id === "new_lead" ? "Admin-assigned leads appear here" : "Drop leads here"}
+                          {stage.id === "conversation" ? "Drop leads here to start conversation" : "Drop leads here"}
                         </p>
                       </div>
                     ) : (
@@ -369,6 +467,8 @@ export default function EmployeeLeads() {
         showToast={showToast}
         title="New Lead"
         subtitle="Add a lead directly to your pipeline board."
+        pipelineStages={EMP_KANBAN_STAGES.map((s) => s.label)}
+        defaultStage="Conversation"
       />
 
       <EmployeeLeadDrawer lead={selected} onClose={() => setSelected(null)} />

@@ -10,7 +10,7 @@ export default function EmployeeDoodleAvatar({ size = 48, className = "", shape 
 
   return (
     <div
-      className={`relative shrink-0 overflow-hidden border-2 border-slate-200/90 bg-gradient-to-br from-sky-50 via-white to-amber-50 shadow-[0_2px_8px_rgba(15,23,42,0.06)] ${radius} ${className}`}
+      className={`relative shrink-0 overflow-hidden border-2 border-slate-200/90 bg-gradient-to-br from-rose-50 via-white to-slate-50 shadow-[0_2px_8px_rgba(15,23,42,0.06)] ${radius} ${className}`}
       style={{ width: size, height: size }}
       aria-hidden
     >

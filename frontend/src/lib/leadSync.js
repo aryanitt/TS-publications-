@@ -60,9 +60,21 @@ export function unwrapApiList(res) {
   return null;
 }
 
+/** Extract employee workspace/dashboard payload from API envelopes. */
+export function unwrapWorkspacePayload(res) {
+  if (!res || typeof res !== "object") return null;
+  if (res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
+    return res.data;
+  }
+  if (Array.isArray(res.leads) || res.employee || res.tasks || res.calls) {
+    return res;
+  }
+  return null;
+}
+
 /** Replace list on fetch — used for per-employee workspace (no cross-user merge). */
-export function replaceFetchedList(_prev, next) {
-  if (!Array.isArray(next)) return [];
+export function replaceFetchedList(prev, next) {
+  if (!Array.isArray(next)) return Array.isArray(prev) ? prev : [];
   return next;
 }
 
@@ -109,7 +121,7 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   const id = lead.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const status = normalizeEmployeeLeadStatus(lead);
-  const stage = lead.pipelineStage || lead.pipeline_stage || lead.status || "Attempted";
+  const stage = lead.pipelineStage || lead.pipeline_stage || lead.status || "Conversation";
   const revenue = Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0);
 
   return {
@@ -185,15 +197,18 @@ export function apiLeadToAdmin(lead) {
 
 export function employeeStagePatch(stageLabel, currentStatus) {
   const STAGE_STATUS = {
+    Conversation: "attempted",
+    Booked: "booked",
+    "Showed up": "contacted",
+    "Proposal Sent": "proposal",
     "New Lead": "new",
     "Not Pick": "notpick",
-    "Attempted": "attempted",
-    "Contacted": "contacted",
-    "Booked": "booked",
-    "Proposal": "proposal",
-    "Negotiation": "negotiation",
-    "Converted": "converted",
-    "Closed": "ni",
+    Attempted: "attempted",
+    Contacted: "contacted",
+    Proposal: "proposal",
+    Negotiation: "negotiation",
+    Converted: "converted",
+    Closed: "ni",
   };
   const employeeStatus = STAGE_STATUS[stageLabel] || currentStatus;
   return {
@@ -219,6 +234,9 @@ const PIPELINE_STAGE_MAP = [
   ["closed won", "closed_won"],
   ["converted", "closed_won"],
   ["won", "closed_won"],
+  ["not interested", "not_interested"],
+  ["not_interested", "not_interested"],
+  ["ni", "not_interested"],
   ["negotiation", "negotiation"],
   ["proposal", "proposal"],
   ["qualified", "qualified"],
@@ -254,6 +272,7 @@ export function apiLeadToPipeline(lead) {
     company: lead.companyName || lead.company_name || "—",
     value: Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0),
     priority,
+    status: lead.status || lead.employeeStatus || "",
     updatedAt: lead.updatedAt || lead.updated_at || lead.createdAt || new Date().toISOString(),
     phone: lead.phone || "",
     email: lead.email || "",
