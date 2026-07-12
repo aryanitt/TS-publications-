@@ -159,6 +159,7 @@ export function getCallDateKey(call) {
 }
 
 export function isCallInPeriod(call, period, now = new Date()) {
+  if (!call || typeof call !== "object") return false;
   const key = getCallDateKey(call);
   if (!key) {
     if (period === "today") return call.period === "today";

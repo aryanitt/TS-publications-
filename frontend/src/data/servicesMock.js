@@ -257,7 +257,7 @@ export const SERVICES = [
 ];
 
 export function getServiceById(id) {
-  const base = [...extraServices, ...SERVICES].find((s) => s.id === id);
+  const base = [...extraServices, ...SERVICES].find((s) => String(s.id) === String(id));
   if (!base) return null;
   const patch = catalogOverrides[id];
   return cloneService(patch ? { ...base, ...patch } : base);

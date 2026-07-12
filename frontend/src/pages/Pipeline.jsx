@@ -161,9 +161,11 @@ export default function Pipeline() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return leads;
-    return leads.filter(
-      (l) => l.name.toLowerCase().includes(q) || l.company.toLowerCase().includes(q),
+    if (!q) return leads || [];
+    return (leads || []).filter(
+      (l) =>
+        (l?.name || "").toLowerCase().includes(q) ||
+        (l?.company || "").toLowerCase().includes(q),
     );
   }, [leads, search]);
 

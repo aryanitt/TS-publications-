@@ -85,9 +85,9 @@ function BookMeetingDrawer({
       </p>
 
       <div className="flex items-center gap-2 rounded-xl bg-rose-50/70 border border-rose-100 px-3 py-2 mb-5">
-        <AvatarCircle initials={employee.initials} color="#be123c" size={28} />
+        <AvatarCircle initials={employee?.initials || "?"} color="#be123c" size={28} />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-slate-800 truncate">{employee.name}</p>
+          <p className="text-xs font-bold text-slate-800 truncate">{employee?.name || "Employee"}</p>
           <p className="text-[10px] text-slate-500">Meeting host</p>
         </div>
         <Badge tone="primary">Host</Badge>

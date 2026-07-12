@@ -89,12 +89,12 @@ export default function EmployeeDashboard() {
     [activities, calls],
   );
 
-  const todayTasks = tasks[getEmpAppToday()] || [];
+  const todayTasks = (tasks && tasks[getEmpAppToday()]) || [];
   const tasksDue = todayTasks.filter((t) => t.status !== "done" && t.status !== "completed").length;
   const tasksDone = todayTasks.filter((t) => t.status === "done" || t.status === "completed").length;
-  const hotFollowUps = followUps.filter((f) => !f.done && (f.urgency === "overdue" || f.urgency === "today")).length;
-  const callsToday = callyzerStats?.totalCalls ?? filterCallsForPeriod(calls, "today").length;
-  const callsTarget = employee.callsTarget || 60;
+  const hotFollowUps = (followUps || []).filter((f) => f && !f.done && (f.urgency === "overdue" || f.urgency === "today")).length;
+  const callsToday = callyzerStats?.totalCalls ?? filterCallsForPeriod(calls || [], "today").length;
+  const callsTarget = employee?.callsTarget || 60;
   const callPct = callsTarget ? Math.min(100, Math.round((callsToday / callsTarget) * 100)) : 0;
 
   const periodKey = period === "This Week" ? "week" : period === "This Month" ? "month" : "today";
@@ -102,8 +102,8 @@ export default function EmployeeDashboard() {
     if (callyzerStats?.conversations5MinPlus != null) {
       return callyzerStats.conversations5MinPlus;
     }
-    return filterCallsForPeriod(calls, periodKey).filter(
-      (c) => parseDurationToSeconds(c.duration) >= 300,
+    return filterCallsForPeriod(calls || [], periodKey).filter(
+      (c) => c && parseDurationToSeconds(c.duration) >= 300,
     ).length;
   }, [callyzerStats, calls, periodKey]);
 
@@ -201,12 +201,12 @@ export default function EmployeeDashboard() {
               {period === "This Week" ? "Week" : period === "This Month" ? "Month" : period} · {dateLabel}
             </p>
             <h1 className="font-display text-base sm:text-xl font-black text-slate-900 tracking-tight mt-0.5">
-              {formatGreeting(employee.name)}
+              {formatGreeting(employee?.name || "Employee")}
             </h1>
             <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-none">
               {[
                 { label: `${hotFollowUps} hot follow-ups`, to: "/employee/follow-ups" },
-                { label: `${meetingsUpcoming.length} meetings`, to: "/employee/meetings" },
+                { label: `${meetingsUpcoming?.length || 0} meetings`, to: "/employee/meetings" },
                 { label: `${pendingAgenda} agenda`, to: null },
               ].map((chip) => (
                 chip.to ? (
