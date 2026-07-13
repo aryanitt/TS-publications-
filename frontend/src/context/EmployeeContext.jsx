@@ -884,7 +884,7 @@ export function EmployeeProvider({ children }) {
   }, [usingApi]);
 
   const editLeadDetails = useCallback(async (leadId, updates) => {
-    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates } : l)));
+    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates, stage: updates.pipelineStage || l.stage, pipelineStage: updates.pipelineStage || l.pipelineStage } : l)));
 
     if (shouldPersistToApi(usingApi)) {
       try {
@@ -893,6 +893,7 @@ export function EmployeeProvider({ children }) {
         if (updates.status !== undefined) payload.temperature = temperatureToApi(updates.status);
         if (updates.phone !== undefined) payload.phone = updates.phone;
         if (updates.email !== undefined) payload.email = updates.email;
+        if (updates.pipelineStage !== undefined) payload.pipelineStage = updates.pipelineStage;
 
         await apiPut(`/api/v1/leads/${leadId}`, payload, { headers: getCrmHeaders() });
         invalidateCache("/api/v1");

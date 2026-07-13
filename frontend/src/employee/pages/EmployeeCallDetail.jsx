@@ -146,6 +146,7 @@ export default function EmployeeCallDetail() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editStatus, setEditStatus] = useState("");
+  const [editStage, setEditStage] = useState("");
 
   // Find active call log record
   const call = useMemo(() => {
@@ -300,11 +301,12 @@ export default function EmployeeCallDetail() {
   };
 
   useEffect(() => {
-    if (lead && isEditOpen) {
-      setEditName(lead.name || call.name);
-      setEditStatus(lead.status || "warm");
+    if (isEditOpen) {
+      setEditName(lead?.name || call?.name || "");
+      setEditStatus(lead?.status || "warm");
+      setEditStage(lead?.pipelineStage || lead?.stage || "conversation");
     }
-  }, [lead, isEditOpen, call.name]);
+  }, [lead, isEditOpen, call?.name]);
 
   const handleEditConfirm = async (e) => {
     if (e) e.preventDefault();
@@ -313,15 +315,124 @@ export default function EmployeeCallDetail() {
       return;
     }
 
-    try {
-      await editLeadDetails(lead.id, {
-        name: editName,
-        status: editStatus,
-      });
-      toast.success("Lead details updated successfully");
-      setIsEditOpen(false);
-    } catch (err) {
-      toast.error(err.message || "Failed to update lead details");
+    if (lead) {
+      try {
+        await editLeadDetails(lead.id, {
+          name: editName,
+          status: editStatus,
+          pipelineStage: editStage,
+        });
+        toast.success("Lead details updated successfully");
+        setIsEditOpen(false);
+      } catch (err) {
+        toast.error(err.message || "Failed to update lead details");
+      }
+    } else if (call) {
+      try {
+        const { apiPost, apiPut } = await import("../../lib/api.js");
+        const { getCrmHeaders } = await import("../../lib/crmContext.js");
+        
+        // 1. Create the lead
+        const leadRes = await apiPost("/api/v1/leads", {
+          leadName: editName.trim(),
+          phone: call.phone || "",
+          temperature: editStatus,
+          pipelineStage: editStage,
+          companyName: call.company || ""
+        }, { headers: getCrmHeaders() });
+        
+        const newLead = leadRes?.data?.lead || leadRes?.lead || leadRes;
+        if (!newLead?.id) {
+          throw new Error("Failed to create new lead");
+        }
+        
+        // 2. Associate the call log with the new lead
+        await apiPut(`/api/v1/employee/calls/${call.id}`, {
+          leadId: newLead.id
+        }, { headers: getCrmHeaders() });
+        
+        toast.success("Lead created and call history linked successfully");
+        setIsEditOpen(false);
+        window.location.reload();
+      } catch (err) {
+        toast.error(err.message || "Failed to link and update lead");
+      }
+    }
+  };
+
+  const handleStatusChange = async (newStatus) => {
+    if (lead) {
+      try {
+        await editLeadDetails(lead.id, { status: newStatus });
+        toast.success("Lead temperature updated successfully");
+      } catch (err) {
+        toast.error(err.message || "Failed to update temperature");
+      }
+    } else if (call) {
+      try {
+        const { apiPost, apiPut } = await import("../../lib/api.js");
+        const { getCrmHeaders } = await import("../../lib/crmContext.js");
+        
+        const leadRes = await apiPost("/api/v1/leads", {
+          leadName: call.name || "Unknown Lead",
+          phone: call.phone || "",
+          temperature: newStatus,
+          pipelineStage: "conversation",
+          companyName: call.company || ""
+        }, { headers: getCrmHeaders() });
+        
+        const newLead = leadRes?.data?.lead || leadRes?.lead || leadRes;
+        if (!newLead?.id) {
+          throw new Error("Failed to create new lead");
+        }
+        
+        await apiPut(`/api/v1/employee/calls/${call.id}`, {
+          leadId: newLead.id
+        }, { headers: getCrmHeaders() });
+        
+        toast.success("Lead created and temperature updated");
+        window.location.reload();
+      } catch (err) {
+        toast.error(err.message || "Failed to link and update lead");
+      }
+    }
+  };
+
+  const handleStageChange = async (newStage) => {
+    if (lead) {
+      try {
+        await editLeadDetails(lead.id, { pipelineStage: newStage });
+        toast.success("Lead stage updated successfully");
+      } catch (err) {
+        toast.error(err.message || "Failed to update stage");
+      }
+    } else if (call) {
+      try {
+        const { apiPost, apiPut } = await import("../../lib/api.js");
+        const { getCrmHeaders } = await import("../../lib/crmContext.js");
+        
+        const leadRes = await apiPost("/api/v1/leads", {
+          leadName: call.name || "Unknown Lead",
+          phone: call.phone || "",
+          temperature: "warm",
+          pipelineStage: newStage,
+          companyName: call.company || ""
+        }, { headers: getCrmHeaders() });
+        
+        const newLead = leadRes?.data?.lead || leadRes?.lead || leadRes;
+        if (!newLead?.id) {
+          throw new Error("Failed to create new lead");
+        }
+        
+        await apiPut(`/api/v1/employee/calls/${call.id}`, {
+          leadId: newLead.id
+        }, { headers: getCrmHeaders() });
+        
+        toast.success("Lead created and stage updated");
+        window.location.reload();
+      } catch (err) {
+        toast.error(err.message || "Failed to link and update lead");
+      }
     }
   };
 
@@ -484,16 +595,59 @@ export default function EmployeeCallDetail() {
                 <Volume2 className="w-3.5 h-3.5 text-rose-500" /> {call.type === "out" ? "Outbound Call" : "Inbound Call"}
               </span>
             </div>
+
+            {/* Inline Dropdowns to Edit Status and Stage */}
+            <div className="flex items-center gap-3.5 pt-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-450 font-bold uppercase tracking-wider">Lead Temp:</span>
+                <select
+                  value={lead?.status || "warm"}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  className="text-[11px] bg-rose-50/50 border border-rose-100 hover:border-rose-350 rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-305 cursor-pointer transition shadow-sm"
+                >
+                  <option value="hot">🔥 Hot Lead</option>
+                  <option value="warm">😴 Warm Lead</option>
+                  <option value="cold">❄️ Cold Lead</option>
+                  <option value="converted">💸 Converted</option>
+                  <option value="notpick">❌ Not Picked</option>
+                  <option value="ni">👎 Not Interested</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-455 font-bold uppercase tracking-wider">Stage:</span>
+                <select
+                  value={(() => {
+                    const rawStage = String(lead?.pipelineStage || lead?.stage || "conversation").toLowerCase();
+                    if (rawStage.includes("proposal") || rawStage.includes("negotiation") || rawStage.includes("converted") || rawStage.includes("won")) {
+                      return "proposal_sent";
+                    }
+                    if (rawStage.includes("showed")) {
+                      return "showed_up";
+                    }
+                    if (rawStage.includes("booked")) {
+                      return "booked";
+                    }
+                    return "conversation";
+                  })()}
+                  onChange={(e) => handleStageChange(e.target.value)}
+                  className="text-[11px] bg-rose-50/50 border border-rose-100 hover:border-rose-350 rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-305 cursor-pointer transition shadow-sm"
+                >
+                  <option value="conversation">🗣️ Conversation</option>
+                  <option value="booked">📅 Booked</option>
+                  <option value="showed_up">🤝 Showed Up</option>
+                  <option value="proposal_sent">📄 Proposal Sent</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Action Widgets */}
         <div className="flex sm:items-center gap-2.5 flex-wrap md:flex-nowrap shrink-0">
-          {lead && (
-            <BtnSecondary className="!py-2 !rounded-xl !text-xs" onClick={() => setIsEditOpen(true)}>
-              <Pencil className="w-4 h-4" /> Edit Details
-            </BtnSecondary>
-          )}
+          <BtnSecondary className="!py-2 !rounded-xl !text-xs" onClick={() => setIsEditOpen(true)}>
+            <Pencil className="w-4 h-4" /> Edit Details
+          </BtnSecondary>
           <BtnSecondary className="!py-2 !rounded-xl !text-xs" onClick={() => setIsFollowUpOpen(true)}>
             <CalendarClock className="w-4 h-4" /> Schedule Follow-up
           </BtnSecondary>
@@ -958,51 +1112,61 @@ export default function EmployeeCallDetail() {
       </EmpModal>
 
       {/* Edit Details Modal */}
-      {lead && (
-        <EmpModal
-          open={isEditOpen}
-          onClose={() => setIsEditOpen(false)}
-          title="Edit Lead Details"
-          subtitle="Update contact name and temperature status for this lead."
-          footer={
-            <div className="flex items-center gap-2">
-              <BtnGhost className="!py-1.5 !px-3" onClick={() => setIsEditOpen(false)}>
-                Cancel
-              </BtnGhost>
-              <BtnPrimary className="!py-1.5 !px-4" onClick={handleEditConfirm}>
-                Save Changes
-              </BtnPrimary>
-            </div>
-          }
-        >
-          <form onSubmit={handleEditConfirm} className="space-y-4">
-            <FormGroup>
-              <FormLabel>Lead Name</FormLabel>
-              <FormInput
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Enter contact name"
-                required
-              />
-            </FormGroup>
-            <FormGroup>
-              <FormLabel>Lead Status / Temperature</FormLabel>
-              <FormSelect
-                value={editStatus}
-                onChange={(e) => setEditStatus(e.target.value)}
-              >
-                <option value="hot">Hot Lead 🔥</option>
-                <option value="warm">Warm Lead 😴</option>
-                <option value="cold">Cold Lead ❄️</option>
-                <option value="converted">Converted 💸</option>
-                <option value="notpick">Not Picked ❌</option>
-                <option value="ni">Not Interested 👎</option>
-              </FormSelect>
-            </FormGroup>
-          </form>
-        </EmpModal>
-      )}
+      <EmpModal
+        open={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        title="Edit Lead Details"
+        subtitle="Update contact name, temperature status, and pipeline stage for this lead."
+        footer={
+          <div className="flex items-center gap-2">
+            <BtnGhost className="!py-1.5 !px-3" onClick={() => setIsEditOpen(false)}>
+              Cancel
+            </BtnGhost>
+            <BtnPrimary className="!py-1.5 !px-4" onClick={handleEditConfirm}>
+              Save Changes
+            </BtnPrimary>
+          </div>
+        }
+      >
+        <form onSubmit={handleEditConfirm} className="space-y-4">
+          <FormGroup>
+            <FormLabel>Lead Name</FormLabel>
+            <FormInput
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Enter contact name"
+              required
+            />
+          </FormGroup>
+          <FormGroup>
+            <FormLabel>Lead Status / Temperature</FormLabel>
+            <FormSelect
+              value={editStatus}
+              onChange={(e) => setEditStatus(e.target.value)}
+            >
+              <option value="hot">Hot Lead 🔥</option>
+              <option value="warm">Warm Lead 😴</option>
+              <option value="cold">Cold Lead ❄️</option>
+              <option value="converted">Converted 💸</option>
+              <option value="notpick">Not Picked ❌</option>
+              <option value="ni">Not Interested 👎</option>
+            </FormSelect>
+          </FormGroup>
+          <FormGroup>
+            <FormLabel>Pipeline Stage</FormLabel>
+            <FormSelect
+              value={editStage}
+              onChange={(e) => setEditStage(e.target.value)}
+            >
+              <option value="conversation">Conversation</option>
+              <option value="booked">Booked</option>
+              <option value="showed_up">Showed Up</option>
+              <option value="proposal_sent">Proposal Sent</option>
+            </FormSelect>
+          </FormGroup>
+        </form>
+      </EmpModal>
     </div>
   );
 }
