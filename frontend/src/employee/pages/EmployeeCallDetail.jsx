@@ -603,7 +603,8 @@ export default function EmployeeCallDetail() {
                 <select
                   value={lead?.status || "warm"}
                   onChange={(e) => handleStatusChange(e.target.value)}
-                  className="text-[11px] bg-rose-50/50 border border-rose-100 hover:border-rose-350 rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-305 cursor-pointer transition shadow-sm"
+                  style={{ border: '1px solid #fecdd3', backgroundColor: '#fff5f5' }}
+                  className="text-[11px] rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-300 cursor-pointer transition shadow-sm"
                 >
                   <option value="hot">🔥 Hot Lead</option>
                   <option value="warm">😴 Warm Lead</option>
@@ -631,7 +632,8 @@ export default function EmployeeCallDetail() {
                     return "conversation";
                   })()}
                   onChange={(e) => handleStageChange(e.target.value)}
-                  className="text-[11px] bg-rose-50/50 border border-rose-100 hover:border-rose-350 rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-305 cursor-pointer transition shadow-sm"
+                  style={{ border: '1px solid #fecdd3', backgroundColor: '#fff5f5' }}
+                  className="text-[11px] rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-300 cursor-pointer transition shadow-sm"
                 >
                   <option value="conversation">🗣️ Conversation</option>
                   <option value="booked">📅 Booked</option>
