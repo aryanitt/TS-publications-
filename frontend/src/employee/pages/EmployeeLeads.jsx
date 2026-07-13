@@ -160,7 +160,12 @@ export default function EmployeeLeads() {
   const baseLeads = useMemo(() => {
     const periodFilteredLeads = leads.filter((l) => isLeadInPeriod(l, period));
     if (!statusFilter || statusFilter === "all") return periodFilteredLeads;
-    return periodFilteredLeads.filter((l) => l.status === statusFilter);
+    const sf = statusFilter.toLowerCase();
+    return periodFilteredLeads.filter((l) => {
+      const status = String(l.status || "").toLowerCase();
+      const temp = String(l.temperature || "").toLowerCase();
+      return status === sf || temp.includes(sf);
+    });
   }, [leads, statusFilter, period]);
 
   const filtered = useMemo(() => {

@@ -664,9 +664,21 @@ export function formatEmpPipelineValue(n) {
 
 export function getEmpPipelineSummary(leads) {
   const total = leads.length;
-  const hot = leads.filter((l) => String(l.status || "").toLowerCase() === "hot").length;
-  const warm = leads.filter((l) => String(l.status || "").toLowerCase() === "warm").length;
-  const cold = leads.filter((l) => String(l.status || "").toLowerCase() === "cold").length;
+  const hot = leads.filter((l) => {
+    const temp = String(l.temperature || "").toLowerCase();
+    const status = String(l.status || "").toLowerCase();
+    return temp.includes("hot") || status === "hot";
+  }).length;
+  const warm = leads.filter((l) => {
+    const temp = String(l.temperature || "").toLowerCase();
+    const status = String(l.status || "").toLowerCase();
+    return temp.includes("warm") || status === "warm";
+  }).length;
+  const cold = leads.filter((l) => {
+    const temp = String(l.temperature || "").toLowerCase();
+    const status = String(l.status || "").toLowerCase();
+    return temp.includes("cold") || status === "cold";
+  }).length;
   const value = leads.reduce((sum, l) => sum + parseEmpBudget(l.budget), 0);
   
   const notInterested = leads.filter((l) => {
