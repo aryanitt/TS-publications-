@@ -596,52 +596,7 @@ export default function EmployeeCallDetail() {
               </span>
             </div>
 
-            {/* Inline Dropdowns to Edit Status and Stage */}
-            <div className="flex items-center gap-3.5 pt-2 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-450 font-bold uppercase tracking-wider">Lead Temp:</span>
-                <select
-                  value={lead?.status || "warm"}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  style={{ border: '1px solid #fecdd3', backgroundColor: '#fff5f5' }}
-                  className="text-[11px] rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-300 cursor-pointer transition shadow-sm"
-                >
-                  <option value="hot">🔥 Hot Lead</option>
-                  <option value="warm">😴 Warm Lead</option>
-                  <option value="cold">❄️ Cold Lead</option>
-                  <option value="converted">💸 Converted</option>
-                  <option value="notpick">❌ Not Picked</option>
-                  <option value="ni">👎 Not Interested</option>
-                </select>
-              </div>
 
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-455 font-bold uppercase tracking-wider">Stage:</span>
-                <select
-                  value={(() => {
-                    const rawStage = String(lead?.pipelineStage || lead?.stage || "conversation").toLowerCase();
-                    if (rawStage.includes("proposal") || rawStage.includes("negotiation") || rawStage.includes("converted") || rawStage.includes("won")) {
-                      return "proposal_sent";
-                    }
-                    if (rawStage.includes("showed")) {
-                      return "showed_up";
-                    }
-                    if (rawStage.includes("booked")) {
-                      return "booked";
-                    }
-                    return "conversation";
-                  })()}
-                  onChange={(e) => handleStageChange(e.target.value)}
-                  style={{ border: '1px solid #fecdd3', backgroundColor: '#fff5f5' }}
-                  className="text-[11px] rounded-lg px-2 py-0.5 text-slate-750 font-bold outline-none focus:ring-1 focus:ring-rose-300 cursor-pointer transition shadow-sm"
-                >
-                  <option value="conversation">🗣️ Conversation</option>
-                  <option value="booked">📅 Booked</option>
-                  <option value="showed_up">🤝 Showed Up</option>
-                  <option value="proposal_sent">📄 Proposal Sent</option>
-                </select>
-              </div>
-            </div>
           </div>
         </div>
 
