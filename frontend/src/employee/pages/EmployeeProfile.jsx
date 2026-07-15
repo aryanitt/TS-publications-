@@ -26,6 +26,8 @@ import {
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { filterCallsForPeriod } from "../../data/employeeMock.js";
+import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
+import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
 import EmployeeProfileHeader, { DashboardScrollbarStyles } from "../components/EmployeeProfileHeader.jsx";
 
 const tabs = [
@@ -55,22 +57,26 @@ export default function EmployeeProfile() {
     if (employee?.name) setDisplayName(employee.name);
   }, [employee?.name]);
 
+  const { stats: callyzerStats } = useCallyzerStats(employee?.id, "This Month", Boolean(employee?.id));
+
   const stats = useMemo(() => {
     const openFollowUps = followUps.filter((f) => !f.done).length;
-    const callsToday = filterCallsForPeriod(calls, "today").length;
+    const callsConversations =
+      callyzerStats?.conversations5MinPlus ??
+      countConversationCalls(calls, { periodFilter: (list) => filterCallsForPeriod(list, "month") });
     const converted = leads.filter((l) => l.status === "converted").length;
     const convRate = leads.length ? Math.round((converted / leads.length) * 100) : 0;
-    const pickup = employee?.pickupRate ?? 0;
+    const pickup = employee?.pickupRate ?? callyzerStats?.pickupRate ?? 0;
     const qualification = employee?.qualificationRate ?? 0;
 
-    return { openFollowUps, callsToday, converted, convRate, pickup, qualification };
-  }, [calls, followUps, leads, employee]);
+    return { openFollowUps, callsConversations, converted, convRate, pickup, qualification };
+  }, [calls, followUps, leads, employee, callyzerStats]);
 
   const perfRows = useMemo(() => [
     { label: "Pickup rate", value: `${stats.pickup}%` },
     { label: "Qualification", value: `${stats.qualification}%` },
     { label: "Conversion", value: `${stats.convRate}%` },
-    { label: "Calls target", value: `${stats.callsToday}/${employee?.callsTarget || 60}` },
+    { label: "Call conversations", value: `${stats.callsConversations}/${employee?.callsTarget || 60} (${CALL_CONVERSATION_LABEL})` },
   ], [stats, employee?.callsTarget]);
 
   const handleSave = () => {
@@ -118,9 +124,9 @@ export default function EmployeeProfile() {
           compact
         />
         <StatCard
-          label="Calls Today"
-          value={String(stats.callsToday)}
-          change={`Target ${employee?.callsTarget || 60}`}
+          label={`Conversations (${CALL_CONVERSATION_LABEL})`}
+          value={String(stats.callsConversations)}
+          change={`Target ${employee?.callsTarget || 60} this month`}
           sub=""
           icon={Phone}
           tone="purple"

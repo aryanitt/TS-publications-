@@ -1,4 +1,5 @@
 /** LRMS v7 employee panel mock data — mirrors lrms-v7.html */
+import { CALL_CONVERSATION_MIN_SEC } from "../lib/callMetrics.js";
 
 /** Mock-only id — never exists in MySQL; must be replaced after API bootstrap. */
 export const MOCK_EMPLOYEE_ID = 101;
@@ -213,7 +214,8 @@ export function computeCallStatsFromCalls(calls, period = "today") {
   const quality = ratings.length
     ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 20)
     : pickupRate;
-  return { dials, connected, missed, callbacks, pickupRate, quality, missRate, avgDuration, hotLeads, totalTalk };
+  const conversations = list.filter((c) => parseDurationToSeconds(c.duration) >= CALL_CONVERSATION_MIN_SEC).length;
+  return { dials, connected, missed, callbacks, pickupRate, quality, missRate, avgDuration, hotLeads, totalTalk, conversations };
 }
 
 const DASHBOARD_ACTIVITY_EMOJI = {

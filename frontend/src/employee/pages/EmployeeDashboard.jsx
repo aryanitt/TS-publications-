@@ -17,7 +17,6 @@ import {
   getEmpPipelineSummary,
   getEmpAppToday,
   filterCallsForPeriod,
-  parseDurationToSeconds,
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { AvatarCircle } from "../components/EmpUI.jsx";
@@ -27,6 +26,7 @@ import { formatGreeting } from "../../lib/greeting.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
 import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
+import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
 
 const PIPE_FILTERS = [
   { id: "all", label: "All" },
@@ -104,9 +104,9 @@ export default function EmployeeDashboard() {
     if (callyzerStats?.conversations5MinPlus != null) {
       return callyzerStats.conversations5MinPlus;
     }
-    return filterCallsForPeriod(calls || [], periodKey).filter(
-      (c) => c && parseDurationToSeconds(c.duration) >= 300,
-    ).length;
+    return countConversationCalls(calls, {
+      periodFilter: (list) => filterCallsForPeriod(list, periodKey),
+    });
   }, [callyzerStats, calls, periodKey]);
 
   const statCards = useMemo(() => [
@@ -143,11 +143,11 @@ export default function EmployeeDashboard() {
       link: "/employee/tasks",
     },
     {
-      label: "Total Conversation",
+      label: `Conversations (${CALL_CONVERSATION_LABEL})`,
       value: String(conversations5MinPlus),
       change: callyzerStats?.conversations5MinDuration
         ? `${callyzerStats.conversations5MinDuration} talk time`
-        : "Calls 5 min+",
+        : `Connected calls ${CALL_CONVERSATION_LABEL}`,
       icon: MessageCircle,
       tone: "success",
       link: "/employee/calls",

@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet } from "./api.js";
-import { getPipelineQualifiedCount } from "./leadSync.js";
+import { computeLeadKraForPeriod } from "./kraPeriod.js";
 
 /**
  * Shared KRA metrics for Team + Incentives — same sources as employee panel.
- * - calls5Min: employee_calls conversations ≥ 5 min (Callyzer-synced)
- * - qualified: Booked + Showed up (pipelineQualified)
- * - meetings: Booked count (meetings scheduled)
- * - cash: cash_collections for selected month
+ * Supports period: day | week | month (optional month YYYY-MM for month view).
  */
-export function useEmployeeKraMetrics(employeeId, month, { enabled = true } = {}) {
+export function useEmployeeKraMetrics(employeeId, options = {}) {
+  const {
+    enabled = true,
+    period = "month",
+    month = null,
+  } = typeof options === "string" || options == null
+    ? { enabled: true, period: "month", month: options || null }
+    : options;
+
   const [metrics, setMetrics] = useState({
     calls5Min: 0,
     totalCalls: 0,
@@ -22,6 +27,7 @@ export function useEmployeeKraMetrics(employeeId, month, { enabled = true } = {}
     converted: 0,
     totalLeads: 0,
     cash: 0,
+    periodLabel: "",
   });
   const [loading, setLoading] = useState(false);
 
@@ -31,25 +37,36 @@ export function useEmployeeKraMetrics(employeeId, month, { enabled = true } = {}
 
     try {
       const params = new URLSearchParams({ employee_id: String(employeeId) });
+
+      let callyzerQuery = "";
+      if (period === "day") callyzerQuery = "period=today";
+      else if (period === "week") callyzerQuery = "period=week";
+      else if (month) callyzerQuery = `month=${month}`;
+      else callyzerQuery = "period=month";
+
+      let cashQuery = "";
+      if (period === "day") cashQuery = "period=today";
+      else if (period === "week") cashQuery = "period=week";
+      else if (month) cashQuery = `month=${month}`;
+      else cashQuery = "period=month";
+
       const [leadsRes, callyzerRes, cashRes] = await Promise.all([
         apiGet(`/api/team/employees/leads?${params.toString()}`, {
           skipCache: true,
           cacheTtl: 0,
         }).catch(() => null),
         apiGet(
-          `/api/team/employees/${employeeId}/callyzer-stats?${month ? `month=${month}` : "period=month"}`,
+          `/api/team/employees/${employeeId}/callyzer-stats?${callyzerQuery}`,
           { skipCache: true, cacheTtl: 0 },
         ).catch(() => null),
-        month
-          ? apiGet(`/api/incentives/employee/${employeeId}/cash-summary?month=${month}`, {
-              skipCache: true,
-              cacheTtl: 0,
-            }).catch(() => null)
-          : Promise.resolve(null),
+        apiGet(`/api/incentives/employee/${employeeId}/cash-summary?${cashQuery}`, {
+          skipCache: true,
+          cacheTtl: 0,
+        }).catch(() => null),
       ]);
 
-      const stats = leadsRes?.stats || {};
-      const stageBreakdown = leadsRes?.stageBreakdown || [];
+      const leads = Array.isArray(leadsRes?.leads) ? leadsRes.leads : [];
+      const leadKra = computeLeadKraForPeriod(leads, period, { month });
       const cStats = callyzerRes?.stats || {};
 
       setMetrics({
@@ -57,18 +74,19 @@ export function useEmployeeKraMetrics(employeeId, month, { enabled = true } = {}
         totalCalls: cStats.totalCalls ?? 0,
         pickupRate: cStats.pickupRate ?? 0,
         avgDurationSec: cStats.avgDurationSec ?? 0,
-        qualified: getPipelineQualifiedCount(stats, stageBreakdown),
-        booked: stats.booked ?? 0,
-        showedUp: stats.showedUp ?? 0,
-        meetings: stats.booked ?? 0,
-        converted: stats.converted ?? 0,
-        totalLeads: stats.totalLeads ?? 0,
+        qualified: leadKra.qualified,
+        booked: leadKra.meetings,
+        showedUp: 0,
+        meetings: leadKra.meetings,
+        converted: leads.filter((l) => String(l.status || "").toLowerCase() === "converted").length,
+        totalLeads: leads.length,
         cash: cashRes?.cashCollected ?? 0,
+        periodLabel: callyzerRes?.label || cashRes?.label || "",
       });
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [employeeId, month, enabled]);
+  }, [employeeId, period, month, enabled]);
 
   useEffect(() => {
     load({ silent: false });

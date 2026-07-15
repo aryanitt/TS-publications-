@@ -18,6 +18,8 @@ import toast from "react-hot-toast";
 import { apiGet } from "../lib/api.js";
 import { apiLeadToEmployee } from "../lib/leadSync.js";
 import { useEmployeeKraMetrics } from "../lib/useEmployeeKraMetrics.js";
+import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
+import { KRA_PERIODS, kraPeriodLabel } from "../lib/kraPeriod.js";
 import { CustomSelect } from "../components/CustomSelect.jsx";
 
 const MONTH_OPTIONS = [
@@ -288,7 +290,7 @@ function LeadStatusDetailDrawer({ open, onClose, lead, monthLabel }) {
 }
 
 const DEFAULT_KRA_ROWS = [
-  { key: "calls", label: "Call Conversations", weight: 25 },
+  { key: "calls", label: `Call Conversations (${CALL_CONVERSATION_LABEL})`, weight: 25 },
   { key: "qualified", label: "Qualified Leads", weight: 25 },
   { key: "meetings", label: "Meetings Scheduled", weight: 25 },
   { key: "cash", label: "Cash Collection", weight: 25 },
@@ -526,6 +528,7 @@ export default function Incentives() {
   const [selectedId, setSelectedId] = useState(null);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState("2026-07");
+  const [kraPeriod, setKraPeriod] = useState("month");
   const [leadTab, setLeadTab] = useState("Converted");
   const [activeLead, setActiveLead] = useState(null);
   const [kraRows, setKraRows] = useState(DEFAULT_KRA_ROWS.map((r) => ({ ...r })));
@@ -534,8 +537,10 @@ export default function Incentives() {
   const [calcResult, setCalcResult] = useState(null);
   const [employeeLeads, setEmployeeLeads] = useState([]);
   const [loadingEmployeeLeads, setLoadingEmployeeLeads] = useState(false);
-  const { metrics: kraMetrics } = useEmployeeKraMetrics(selectedId, selectedMonth, {
+  const { metrics: kraMetrics } = useEmployeeKraMetrics(selectedId, {
     enabled: Boolean(selectedId),
+    period: kraPeriod,
+    month: kraPeriod === "month" ? selectedMonth : null,
   });
 
   useEffect(() => {
@@ -602,7 +607,59 @@ export default function Incentives() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMonth]);
 
-  // Sync KRA metrics from same sources as Team page + employee panel
+  // Sync 2 min+ call conversations for every employee (not only the selected one)
+  const teammateIdsKey = useMemo(
+    () => teammates.map((t) => t.id).sort((a, b) => a - b).join(","),
+    [teammates],
+  );
+
+  useEffect(() => {
+    if (!teammateIdsKey || loadingEmployees) return;
+
+    let cancelled = false;
+    const ids = teammateIdsKey.split(",").map((id) => Number(id)).filter(Boolean);
+
+    (async () => {
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const callyzerQuery =
+              kraPeriod === "day"
+                ? "period=today"
+                : kraPeriod === "week"
+                  ? "period=week"
+                  : `month=${selectedMonth}`;
+            const data = await apiGet(
+              `/api/team/employees/${id}/callyzer-stats?${callyzerQuery}`,
+              { skipCache: true, cacheTtl: 0 },
+            );
+            return {
+              id,
+              calls5Min: data?.stats?.conversations5MinPlus ?? 0,
+            };
+          } catch {
+            return { id, calls5Min: null };
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      const callsById = Object.fromEntries(
+        results.filter((r) => r.calls5Min != null).map((r) => [r.id, r.calls5Min]),
+      );
+
+      setTeammates((prev) =>
+        prev.map((t) =>
+          callsById[t.id] != null ? { ...t, callsCompleted: callsById[t.id] } : t,
+        ),
+      );
+    })();
+
+    return () => { cancelled = true; };
+  }, [teammateIdsKey, selectedMonth, kraPeriod, loadingEmployees]);
+
+  // Sync other KRA metrics for the selected employee
   useEffect(() => {
     if (!selectedId || !kraMetrics) return;
     setTeammates((prev) =>
@@ -610,7 +667,7 @@ export default function Incentives() {
         t.id === selectedId
           ? {
               ...t,
-              callsCompleted: kraMetrics.calls5Min || kraMetrics.totalCalls || t.callsCompleted,
+              callsCompleted: kraMetrics.calls5Min,
               qualifiedLeads: kraMetrics.qualified,
               meetingsScheduled: kraMetrics.meetings,
               cashCollected: kraMetrics.cash,
@@ -629,7 +686,7 @@ export default function Incentives() {
           : t,
       ),
     );
-  }, [selectedId, selectedMonth, kraMetrics]);
+  }, [selectedId, selectedMonth, kraPeriod, kraMetrics]);
 
   // Sync real leads from employee panel (same source as Team Management)
   useEffect(() => {
@@ -922,8 +979,24 @@ export default function Incentives() {
                 Performance & Incentive
               </h3>
               <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                {selected.name} · {monthLabel}
+                {selected.name} · {kraPeriod === "month" ? monthLabel : kraPeriodLabel(kraPeriod)}
               </p>
+            </div>
+            <div className="flex gap-1 shrink-0">
+              {KRA_PERIODS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setKraPeriod(p.id)}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition ${
+                    kraPeriod === p.id
+                      ? "bg-rose-50 border-rose-200 text-rose-700"
+                      : "bg-white border-slate-200 text-slate-500 hover:border-rose-200"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
             <div className="rounded-xl bg-rose-50 border border-rose-100 px-2.5 py-1.5 text-center shrink-0">
               <p className="text-[8px] font-bold text-slate-400 uppercase">Score</p>

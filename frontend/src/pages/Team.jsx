@@ -6,8 +6,11 @@ import { apiGet, apiPost, apiDelete, invalidateCache } from "../lib/api.js";
 import { formatCashINR, formatCashDateTime, resolveSlipUrl } from "../components/CashCollectedPanel.jsx";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
-import CallyzerStatsPanel, { CallyzerTeamTable } from "../components/CallyzerStatsPanel.jsx";
-import { useCallyzerStats, useCallyzerTeamStats } from "../lib/useCallyzerStats.js";
+import CallyzerStatsPanel from "../components/CallyzerStatsPanel.jsx";
+import { useTeamEmployeeCallyzerStats } from "../lib/useTeamCallyzerStats.js";
+import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
+import { useEmployeeKraMetrics } from "../lib/useEmployeeKraMetrics.js";
+import { KRA_PERIODS, kraPeriodLabel } from "../lib/kraPeriod.js";
 import { getPipelineQualifiedCount } from "../lib/leadSync.js";
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
@@ -1238,7 +1241,7 @@ function MemberForm({ fields, errors, set, blur }) {
         <h4 style={{ color: "#e11d48", marginBottom: 10 }}>Performance Metrics</h4>
 
         {[
-          { label: "Call Conversations", t: "callTarget", w: "callWeightage" },
+          { label: `Call Conversations (${CALL_CONVERSATION_LABEL})`, t: "callTarget", w: "callWeightage" },
           { label: "Qualified Leads", t: "qualifiedLeadTarget", w: "qualifiedLeadWeightage" },
           { label: "Meetings Scheduled", t: "meetingTarget", w: "meetingWeightage" },
           { label: "Cash Collection", t: "cashTarget", w: "cashWeightage" },
@@ -2074,6 +2077,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   const [compact, setCompact] = useState(() =>
     typeof window !== "undefined" && window.innerWidth < 1024,
   );
+  const [kraPeriod, setKraPeriod] = useState("month");
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -2084,8 +2088,12 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   }, []);
 
   const { leads, stats, activity, funnel, stageBreakdown, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
-  const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
-    useCallyzerStats(activeEmp?.id, "today", Boolean(activeEmp?.id));
+  const { stats: callyzerStats, employeeName: callyzerEmpName, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
+    useTeamEmployeeCallyzerStats(activeEmp?.id, kraPeriod, Boolean(activeEmp?.id));
+  const { metrics: kraMetrics, loading: kraMetricsLoading } = useEmployeeKraMetrics(activeEmp?.id, {
+    enabled: Boolean(activeEmp?.id),
+    period: kraPeriod,
+  });
 
   // KRA & Remuneration Calculator States
   const [baseSalary, setBaseSalary] = useState(12000);
@@ -2112,28 +2120,28 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     setBaseSalary(parseFloat(activeEmp.salary) || 0);
     setIncRate(6);
 
-    setCallT(parseFloat(activeEmp.callTarget || activeEmp.call_target) || 0);
+    const monthlyCallT = parseFloat(activeEmp.callTarget || activeEmp.call_target) || 0;
+    const monthlyLeadT = parseFloat(activeEmp.qualifiedLeadTarget || activeEmp.qualified_lead_target) || 0;
+    const monthlyMeetT = parseFloat(activeEmp.meetingTarget || activeEmp.meeting_target) || 0;
+    const monthlyCashT = parseFloat(activeEmp.cashTarget || activeEmp.cash_target) || 0;
+
+    setCallT(monthlyCallT);
     setCallW(parseFloat(activeEmp.callWeightage || activeEmp.call_weightage) || 0);
 
-    setLeadT(parseFloat(activeEmp.qualifiedLeadTarget || activeEmp.qualified_lead_target) || 0);
+    setLeadT(monthlyLeadT);
     setLeadW(parseFloat(activeEmp.qualifiedLeadWeightage || activeEmp.qualified_lead_weightage) || 0);
 
-    setMeetT(parseFloat(activeEmp.meetingTarget || activeEmp.meeting_target) || 0);
+    setMeetT(monthlyMeetT);
     setMeetW(parseFloat(activeEmp.meetingWeightage || activeEmp.meeting_weightage) || 0);
 
-    setCashT(parseFloat(activeEmp.cashTarget || activeEmp.cash_target) || 0);
+    setCashT(monthlyCashT);
     setCashW(parseFloat(activeEmp.cashWeightage || activeEmp.cash_weightage) || 0);
 
-    const achieved = activeEmp.achieved || {};
-    setCallA(
-      callyzerStats?.conversations5MinPlus
-      ?? achieved.calls
-      ?? 0,
-    );
-    setLeadA(getPipelineQualifiedCount(stats, stageBreakdown) || achieved.qualifiedLeads || 0);
-    setMeetA(achieved.meetings ?? stats?.booked ?? 0);
-    setCashA(achieved.cash ?? 0);
-  }, [activeEmp, stats, callyzerStats, stageBreakdown]);
+    setCallA(kraMetrics.calls5Min ?? 0);
+    setLeadA(kraMetrics.qualified ?? 0);
+    setMeetA(kraMetrics.meetings ?? 0);
+    setCashA(kraMetrics.cash ?? 0);
+  }, [activeEmp, kraMetrics, kraPeriod]);
 
   const parseVal = (val) => {
     const parsed = parseFloat(val);
@@ -2473,7 +2481,8 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             loading={callyzerLoading}
             configured={callyzerConfigured}
             message={callyzerMessage}
-            title="Callyzer Call Stats (Today)"
+            title={`Callyzer Call Stats — ${activeEmp?.name || callyzerEmpName || "Employee"}`}
+            subtitle={`${kraPeriodLabel(kraPeriod)} · employee-wise from synced call logs`}
             compact
           />
         </div>
@@ -2487,14 +2496,36 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               KRA & Remuneration Calculator
             </h3>
             <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: "3px 0 0", lineHeight: 1.3 }}>
-              Interactive calculation based on weightages, performance targets, and cash collection
+              {kraPeriodLabel(kraPeriod)} · achieved for period · monthly targets fixed
+              {kraMetricsLoading ? " · updating…" : ""}
             </p>
+          </div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {KRA_PERIODS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setKraPeriod(p.id)}
+                style={{
+                  padding: compact ? "4px 8px" : "5px 10px",
+                  borderRadius: 8,
+                  border: kraPeriod === p.id ? "1px solid #fda4af" : "1px solid #ffe4e6",
+                  background: kraPeriod === p.id ? "#fff1f2" : "#fff",
+                  color: kraPeriod === p.id ? "#be123c" : "#64748b",
+                  fontSize: compact ? 9 : 10,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </div>
 
         {(() => {
           const kraRows = [
-            { label: "Call Conversations", ach: callA, setAch: setCallA, tgt: callT, setTgt: setCallT, weight: callW, setWeight: setCallW, score: callScore },
+            { label: `Call Conversations (${CALL_CONVERSATION_LABEL})`, ach: callA, setAch: setCallA, tgt: callT, setTgt: setCallT, weight: callW, setWeight: setCallW, score: callScore },
             { label: "Qualified Leads", ach: leadA, setAch: setLeadA, tgt: leadT, setTgt: setLeadT, weight: leadW, setWeight: setLeadW, score: leadScore },
             { label: "Meetings Scheduled", ach: meetA, setAch: setMeetA, tgt: meetT, setTgt: setMeetT, weight: meetW, setWeight: setMeetW, score: meetScore },
             { label: "Cash Collection", ach: cashA, setAch: setCashA, tgt: cashT, setTgt: setCashT, weight: cashW, setWeight: setCashW, score: cashScore },
@@ -3607,9 +3638,6 @@ export default function Team() {
   const [newCredentials, setNewCredentials] = useState(null);
   const [newMemberName, setNewMemberName] = useState("");
   const [kpiData, setKpiData] = useState(null);
-  const [callyzerTeamPeriod, setCallyzerTeamPeriod] = useState("today");
-  const { stats: callyzerTeamStats, loading: callyzerTeamLoading, configured: callyzerTeamConfigured } =
-    useCallyzerTeamStats(callyzerTeamPeriod, true);
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get("action") === "addMember") {
@@ -3895,8 +3923,6 @@ export default function Team() {
           </button>
         </div>
       </GlassCard>
-
-
 
       {/* ── Member cards list ── */}
       <div

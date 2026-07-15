@@ -14,6 +14,7 @@ import {
   resolveEmployeeCallType,
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
+import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
 import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
 import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
 import {
@@ -243,6 +244,15 @@ export default function EmployeeCalls() {
     return computeCallStatsFromCalls(contextCalls, period);
   }, [callyzerStats, contextCalls, period]);
 
+  const conversationCount = useMemo(() => {
+    if (callyzerStats?.conversations5MinPlus != null) {
+      return callyzerStats.conversations5MinPlus;
+    }
+    return countConversationCalls(contextCalls, {
+      periodFilter: (list) => filterCallsForPeriod(list, period),
+    });
+  }, [callyzerStats, contextCalls, period]);
+
   const calls = useMemo(() => {
     let list = filterCallsForPeriod(contextCalls, period);
 
@@ -274,9 +284,9 @@ export default function EmployeeCalls() {
       )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
         <StatCard compact label="Total Dials" value={String(stats.dials)} icon={Phone} tone="primary" change={`${stats.connected} connected`} sub="" />
-        <StatCard compact label="Pickup Rate" value={`${stats.pickupRate}%`} icon={TrendingUp} tone="success" change={`${stats.missed} missed`} changeTone="warning" sub="" />
-        <StatCard compact label="Avg Duration" value={stats.avgDuration} icon={Clock} tone="warning" change={stats.totalTalk} sub="" />
-        <StatCard compact label="Hot Leads" value={String(stats.hotLeads)} icon={Zap} tone="danger" change={`${stats.callbacks} callbacks set`} sub="" />
+        <StatCard compact label={`Conversations (${CALL_CONVERSATION_LABEL})`} value={String(conversationCount)} icon={MessageCircle} tone="success" change={`${PERIOD_LABEL[period] || period}`} sub="" />
+        <StatCard compact label="Pickup Rate" value={`${stats.pickupRate}%`} icon={TrendingUp} tone="warning" change={`${stats.missed} missed`} changeTone="warning" sub="" />
+        <StatCard compact label="Avg Duration" value={stats.avgDuration} icon={Clock} tone="info" change={stats.totalTalk} sub="" />
       </div>
 
       <div className="grid grid-cols-3 gap-1.5 sm:gap-3 lg:gap-4 lg:items-stretch">

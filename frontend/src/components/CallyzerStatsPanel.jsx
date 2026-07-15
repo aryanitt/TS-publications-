@@ -1,5 +1,6 @@
 import { Phone } from "lucide-react";
 import { GlassCard } from "./Primitives.jsx";
+import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
 
 function Metric({ label, value, sub, tone = "default" }) {
   const tones = {
@@ -81,7 +82,7 @@ export default function CallyzerStatsPanel({
         <Metric label="Never Attended" value={stats.neverAttended} tone="pink" />
         <Metric label="Client No Pickup" value={stats.notPickupByClient} tone="pink" />
         <Metric label="Unique Clients" value={stats.uniqueClients} tone="default" sub="Distinct numbers" />
-        <Metric label="5 Min+ Conversations" value={stats.conversations5MinPlus ?? 0} tone="green" sub={stats.conversations5MinDuration || "Connected calls ≥ 5 min"} />
+        <Metric label={`${CALL_CONVERSATION_LABEL} Conversations`} value={stats.conversations5MinPlus ?? 0} tone="green" sub={stats.conversations5MinDuration || `Connected calls ≥ ${CALL_CONVERSATION_LABEL}`} />
       </div>
 
       {!compact && stats.lastCallLog?.client_name && (
@@ -94,7 +95,7 @@ export default function CallyzerStatsPanel({
   );
 }
 
-export function CallyzerTeamTable({ stats, loading }) {
+export function CallyzerTeamTable({ stats, loading, onSelectEmployee }) {
   if (loading && !stats?.length) {
     return <p className="text-sm text-slate-500 py-4">Loading team call stats from Callyzer…</p>;
   }
@@ -119,11 +120,16 @@ export function CallyzerTeamTable({ stats, loading }) {
             <th className="px-3 py-2 font-bold text-rose-600">Missed</th>
             <th className="px-3 py-2 font-bold">Connected</th>
             <th className="px-3 py-2 font-bold">Unique Clients</th>
+            <th className="px-3 py-2 font-bold text-emerald-700">{CALL_CONVERSATION_LABEL}</th>
           </tr>
         </thead>
         <tbody>
           {stats.map((row, idx) => (
-            <tr key={`${row.empNumber || row.empName}-${idx}`} className="border-t border-rose-50 hover:bg-rose-50/30">
+            <tr
+              key={`${row.employeeId || row.empNumber || row.empName}-${idx}`}
+              className={`border-t border-rose-50 hover:bg-rose-50/30 ${onSelectEmployee ? "cursor-pointer" : ""}`}
+              onClick={() => onSelectEmployee?.(row)}
+            >
               <td className="px-3 py-2 font-semibold text-slate-800">
                 {row.empName || "—"}
                 <span className="block text-[10px] text-slate-400 font-normal">
@@ -138,6 +144,7 @@ export function CallyzerTeamTable({ stats, loading }) {
               <td className="px-3 py-2 text-rose-600 tabular-nums">{row.missedCalls}</td>
               <td className="px-3 py-2 tabular-nums">{row.connectedCalls}</td>
               <td className="px-3 py-2 tabular-nums">{row.uniqueClients}</td>
+              <td className="px-3 py-2 text-emerald-700 font-bold tabular-nums">{row.conversations5MinPlus ?? 0}</td>
             </tr>
           ))}
         </tbody>

@@ -68,11 +68,10 @@ export default function ServicesDashboard() {
     (async () => {
       try {
         const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
-        if (data.services?.length) {
-          setCatalog(data.services.map(normalizeCatalogService));
-        }
+        const services = data.services?.length ? data.services : getAllServices();
+        setCatalog(services.map(normalizeCatalogService));
       } catch {
-        setCatalog([]);
+        setCatalog(getAllServices().map(normalizeCatalogService));
       }
     })();
   }, []);
