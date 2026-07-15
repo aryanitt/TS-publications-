@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -12,9 +12,13 @@ import {
   filterCallsForPeriod,
   LEAD_STATUS_LABELS,
   resolveEmployeeCallType,
+  callFromApi,
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
+import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
+import { apiGet } from "../../lib/api.js";
+import { unwrapApiList } from "../../lib/leadSync.js";
 import {
   AvatarCircle, BtnPrimary, BtnSecondary, EmpEmptyState, LeadStatusBadge,
 } from "../components/EmpUI.jsx";
@@ -212,24 +216,83 @@ export default function EmployeeCalls() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const period = searchParams.get("period") || "today";
-  const { calls: contextCalls = [], employee } = useEmployee();
+  const { calls: contextCalls = [], employee, leads = [] } = useEmployee();
+  const { stats: callyzerStats, configured: callyzerConfigured } = useCallyzerStats(
+    employee?.id,
+    period,
+    Boolean(employee?.id),
+  );
+  const [periodCalls, setPeriodCalls] = useState([]);
+  const [callsLoading, setCallsLoading] = useState(false);
+  const [callsLoaded, setCallsLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const stats = useMemo(
-    () => computeCallStatsFromCalls(contextCalls, period),
-    [contextCalls, period],
-  );
+  const fetchPeriodCalls = useCallback(async () => {
+    if (!employee?.id) return;
+    setCallsLoading(true);
+    setCallsLoaded(false);
+    try {
+      const res = await apiGet(
+        `/api/v1/employee/${employee.id}/calls?period=${encodeURIComponent(period)}&sync=1&limit=10000`,
+        { skipCache: true, cacheTtl: 0 },
+      );
+      const items = unwrapApiList(res);
+      setPeriodCalls(Array.isArray(items) ? items.map((c) => callFromApi(c, leads)) : []);
+    } catch {
+      setPeriodCalls([]);
+    } finally {
+      setCallsLoading(false);
+      setCallsLoaded(true);
+    }
+  }, [employee?.id, period, leads]);
 
-  const conversationCount = useMemo(
-    () => countConversationCalls(contextCalls, {
+  useEffect(() => {
+    fetchPeriodCalls();
+  }, [fetchPeriodCalls]);
+
+  useEffect(() => {
+    const onRefresh = () => fetchPeriodCalls();
+    window.addEventListener("callyzer:refresh", onRefresh);
+    return () => window.removeEventListener("callyzer:refresh", onRefresh);
+  }, [fetchPeriodCalls]);
+
+  const stats = useMemo(() => {
+    if (callyzerConfigured && callyzerStats) {
+      const pickupRate = callyzerStats.totalCalls
+        ? Math.round((callyzerStats.connectedCalls / callyzerStats.totalCalls) * 100)
+        : 0;
+      return {
+        dials: callyzerStats.totalCalls,
+        connected: callyzerStats.connectedCalls,
+        missed: callyzerStats.missedCalls,
+        pickupRate,
+        missRate: callyzerStats.totalCalls
+          ? Math.round((callyzerStats.missedCalls / callyzerStats.totalCalls) * 100)
+          : 0,
+        avgDuration: callyzerStats.totalDuration,
+        totalTalk: callyzerStats.workingHours,
+        hotLeads: 0,
+        callbacks: callyzerStats.notPickupByClient ?? 0,
+        quality: pickupRate,
+      };
+    }
+    const source = callsLoaded ? periodCalls : filterCallsForPeriod(contextCalls, period);
+    return computeCallStatsFromCalls(source, period);
+  }, [callyzerConfigured, callyzerStats, callsLoaded, periodCalls, contextCalls, period]);
+
+  const conversationCount = useMemo(() => {
+    if (callyzerConfigured && callyzerStats?.conversations5MinPlus != null) {
+      return callyzerStats.conversations5MinPlus;
+    }
+    const source = callsLoaded ? periodCalls : filterCallsForPeriod(contextCalls, period);
+    return countConversationCalls(source, {
       periodFilter: (list) => filterCallsForPeriod(list, period),
-    }),
-    [contextCalls, period],
-  );
+    });
+  }, [callyzerConfigured, callyzerStats, callsLoaded, periodCalls, contextCalls, period]);
 
   const calls = useMemo(() => {
-    let list = filterCallsForPeriod(contextCalls, period);
+    let list = callsLoaded ? periodCalls : filterCallsForPeriod(contextCalls, period);
 
     if (typeFilter !== "all") list = list.filter((c) => resolveEmployeeCallType(c) === typeFilter);
     if (search.trim()) {
@@ -243,7 +306,7 @@ export default function EmployeeCalls() {
       );
     }
     return list;
-  }, [contextCalls, period, typeFilter, search]);
+  }, [callsLoaded, periodCalls, contextCalls, period, typeFilter, search]);
 
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">
@@ -329,7 +392,11 @@ export default function EmployeeCalls() {
             </span>
           </div>
           {calls.length === 0 ? (
-            <EmpEmptyState icon="📞" title="No calls in this period" subtitle="Try a different filter or time range" />
+            <EmpEmptyState
+              icon="📞"
+              title={callsLoading ? "Loading calls…" : "No calls in this period"}
+              subtitle={callsLoading ? "Fetching your call history" : "Try a different filter or time range"}
+            />
           ) : (
             <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-4 max-h-none sm:max-h-[640px] sm:overflow-y-auto sm:overscroll-contain sm:scrollbar-thin sm:pr-1">
               {calls.map((c) => (
