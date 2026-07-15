@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -217,45 +217,99 @@ export default function EmployeeCalls() {
   const navigate = useNavigate();
   const period = searchParams.get("period") || "today";
   const { calls: contextCalls = [], employee, leads = [] } = useEmployee();
-  const { stats: callyzerStats, configured: callyzerConfigured } = useCallyzerStats(
+  const { stats: callyzerStats, configured: callyzerConfigured, syncing: statsSyncing } = useCallyzerStats(
     employee?.id,
     period,
     Boolean(employee?.id),
   );
   const [periodCalls, setPeriodCalls] = useState([]);
   const [callsLoading, setCallsLoading] = useState(false);
+  const [callsSyncing, setCallsSyncing] = useState(false);
   const [callsLoaded, setCallsLoaded] = useState(false);
+  const callsCacheRef = useRef(new Map());
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const fetchPeriodCalls = useCallback(async () => {
+  const mapCallItems = useCallback((items) => (
+    Array.isArray(items) ? items.map((c) => callFromApi(c, leads)) : []
+  ), [leads]);
+
+  const fetchPeriodCalls = useCallback(async ({ sync = false, silent = false } = {}) => {
     if (!employee?.id) return;
-    setCallsLoading(true);
-    setCallsLoaded(false);
+
+    const cacheKey = `${employee.id}:${period}`;
+    const cached = callsCacheRef.current.get(cacheKey);
+    if (!sync && cached) {
+      setPeriodCalls(cached);
+      setCallsLoaded(true);
+      return;
+    }
+
+    if (!silent && !cached) setCallsLoading(true);
+    if (sync) setCallsSyncing(true);
+
     try {
       const res = await apiGet(
-        `/api/v1/employee/${employee.id}/calls?period=${encodeURIComponent(period)}&sync=1&limit=10000`,
-        { skipCache: true, cacheTtl: 0 },
+        `/api/v1/employee/${employee.id}/calls?period=${encodeURIComponent(period)}&sync=${sync ? 1 : 0}&limit=10000`,
+        { skipCache: sync, cacheTtl: sync ? 0 : 30_000 },
       );
       const items = unwrapApiList(res);
-      setPeriodCalls(Array.isArray(items) ? items.map((c) => callFromApi(c, leads)) : []);
+      const mapped = mapCallItems(items);
+      callsCacheRef.current.set(cacheKey, mapped);
+      setPeriodCalls(mapped);
+      setCallsLoaded(true);
     } catch {
-      setPeriodCalls([]);
+      if (!cached) setPeriodCalls([]);
     } finally {
-      setCallsLoading(false);
+      if (sync) setCallsSyncing(false);
+      if (!silent) setCallsLoading(false);
+    }
+  }, [employee?.id, period, mapCallItems]);
+
+  useEffect(() => {
+    const cacheKey = employee?.id ? `${employee.id}:${period}` : null;
+    const cached = cacheKey ? callsCacheRef.current.get(cacheKey) : null;
+    if (cached) {
+      setPeriodCalls(cached);
       setCallsLoaded(true);
     }
-  }, [employee?.id, period, leads]);
+
+    fetchPeriodCalls({ sync: false, silent: Boolean(cached) });
+
+    const syncTimer = window.setTimeout(() => {
+      fetchPeriodCalls({ sync: true, silent: true });
+    }, 80);
+
+    return () => window.clearTimeout(syncTimer);
+  }, [employee?.id, period, fetchPeriodCalls]);
 
   useEffect(() => {
-    fetchPeriodCalls();
-  }, [fetchPeriodCalls]);
-
-  useEffect(() => {
-    const onRefresh = () => fetchPeriodCalls();
+    const onRefresh = () => {
+      fetchPeriodCalls({ sync: false, silent: true });
+      fetchPeriodCalls({ sync: true, silent: true });
+    };
     window.addEventListener("callyzer:refresh", onRefresh);
     return () => window.removeEventListener("callyzer:refresh", onRefresh);
   }, [fetchPeriodCalls]);
+
+  useEffect(() => {
+    if (!employee?.id) return undefined;
+    const prefetch = (targetPeriod) => {
+      const cacheKey = `${employee.id}:${targetPeriod}`;
+      if (callsCacheRef.current.has(cacheKey)) return;
+      apiGet(
+        `/api/v1/employee/${employee.id}/calls?period=${targetPeriod}&sync=0&limit=10000`,
+        { cacheTtl: 30_000 },
+      )
+        .then((res) => {
+          callsCacheRef.current.set(cacheKey, mapCallItems(unwrapApiList(res)));
+        })
+        .catch(() => {});
+    };
+    ["today", "week", "month"].forEach((p) => {
+      if (p !== period) prefetch(p);
+    });
+  }, [employee?.id, period, mapCallItems]);
 
   const stats = useMemo(() => {
     if (callyzerConfigured && callyzerStats) {
@@ -310,6 +364,11 @@ export default function EmployeeCalls() {
 
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">
+      {(callsLoading || callsSyncing || statsSyncing) && (
+        <p className="text-[10px] font-semibold text-slate-400 px-1">
+          {callsLoading ? "Loading call data…" : "Syncing latest calls from Callyzer…"}
+        </p>
+      )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
         <StatCard compact label="Total Dials" value={String(stats.dials)} icon={Phone} tone="primary" change={`${stats.connected} connected`} sub="" />
         <StatCard compact label={`Conversations (${CALL_CONVERSATION_LABEL})`} value={String(conversationCount)} icon={MessageCircle} tone="success" change={`${PERIOD_LABEL[period] || period}`} sub="" />

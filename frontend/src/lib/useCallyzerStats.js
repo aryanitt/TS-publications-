@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet } from "./api.js";
 
 export const CALLYZER_PERIOD_MAP = {
@@ -12,14 +12,16 @@ export const CALLYZER_PERIOD_MAP = {
 
 /** How often the UI polls for fresh Callyzer stats while the tab is visible. */
 export const CALLYZER_POLL_INTERVAL_MS = 15_000;
+/** Full Callyzer API sync runs at most this often (background). */
+export const CALLYZER_FULL_SYNC_INTERVAL_MS = 60_000;
 
 // Global in-flight deduplication + result cache (per key)
 const inflight = new Map();
 const resultCache = new Map();
-const CACHE_TTL = 5_000;
+const CACHE_TTL = 30_000;
 
-function fetchCallyzerStats(employeeId, mapped, { force = false, sync = true } = {}) {
-  const key = `callyzer_emp_${employeeId}_${mapped}`;
+function fetchCallyzerStats(employeeId, mapped, { force = false, sync = false } = {}) {
+  const key = `callyzer_emp_${employeeId}_${mapped}_sync${sync ? 1 : 0}`;
 
   if (force) {
     resultCache.delete(key);
@@ -33,14 +35,18 @@ function fetchCallyzerStats(employeeId, mapped, { force = false, sync = true } =
   if (inflight.has(key)) return inflight.get(key);
 
   const syncQuery = sync ? "sync=1" : "sync=0";
-  const forceQuery = force ? "&force=1" : "";
+  const forceQuery = force && sync ? "&force=1" : "";
   const promise = apiGet(
     `/api/v1/employee/${employeeId}/callyzer/stats?period=${mapped}&${syncQuery}${forceQuery}`,
-    { cacheTtl: 0, skipCache: true },
+    { cacheTtl: sync ? 0 : CACHE_TTL, skipCache: sync || force },
   )
     .then((res) => {
       const data = res?.data ?? res;
       resultCache.set(key, { data, ts: Date.now() });
+      // Fast DB reads satisfy both cache keys until a full sync completes.
+      if (!sync) {
+        resultCache.set(`callyzer_emp_${employeeId}_${mapped}_sync1`, { data, ts: Date.now() });
+      }
       return data;
     })
     .finally(() => {
@@ -54,7 +60,8 @@ function fetchCallyzerStats(employeeId, mapped, { force = false, sync = true } =
 export function invalidateCallyzerStatsCache(employeeId, period) {
   if (employeeId != null && period != null) {
     const mapped = CALLYZER_PERIOD_MAP[period] || period || "today";
-    resultCache.delete(`callyzer_emp_${employeeId}_${mapped}`);
+    resultCache.delete(`callyzer_emp_${employeeId}_${mapped}_sync0`);
+    resultCache.delete(`callyzer_emp_${employeeId}_${mapped}_sync1`);
     return;
   }
   resultCache.clear();
@@ -62,28 +69,42 @@ export function invalidateCallyzerStatsCache(employeeId, period) {
 }
 
 export function useCallyzerStats(employeeId, period, enabled = true) {
-  const [stats, setStats] = useState(null);
+  const mapped = CALLYZER_PERIOD_MAP[period] || "today";
+  const statsCacheRef = useRef({});
+  const [stats, setStats] = useState(() => statsCacheRef.current[mapped] ?? null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [message, setMessage] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const lastFullSyncRef = useRef(0);
 
-  const loadStats = useCallback(async ({ silent = false, force = false, sync = true } = {}) => {
+  const applyStats = useCallback((data, mappedPeriod) => {
+    if (!data) return;
+    setConfigured(Boolean(data?.configured));
+    if (data?.stats) {
+      statsCacheRef.current[mappedPeriod] = data.stats;
+      setStats(data.stats);
+    }
+    setMessage(data?.message || null);
+    setLastUpdated(data?.syncedAt ? new Date(data.syncedAt) : new Date());
+  }, []);
+
+  const loadStats = useCallback(async ({ silent = false, force = false, sync = false } = {}) => {
     if (!enabled || !employeeId) return;
 
-    const mapped = CALLYZER_PERIOD_MAP[period] || "today";
-    if (!silent) setLoading(true);
+    const periodKey = CALLYZER_PERIOD_MAP[period] || "today";
+    const hasCached = Boolean(statsCacheRef.current[periodKey]);
+
+    if (!silent && !hasCached) setLoading(true);
     if (sync) setSyncing(true);
 
     try {
-      const data = await fetchCallyzerStats(employeeId, mapped, { force, sync });
-      setConfigured(Boolean(data?.configured));
-      setStats(data?.stats || null);
-      setMessage(data?.message || null);
-      setLastUpdated(data?.syncedAt ? new Date(data.syncedAt) : new Date());
+      const data = await fetchCallyzerStats(employeeId, periodKey, { force, sync });
+      applyStats(data, periodKey);
+      if (sync) lastFullSyncRef.current = Date.now();
     } catch (err) {
-      if (!silent) {
+      if (!silent && !hasCached) {
         setStats(null);
         setMessage(err.message || "Could not load Callyzer stats");
       }
@@ -91,23 +112,35 @@ export function useCallyzerStats(employeeId, period, enabled = true) {
       if (sync) setSyncing(false);
       if (!silent) setLoading(false);
     }
-  }, [employeeId, period, enabled]);
+  }, [employeeId, period, enabled, applyStats]);
 
+  // Instant DB stats on period switch, then background Callyzer sync.
   useEffect(() => {
     if (!enabled || !employeeId) return undefined;
 
-    loadStats({ silent: false, force: true, sync: true });
+    const periodKey = CALLYZER_PERIOD_MAP[period] || "today";
+    if (statsCacheRef.current[periodKey]) {
+      setStats(statsCacheRef.current[periodKey]);
+    }
+
+    loadStats({ silent: Boolean(statsCacheRef.current[periodKey]), force: false, sync: false });
+
+    const syncTimer = window.setTimeout(() => {
+      loadStats({ silent: true, force: true, sync: true });
+    }, 80);
 
     const poll = () => {
       if (document.hidden) return;
-      loadStats({ silent: true, force: true, sync: true });
+      const needsFullSync = Date.now() - lastFullSyncRef.current >= CALLYZER_FULL_SYNC_INTERVAL_MS;
+      loadStats({ silent: true, force: !needsFullSync, sync: needsFullSync });
     };
 
     const intervalId = window.setInterval(poll, CALLYZER_POLL_INTERVAL_MS);
 
     const onVisibility = () => {
       if (!document.hidden) {
-        loadStats({ silent: true, force: true, sync: true });
+        loadStats({ silent: true, force: false, sync: false });
+        window.setTimeout(() => loadStats({ silent: true, force: true, sync: true }), 80);
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -120,11 +153,25 @@ export function useCallyzerStats(employeeId, period, enabled = true) {
     window.addEventListener("callyzer:refresh", onManualRefresh);
 
     return () => {
+      window.clearTimeout(syncTimer);
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("callyzer:refresh", onManualRefresh);
     };
   }, [employeeId, period, enabled, loadStats]);
+
+  useEffect(() => {
+    if (!enabled || !employeeId) return undefined;
+    ["today", "week", "month"].forEach((p) => {
+      const active = CALLYZER_PERIOD_MAP[period] || "today";
+      if (p === active || statsCacheRef.current[p]) return;
+      fetchCallyzerStats(employeeId, p, { sync: false })
+        .then((data) => {
+          if (data?.stats) statsCacheRef.current[p] = data.stats;
+        })
+        .catch(() => {});
+    });
+  }, [employeeId, period, enabled]);
 
   return {
     stats,
@@ -133,7 +180,10 @@ export function useCallyzerStats(employeeId, period, enabled = true) {
     configured,
     message,
     lastUpdated,
-    refresh: () => loadStats({ silent: true, force: true, sync: true }),
+    refresh: () => {
+      loadStats({ silent: true, force: false, sync: false });
+      return loadStats({ silent: true, force: true, sync: true });
+    },
   };
 }
 
@@ -156,7 +206,7 @@ function fetchCallyzerTeamStats(mapped, { force = false } = {}) {
 
   const promise = apiGet(
     `/api/v1/callyzer/team-stats?period=${mapped}`,
-    { cacheTtl: 0, skipCache: true },
+    { cacheTtl: CACHE_TTL, skipCache: force },
   )
     .then((res) => {
       const data = res?.data ?? res;
@@ -196,17 +246,17 @@ export function useCallyzerTeamStats(period, enabled = true) {
   useEffect(() => {
     if (!enabled) return undefined;
 
-    loadStats({ silent: false, force: true });
+    loadStats({ silent: false, force: false });
 
     const poll = () => {
       if (document.hidden) return;
-      loadStats({ silent: true, force: true });
+      loadStats({ silent: true, force: false });
     };
 
     const intervalId = window.setInterval(poll, CALLYZER_POLL_INTERVAL_MS);
 
     const onVisibility = () => {
-      if (!document.hidden) loadStats({ silent: true, force: true });
+      if (!document.hidden) loadStats({ silent: true, force: false });
     };
     document.addEventListener("visibilitychange", onVisibility);
 
