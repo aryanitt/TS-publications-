@@ -6,8 +6,9 @@ import {
 import toast from "react-hot-toast";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import {
-  getServiceById, updateService, SERVICE_CATEGORIES, formatServicePriceLabel,
+  SERVICE_CATEGORIES, formatServicePriceLabel,
 } from "../../data/servicesMock.js";
+import { apiGet, apiPost } from "../../lib/api.js";
 
 const ICON_MAP = {
   bot: Bot,
@@ -88,14 +89,42 @@ function SegmentedControl({ options, value, onChange, formatLabel = (v) => v }) 
 export default function ServiceEdit() {
   const { serviceId } = useParams();
   const navigate = useNavigate();
-  const service = getServiceById(serviceId);
+  const [service, setService] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("General Information");
-  const [draft, setDraft] = useState(() => initDraft(service));
+  const [draft, setDraft] = useState(null);
 
   useEffect(() => {
-    setDraft(initDraft(getServiceById(serviceId)));
-    setActiveTab("General Information");
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
+        const found = (res?.services || []).find((s) => String(s.id) === String(serviceId)) || null;
+        if (!cancelled) {
+          setService(found);
+          setDraft(initDraft(found));
+          setActiveTab("General Information");
+        }
+      } catch {
+        if (!cancelled) {
+          setService(null);
+          setDraft(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [serviceId]);
+
+  if (loading) {
+    return (
+      <GlassCard className="p-10 text-center">
+        <p className="text-sm text-slate-400">Loading service…</p>
+      </GlassCard>
+    );
+  }
 
   if (!service || !draft) {
     return (
@@ -164,25 +193,31 @@ export default function ServiceEdit() {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!draft.name.trim()) {
       toast.error("Service name is required");
       return;
     }
     const priceNum = parsePriceNum(draft.price);
-    const saved = updateService({
+    const payload = {
       ...draft,
+      id: service.id,
       name: draft.name.trim(),
       description: draft.description.trim(),
       price: formatServicePriceLabel(draft.price, priceNum),
       priceNum,
-      tiers: draft.tiers.map((tier) => ({
+      tiers: (draft.tiers || []).map((tier) => ({
         ...tier,
         price: formatServicePriceLabel(tier.price),
       })),
-    });
-    toast.success(`${saved.name} saved`);
-    navigate(`/services/${service.id}`);
+    };
+    try {
+      await apiPost("/api/services", payload);
+      toast.success(`${payload.name} saved`);
+      navigate(`/services/${service.id}`);
+    } catch {
+      toast.error("Could not save service. Ensure the backend is running.");
+    }
   };
 
   return (

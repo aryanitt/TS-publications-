@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiGet } from "./api.js";
 
 export const CALLYZER_PERIOD_MAP = {
@@ -10,26 +10,30 @@ export const CALLYZER_PERIOD_MAP = {
   month: "month",
 };
 
-// Global in-flight deduplication + result cache (per key)
-const inflight = new Map();   // key → Promise
-const resultCache = new Map(); // key → { data, ts }
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+export const CALLYZER_POLL_INTERVAL_MS = 45_000;
 
-function fetchCallyzerStats(employeeId, mapped) {
+// Global in-flight deduplication + result cache (per key)
+const inflight = new Map();
+const resultCache = new Map();
+const CACHE_TTL = 45_000;
+
+function fetchCallyzerStats(employeeId, mapped, { force = false } = {}) {
   const key = `callyzer_emp_${employeeId}_${mapped}`;
 
-  // Return from cache if fresh
-  const cached = resultCache.get(key);
-  if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    return Promise.resolve(cached.data);
+  if (force) {
+    resultCache.delete(key);
+  } else {
+    const cached = resultCache.get(key);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      return Promise.resolve(cached.data);
+    }
   }
 
-  // De-duplicate in-flight requests
   if (inflight.has(key)) return inflight.get(key);
 
   const promise = apiGet(
     `/api/v1/employee/${employeeId}/callyzer/stats?period=${mapped}`,
-    { cacheTtl: 300000 }
+    { cacheTtl: force ? 0 : CACHE_TTL, skipCache: force },
   )
     .then((res) => {
       const data = res?.data ?? res;
@@ -44,61 +48,91 @@ function fetchCallyzerStats(employeeId, mapped) {
   return promise;
 }
 
+export function invalidateCallyzerStatsCache(employeeId, period) {
+  if (employeeId != null && period != null) {
+    const mapped = CALLYZER_PERIOD_MAP[period] || period || "today";
+    resultCache.delete(`callyzer_emp_${employeeId}_${mapped}`);
+    return;
+  }
+  resultCache.clear();
+  teamResultCache.clear();
+}
+
 export function useCallyzerStats(employeeId, period, enabled = true) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [message, setMessage] = useState(null);
 
+  const loadStats = useCallback(async ({ silent = false, force = false } = {}) => {
+    if (!enabled || !employeeId) return;
+
+    const mapped = CALLYZER_PERIOD_MAP[period] || "today";
+    if (!silent) setLoading(true);
+
+    try {
+      const data = await fetchCallyzerStats(employeeId, mapped, { force });
+      setConfigured(Boolean(data?.configured));
+      setStats(data?.stats || null);
+      setMessage(data?.message || null);
+    } catch (err) {
+      if (!silent) {
+        setStats(null);
+        setMessage(err.message || "Could not load Callyzer stats");
+      }
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [employeeId, period, enabled]);
+
   useEffect(() => {
     if (!enabled || !employeeId) return undefined;
 
-    const mapped = CALLYZER_PERIOD_MAP[period] || "today";
-    let cancelled = false;
-    setLoading(true);
+    loadStats({ silent: false, force: false });
 
-    fetchCallyzerStats(employeeId, mapped)
-      .then((data) => {
-        if (cancelled) return;
-        setConfigured(Boolean(data?.configured));
-        setStats(data?.stats || null);
-        setMessage(data?.message || null);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setStats(null);
-          setMessage(err.message || "Could not load Callyzer stats");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const poll = () => {
+      if (document.hidden) return;
+      loadStats({ silent: true, force: true });
+    };
+
+    const intervalId = window.setInterval(poll, CALLYZER_POLL_INTERVAL_MS);
+
+    const onVisibility = () => {
+      if (!document.hidden) {
+        loadStats({ silent: true, force: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [employeeId, period, enabled]);
+  }, [employeeId, period, enabled, loadStats]);
 
-  return { stats, loading, configured, message };
+  return { stats, loading, configured, message, refresh: () => loadStats({ silent: true, force: true }) };
 }
 
-// Global in-flight deduplication for team stats
 const teamInflight = new Map();
 const teamResultCache = new Map();
 
-function fetchCallyzerTeamStats(mapped) {
+function fetchCallyzerTeamStats(mapped, { force = false } = {}) {
   const key = `callyzer_team_${mapped}`;
 
-  const cached = teamResultCache.get(key);
-  if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    return Promise.resolve(cached.data);
+  if (force) {
+    teamResultCache.delete(key);
+  } else {
+    const cached = teamResultCache.get(key);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      return Promise.resolve(cached.data);
+    }
   }
 
   if (teamInflight.has(key)) return teamInflight.get(key);
 
   const promise = apiGet(
     `/api/v1/callyzer/team-stats?period=${mapped}`,
-    { cacheTtl: 300000 }
+    { cacheTtl: force ? 0 : CACHE_TTL, skipCache: force },
   )
     .then((res) => {
       const data = res?.data ?? res;
@@ -118,30 +152,45 @@ export function useCallyzerTeamStats(period, enabled = true) {
   const [loading, setLoading] = useState(false);
   const [configured, setConfigured] = useState(false);
 
+  const loadStats = useCallback(async ({ silent = false, force = false } = {}) => {
+    if (!enabled) return;
+
+    const mapped = CALLYZER_PERIOD_MAP[period] || period || "today";
+    if (!silent) setLoading(true);
+
+    try {
+      const data = await fetchCallyzerTeamStats(mapped, { force });
+      setConfigured(Boolean(data?.configured));
+      setStats(Array.isArray(data?.stats) ? data.stats : []);
+    } catch {
+      if (!silent) setStats([]);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [period, enabled]);
+
   useEffect(() => {
     if (!enabled) return undefined;
 
-    const mapped = CALLYZER_PERIOD_MAP[period] || period || "today";
-    let cancelled = false;
-    setLoading(true);
+    loadStats({ silent: false, force: false });
 
-    fetchCallyzerTeamStats(mapped)
-      .then((data) => {
-        if (cancelled) return;
-        setConfigured(Boolean(data?.configured));
-        setStats(Array.isArray(data?.stats) ? data.stats : []);
-      })
-      .catch(() => {
-        if (!cancelled) setStats([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const poll = () => {
+      if (document.hidden) return;
+      loadStats({ silent: true, force: true });
+    };
+
+    const intervalId = window.setInterval(poll, CALLYZER_POLL_INTERVAL_MS);
+
+    const onVisibility = () => {
+      if (!document.hidden) loadStats({ silent: true, force: true });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [period, enabled]);
+  }, [period, enabled, loadStats]);
 
-  return { stats, loading, configured };
+  return { stats, loading, configured, refresh: () => loadStats({ silent: true, force: true }) };
 }

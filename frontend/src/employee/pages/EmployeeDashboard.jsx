@@ -10,6 +10,7 @@ import { Badge, StatCard, GlassCard } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
   buildPipelineChartFromLeads,
+  pipelineStageCountsKey,
   buildSourceChartFromLeads,
   buildDashboardAgenda,
   buildRecentActivityFeed,
@@ -77,7 +78,8 @@ export default function EmployeeDashboard() {
   const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
     useCallyzerStats(employee?.id, period, Boolean(employee?.id));
 
-  const pipeline = useMemo(() => buildPipelineChartFromLeads(leads), [leads]);
+  const pipelineCountsKey = useMemo(() => pipelineStageCountsKey(leads), [leads]);
+  const pipeline = useMemo(() => buildPipelineChartFromLeads(leads), [pipelineCountsKey, leads]);
   const sourceChart = useMemo(() => buildSourceChartFromLeads(leads), [leads]);
   const summary = useMemo(() => getEmpPipelineSummary(leads), [leads]);
   const agenda = useMemo(
@@ -126,7 +128,7 @@ export default function EmployeeDashboard() {
     },
     {
       label: "Converted",
-      value: String(leads.filter((l) => l.status === "converted").length),
+      value: String(summary.converted ?? leads.filter((l) => l.status === "converted").length),
       change: summary.total ? `${summary.winRate}% rate` : "—",
       icon: CheckCircle2,
       tone: "success",
@@ -348,7 +350,7 @@ export default function EmployeeDashboard() {
                     }}
                     formatter={(val) => [`${val} leads`, "Count"]}
                   />
-                  <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={isMobile ? 11 : 16}>
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={isMobile ? 11 : 16} isAnimationActive={false}>
                     {pipeline.map((entry) => (
                       <Cell key={entry.label} fill={entry.color} fillOpacity={0.85} />
                     ))}

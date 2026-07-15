@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "./AuthContext.jsx";
 import {
@@ -25,8 +25,20 @@ import {
   extractApiSopList,
   readCachedEmployeeSops,
   persistEmployeeSops,
+  getEmpStageMeta,
+  mapEmpLeadKanbanStage,
+  formatEmpPipelineValue,
+  mergeCallsById,
+  resolvePipelineStageLabel,
+  pipelineStageCountsKey,
+  isFollowUpCompleted,
 } from "../data/employeeMock.js";
 import { apiGet, apiPost, apiPut, apiPatch, invalidateCache, shouldPersistToApi } from "../lib/api.js";
+import {
+  applyFollowUpOutcomes,
+  clearFollowUpOutcome,
+  persistFollowUpOutcome,
+} from "../lib/followUpOutcomes.js";
 import {
   getCrmHeaders,
   mapApiEmployee,
@@ -41,18 +53,24 @@ import {
 import {
   apiLeadToEmployee,
   temperatureToApi,
+  workflowStatusFromTemperature,
   employeeStagePatch,
   unwrapApiData,
   unwrapApiList,
   mergeFetchedList,
   replaceFetchedList,
   unwrapWorkspacePayload,
+  fetchAllEmployeeLeads,
 } from "../lib/leadSync.js";
+import { invalidateCallyzerStatsCache } from "../lib/useCallyzerStats.js";
 
 const EmployeeContext = createContext(null);
 
 const EMPLOYEE_CACHE_TTL = 60_000;
+const CALLYZER_SYNC_INTERVAL_MS = 45_000;
 const EMPLOYEE_LIST_CACHE_TTL = 5 * 60 * 1000;
+const WORKSPACE_SNAPSHOT_PREFIX = "emp_workspace_v2:";
+const WORKSPACE_SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
 
 function initialsFromName(name) {
@@ -67,6 +85,35 @@ function readJsonStorage(key, fallback) {
     return JSON.parse(saved);
   } catch {
     return fallback();
+  }
+}
+
+function readWorkspaceSnapshot(employeeId) {
+  if (!employeeId || typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`${WORKSPACE_SNAPSHOT_PREFIX}${employeeId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || Date.now() - (parsed.ts || 0) > WORKSPACE_SNAPSHOT_MAX_AGE_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistWorkspaceSnapshot(employeeId, { calls: callList, leads: leadList }) {
+  if (!employeeId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${WORKSPACE_SNAPSHOT_PREFIX}${employeeId}`,
+      JSON.stringify({
+        calls: Array.isArray(callList) ? callList.slice(0, 200) : [],
+        leads: Array.isArray(leadList) ? leadList.slice(0, 5000) : [],
+        ts: Date.now(),
+      }),
+    );
+  } catch {
+    /* storage full — ignore */
   }
 }
 
@@ -105,6 +152,24 @@ function listUpdaterForSession() {
   return getAuthenticatedEmployeeId() ? replaceFetchedList : mergeFetchedList;
 }
 
+function mapFollowUpsFromApi(items, leadList = []) {
+  const mapped = items.map((f) => followUpFromApi(f, leadList));
+  return applyFollowUpOutcomes(mapped, { isCompleted: isFollowUpCompleted });
+}
+
+function applyLeadsIfChanged(prev, incoming) {
+  const next = listUpdaterForSession()(prev, incoming);
+  if (
+    prev === next
+    || (Array.isArray(prev) && Array.isArray(next)
+      && prev.length === next.length
+      && pipelineStageCountsKey(prev) === pipelineStageCountsKey(next))
+  ) {
+    return prev;
+  }
+  return next;
+}
+
 function filterLeadsForEmployee(leadList, employeeId, { trustServer = false } = {}) {
   if (!Array.isArray(leadList)) return [];
   if (trustServer || !employeeId) return leadList;
@@ -138,20 +203,29 @@ export function EmployeeProvider({ children }) {
     if (fromAuth) return fromAuth;
     return { ...CURRENT_EMPLOYEE, id: null, name: "Employee" };
   });
+  const initialBoot = readBootstrappedEmployee();
+  const initialSnapshot = initialBoot?.id ? readWorkspaceSnapshot(initialBoot.id) : null;
   const [linkError, setLinkError] = useState(null);
   const [workspaceError, setWorkspaceError] = useState(null);
-  const [leads, setLeads] = useState([]);
+  const [leads, setLeads] = useState(() => initialSnapshot?.leads ?? []);
+  const leadsRef = useRef(leads);
+  const syncCallyzerInFlightRef = useRef(false);
+  const syncCallyzerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [usingApi, setUsingApi] = useState(() => typeof window !== "undefined");
 
   const [tasks, setTasksState] = useState({});
   const [followUps, setFollowUpsState] = useState([]);
-  const [calls, setCalls] = useState([]);
+  const [calls, setCalls] = useState(() => initialSnapshot?.calls ?? []);
   const [meetingsUpcoming, setMeetingsUpcoming] = useState([]);
   const [meetingsHistory, setMeetingsHistory] = useState([]);
   const [activities, setActivities] = useState({});
   const [sops, setSopsState] = useState([]);
   const [teamEmployees, setTeamEmployees] = useState([]);
+
+  useEffect(() => {
+    leadsRef.current = leads;
+  }, [leads]);
 
   const resolveApiEmployeeId = useCallback(async (preferredId, preferredProfile) => {
     const authEmployeeId = getAuthenticatedEmployeeId();
@@ -194,7 +268,7 @@ export function EmployeeProvider({ children }) {
   }, [employee, teamEmployees]);
 
   const loadEmployeeWorkspace = useCallback(async (empId, empProfile, options = {}) => {
-    const { forceRefresh = false } = options;
+    const { forceRefresh = false, syncCallyzer = false } = options;
     const authEmployeeId = getAuthenticatedEmployeeId();
     try {
       let resolvedId = authEmployeeId || empId;
@@ -205,7 +279,8 @@ export function EmployeeProvider({ children }) {
       if (!dashboardPath) {
         throw new Error("Could not resolve employee workspace");
       }
-      const res = await apiGet(dashboardPath, {
+      const syncParam = syncCallyzer ? "1" : "0";
+      const res = await apiGet(`${dashboardPath}?syncCallyzer=${syncParam}`, {
         headers: getCrmHeaders("employee", empProfile),
         cacheTtl: forceRefresh ? 0 : EMPLOYEE_CACHE_TTL,
         skipCache: forceRefresh,
@@ -229,20 +304,27 @@ export function EmployeeProvider({ children }) {
       const applyList = listUpdaterForSession();
 
       if (workspaceLeads) {
-        setLeads(() => applyList([], workspaceLeads));
+        setLeads((prev) => applyLeadsIfChanged(prev, workspaceLeads));
       }
 
       if (Array.isArray(data.followups)) {
         setFollowUpsState(() => {
-          const next = data.followups.map((f) => followUpFromApi(f, workspaceLeads || []));
+          const next = mapFollowUpsFromApi(data.followups, workspaceLeads || []);
           return applyList([], next);
         });
       }
 
+      let nextCalls = null;
       if (Array.isArray(data.calls)) {
-        setCalls(() => {
-          const next = data.calls.map((c) => callFromApi(c, workspaceLeads || []));
-          return applyList([], next);
+        nextCalls = data.calls.map((c) => callFromApi(c, workspaceLeads || []));
+        setCalls(() => applyList([], nextCalls));
+      }
+
+      if (scopeId && (workspaceLeads || nextCalls)) {
+        const prior = readWorkspaceSnapshot(scopeId);
+        persistWorkspaceSnapshot(scopeId, {
+          calls: nextCalls ?? prior?.calls ?? [],
+          leads: workspaceLeads ?? prior?.leads ?? [],
         });
       }
 
@@ -289,20 +371,16 @@ export function EmployeeProvider({ children }) {
       if (!authEmployeeId && isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
         resolvedId = await resolveApiEmployeeId(empId, empProfile);
       }
-      const leadsPath = employeeResourcePath(resolvedId, "leads");
-      if (!leadsPath) return false;
-      const res = await apiGet(leadsPath, {
+      if (!resolvedId || isMockEmployeeId(resolvedId, MOCK_EMPLOYEE_ID)) return false;
+      const items = await fetchAllEmployeeLeads(apiGet, resolvedId, {
         headers: getCrmHeaders("employee", empProfile),
-        cacheTtl: EMPLOYEE_CACHE_TTL,
       });
-      const items = unwrapApiList(res);
-      if (!items) return false;
       const mapped = filterLeadsForEmployee(
         items.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
         authEmployeeId || resolvedId,
         { trustServer: Boolean(authEmployeeId) },
       );
-      setLeads(() => listUpdaterForSession()([], mapped));
+      setLeads((prev) => applyLeadsIfChanged(prev, mapped));
       setUsingApi(true);
       setWorkspaceError(null);
       return true;
@@ -350,7 +428,7 @@ export function EmployeeProvider({ children }) {
       if (!items) return false;
       setFollowUpsState((prev) => listUpdaterForSession()(
         prev,
-        items.map((f) => followUpFromApi(f, leadList)),
+        mapFollowUpsFromApi(items, leadList),
       ));
       setUsingApi(true);
       return true;
@@ -358,6 +436,82 @@ export function EmployeeProvider({ children }) {
       return false;
     }
   }, [employee, leads, resolveApiEmployeeId]);
+
+  const refreshCalls = useCallback(async (empId = employee.id, empProfile = employee, leadList = leads) => {
+    try {
+      const authEmployeeId = getAuthenticatedEmployeeId();
+      let resolvedId = authEmployeeId || empId;
+      if (!authEmployeeId && isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
+        resolvedId = await resolveApiEmployeeId(empId, empProfile);
+      }
+      const callsPath = employeeResourcePath(resolvedId, "calls");
+      if (!callsPath) return false;
+      const res = await apiGet(callsPath, {
+        headers: getCrmHeaders("employee", empProfile),
+        cacheTtl: 0,
+        skipCache: true,
+      });
+      const items = unwrapApiList(res);
+      if (!items) return false;
+      const mapped = items.map((c) => callFromApi(c, leadList));
+      setCalls((prev) => mergeCallsById(prev, mapped));
+      setUsingApi(true);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [employee, leads, resolveApiEmployeeId]);
+
+  const syncCallyzerData = useCallback(async () => {
+    if (!shouldPersistToApi(usingApi) || !employee?.id || syncCallyzerInFlightRef.current) return;
+
+    syncCallyzerInFlightRef.current = true;
+    try {
+      const authEmployeeId = getAuthenticatedEmployeeId();
+      let resolvedId = authEmployeeId || employee.id;
+      if (!authEmployeeId && isMockEmployeeId(employee.id, MOCK_EMPLOYEE_ID)) {
+        resolvedId = await resolveApiEmployeeId(employee.id, employee);
+      }
+
+      const leadsPath = employeeResourcePath(resolvedId, "leads");
+      const callsPath = employeeResourcePath(resolvedId, "calls");
+      if (!callsPath) return;
+
+      invalidateCache("/api/v1/employee/");
+      invalidateCallyzerStatsCache(employee.id);
+
+      const headers = getCrmHeaders("employee", employee);
+      const fetchOpts = { headers, cacheTtl: 0, skipCache: true };
+      const [leadItems, callsRes] = await Promise.all([
+        resolvedId && !isMockEmployeeId(resolvedId, MOCK_EMPLOYEE_ID)
+          ? fetchAllEmployeeLeads(apiGet, resolvedId, { headers })
+          : Promise.resolve(null),
+        apiGet(callsPath, fetchOpts),
+      ]);
+
+      let mappedLeads = leadsRef.current;
+      if (Array.isArray(leadItems)) {
+        mappedLeads = filterLeadsForEmployee(
+          leadItems.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
+          resolvedId,
+          { trustServer: Boolean(authEmployeeId) },
+        );
+        setLeads((prev) => applyLeadsIfChanged(prev, mappedLeads));
+        leadsRef.current = applyLeadsIfChanged(leadsRef.current, mappedLeads);
+      }
+
+      const callItems = unwrapApiList(callsRes);
+      if (callItems) {
+        const mappedCalls = callItems.map((c) => callFromApi(c, mappedLeads));
+        setCalls((prev) => mergeCallsById(prev, mappedCalls));
+        persistWorkspaceSnapshot(resolvedId, { calls: mappedCalls, leads: mappedLeads });
+      }
+    } catch {
+      /* silent background sync */
+    } finally {
+      syncCallyzerInFlightRef.current = false;
+    }
+  }, [employee, resolveApiEmployeeId, usingApi]);
 
   const resolveAssigneeId = useCallback(async () => {
     const authEmployeeId = getAuthenticatedEmployeeId();
@@ -656,22 +810,32 @@ export function EmployeeProvider({ children }) {
   }, [employee, leads, setFollowUps, setTasks, usingApi, resolveApiEmployeeId, refreshFollowUps]);
 
   const completeFollowUp = useCallback(async (followUpId) => {
-    setFollowUps((prev) => prev.map((f) => (f.id === followUpId ? { ...f, done: true } : f)));
+    if (!followUpId) return;
+
+    const completedAt = new Date().toISOString();
+    const completedTime = formatFollowUpCompletedAt(completedAt);
+
+    setFollowUps((prev) => prev.map((f) => (
+      String(f.id) === String(followUpId)
+        ? { ...f, done: true, status: "completed", completedAt, completedTime }
+        : f
+    )));
+    clearFollowUpOutcome(followUpId);
     setTasks((prev) => {
       const next = { ...prev };
       Object.keys(next).forEach((date) => {
         next[date] = (next[date] || []).map((t) => (
-          t.followUpId === followUpId ? { ...t, done: true } : t
+          String(t.followUpId) === String(followUpId) ? { ...t, done: true } : t
         ));
       });
       return next;
     });
 
-    if (!shouldPersistToApi(usingApi) || !followUpId) return;
+    if (!shouldPersistToApi(usingApi)) return;
 
     try {
       await apiPatch(`/api/v1/employee/followups/${followUpId}/complete`, {}, { headers: getCrmHeaders() });
-      invalidateCache("/api/v1");
+      invalidateCache("/api/v1/employee/");
     } catch (err) {
       toast.error(err.message || "Could not mark follow-up complete on server");
     }
@@ -698,10 +862,11 @@ export function EmployeeProvider({ children }) {
         return {
           ...f,
           done: true,
+          status: "completed",
           completedWithMom: true,
           completedAt,
           completedTime,
-          momSnippet: typeof mom === "string" ? mom.slice(0, 160) : f.momSnippet,
+          momSnippet: typeof mom === "string" && mom.trim() ? mom.slice(0, 160) : f.momSnippet,
         };
       });
       return found ? next : prev;
@@ -840,12 +1005,12 @@ export function EmployeeProvider({ children }) {
     const prevSnapshot = current ? { ...current } : null;
 
     setLeads((prev) => prev.map((l) => {
-      if (l.id !== leadId) return l;
+      if (String(l.id) !== String(leadId)) return l;
       return {
         ...l,
         stage: stageLabel,
-        status: patch.employeeStatus,
         pipelineStage: stageLabel,
+        status: patch.employeeStatus || l.status,
         assignmentStatus: fromNewAssigned ? "accepted" : l.assignmentStatus,
         acceptedAt,
       };
@@ -857,10 +1022,11 @@ export function EmployeeProvider({ children }) {
           stage: stageLabel,
           status: patch.employeeStatus || stageLabel,
         }, { headers: getCrmHeaders() });
-        invalidateCache("/api/v1");
+        invalidateCache("/api/v1/employee/");
+        invalidateCache(`/api/v1/leads/${leadId}`);
       } catch (err) {
         if (prevSnapshot) {
-          setLeads((prev) => prev.map((l) => (l.id === leadId ? prevSnapshot : l)));
+          setLeads((prev) => prev.map((l) => (String(l.id) === String(leadId) ? prevSnapshot : l)));
         }
         toast.error(err.message || "Stage update failed");
         throw err;
@@ -883,25 +1049,171 @@ export function EmployeeProvider({ children }) {
     }
   }, [usingApi]);
 
+  const markFollowUpNotPicked = useCallback(async (followUpId, { leadId, leadName } = {}) => {
+    let matchedId = followUpId;
+
+    setFollowUps((prev) => {
+      let found = false;
+      const next = prev.map((f) => {
+        if (isFollowUpCompleted(f)) return f;
+        const idMatch = followUpId && String(f.id) === String(followUpId);
+        const leadIdMatch = leadId && String(f.leadId) === String(leadId);
+        const nameMatch = leadName && String(f.name || "").trim().toLowerCase() === String(leadName).trim().toLowerCase();
+        if (!idMatch && !leadIdMatch && !nameMatch) return f;
+        found = true;
+        matchedId = f.id;
+        const noteBase = (f.note || "Call follow-up scheduled").replace(/ · Not picked/gi, "").replace(/ · Call again/gi, "");
+        return {
+          ...f,
+          done: false,
+          status: "pending",
+          notPicked: true,
+          lastCallOutcome: "not_picked",
+          note: `${noteBase} · Not picked`,
+        };
+      });
+      return found ? next : prev;
+    });
+
+    if (matchedId) persistFollowUpOutcome(matchedId, "not_picked");
+    if (leadId) {
+      try {
+        await updateLeadTemperature(leadId, "notpick");
+      } catch {
+        /* local follow-up state still updated */
+      }
+    }
+    return matchedId;
+  }, [setFollowUps, updateLeadTemperature]);
+
+  const markFollowUpCallAgain = useCallback(async (followUpId, { leadId, leadName } = {}) => {
+    let matchedId = followUpId;
+
+    setFollowUps((prev) => {
+      let found = false;
+      const next = prev.map((f) => {
+        if (isFollowUpCompleted(f)) return f;
+        const idMatch = followUpId && String(f.id) === String(followUpId);
+        const leadIdMatch = leadId && String(f.leadId) === String(leadId);
+        const nameMatch = leadName && String(f.name || "").trim().toLowerCase() === String(leadName).trim().toLowerCase();
+        if (!idMatch && !leadIdMatch && !nameMatch) return f;
+        found = true;
+        matchedId = f.id;
+        const noteBase = (f.note || "Call follow-up scheduled").replace(/ · Not picked/gi, "").replace(/ · Call again/gi, "");
+        return {
+          ...f,
+          done: false,
+          status: "pending",
+          notPicked: false,
+          lastCallOutcome: "call_again",
+          note: `${noteBase} · Call again`,
+        };
+      });
+      return found ? next : prev;
+    });
+
+    if (matchedId) persistFollowUpOutcome(matchedId, "call_again");
+    return matchedId;
+  }, [setFollowUps]);
+
   const editLeadDetails = useCallback(async (leadId, updates) => {
-    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates, stage: updates.pipelineStage || l.stage, pipelineStage: updates.pipelineStage || l.pipelineStage } : l)));
+    const normalizedUpdates = { ...updates };
+    const stageUpdate = updates.pipelineStage !== undefined
+      ? resolvePipelineStageLabel(updates.pipelineStage, updates.status || "")
+      : undefined;
+    if (stageUpdate) {
+      normalizedUpdates.pipelineStage = stageUpdate;
+      normalizedUpdates.stage = stageUpdate;
+    }
+
+    const prevSnapshot = leads.find((l) => String(l.id) === String(leadId));
+
+    setLeads((prev) => prev.map((l) => (
+      String(l.id) === String(leadId)
+        ? {
+          ...l,
+          ...normalizedUpdates,
+          ...(updates.name !== undefined ? { name: updates.name } : {}),
+          ...(updates.status !== undefined ? { status: updates.status } : {}),
+          stage: normalizedUpdates.stage || l.stage,
+          pipelineStage: normalizedUpdates.pipelineStage || l.pipelineStage,
+          ...(updates.expectedRevenue !== undefined
+            ? {
+              expectedRevenue: Number(updates.expectedRevenue) || 0,
+              budget: Number(updates.expectedRevenue) > 0
+                ? formatEmpPipelineValue(Number(updates.expectedRevenue))
+                : "—",
+            }
+            : {}),
+        }
+        : l
+    )));
 
     if (shouldPersistToApi(usingApi)) {
       try {
         const payload = {};
         if (updates.name !== undefined) payload.leadName = updates.name;
-        if (updates.status !== undefined) payload.temperature = temperatureToApi(updates.status);
+        if (updates.status !== undefined) {
+          payload.temperature = temperatureToApi(updates.status);
+          payload.status = workflowStatusFromTemperature(updates.status);
+        }
         if (updates.phone !== undefined) payload.phone = updates.phone;
         if (updates.email !== undefined) payload.email = updates.email;
-        if (updates.pipelineStage !== undefined) payload.pipelineStage = updates.pipelineStage;
+        if (updates.expectedRevenue !== undefined) {
+          payload.expectedRevenue = Number(updates.expectedRevenue) || 0;
+        }
 
-        await apiPut(`/api/v1/leads/${leadId}`, payload, { headers: getCrmHeaders() });
-        invalidateCache("/api/v1");
+        if (Object.keys(payload).length) {
+          await apiPut(`/api/v1/leads/${leadId}`, payload, { headers: getCrmHeaders() });
+        }
+
+        if (stageUpdate) {
+          const stagePatch = employeeStagePatch(stageUpdate, updates.status || prevSnapshot?.status);
+          await apiPatch(`/api/v1/leads/${leadId}/stage`, {
+            stage: stageUpdate,
+            status: stagePatch.employeeStatus || stageUpdate,
+          }, { headers: getCrmHeaders() });
+        }
+
+        const res = await apiGet(`/api/v1/leads/${leadId}`, {
+          headers: getCrmHeaders(),
+          cacheTtl: 0,
+          skipCache: true,
+        });
+        const updated = apiLeadToEmployee(res?.data || res, AVATAR_COLORS);
+        if (updated?.id) {
+          setLeads((prev) => prev.map((l) => {
+            if (String(l.id) !== String(leadId)) return l;
+            return {
+              ...updated,
+              ...(updates.name !== undefined ? { name: updates.name } : {}),
+              ...(updates.status !== undefined ? { status: updates.status } : {}),
+              stage: stageUpdate || updated.stage,
+              pipelineStage: stageUpdate || updated.pipelineStage,
+              ...(updates.expectedRevenue !== undefined
+                ? {
+                  expectedRevenue: Number(updates.expectedRevenue) || 0,
+                  budget: Number(updates.expectedRevenue) > 0
+                    ? formatEmpPipelineValue(Number(updates.expectedRevenue))
+                    : "—",
+                }
+                : {}),
+            };
+          }));
+        }
+        invalidateCache("/api/v1/employee/");
+        invalidateCache(`/api/v1/leads/${leadId}`);
       } catch (err) {
+        if (prevSnapshot) {
+          setLeads((prev) => prev.map((l) => (
+            String(l.id) === String(leadId) ? prevSnapshot : l
+          )));
+        }
         toast.error(err.message || "Lead details update failed");
+        throw err;
       }
     }
-  }, [usingApi]);
+  }, [usingApi, leads]);
 
   const refreshTeamEmployees = useCallback(async () => {
     try {
@@ -1028,6 +1340,7 @@ export function EmployeeProvider({ children }) {
 
           await hydrateWorkspace(authProfile, employeeChanged);
           if (cancelled) return;
+          if (!cancelled) setLoading(false);
 
           try {
             const empRes = await apiGet("/api/v1/employees", {
@@ -1215,12 +1528,14 @@ export function EmployeeProvider({ children }) {
       if (result === "error") {
         await refreshLeads(profile.id, profile);
         await refreshTasks(profile.id, profile);
+      } else if (result === "ok") {
+        syncCallyzerData();
       }
       return result === "ok";
     } finally {
       setLoading(false);
     }
-  }, [employee, loadEmployeeWorkspace, refreshLeads, refreshTasks]);
+  }, [employee, loadEmployeeWorkspace, refreshLeads, refreshTasks, syncCallyzerData]);
 
   const startCallyzerCall = useCallback(async (lead) => {
     if (!lead?.id) {
@@ -1243,12 +1558,36 @@ export function EmployeeProvider({ children }) {
       if (data?.dialUrl) {
         window.location.href = data.dialUrl;
       }
+      window.setTimeout(() => syncCallyzerData(), 8000);
+      window.setTimeout(() => syncCallyzerData(), 20000);
       return data;
     } catch (err) {
       toast.error(err.message || "Could not start Callyzer call");
       return null;
     }
-  }, [employee, resolveApiEmployeeId]);
+  }, [employee, resolveApiEmployeeId, syncCallyzerData]);
+
+  syncCallyzerRef.current = syncCallyzerData;
+
+  useEffect(() => {
+    if (!usingApi || !employee?.id || loading) return undefined;
+
+    syncCallyzerRef.current?.();
+
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) syncCallyzerRef.current?.();
+    }, CALLYZER_SYNC_INTERVAL_MS);
+
+    const onVisibility = () => {
+      if (!document.hidden) syncCallyzerRef.current?.();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [usingApi, employee?.id, loading]);
 
   const value = useMemo(() => ({
     employee,
@@ -1263,6 +1602,8 @@ export function EmployeeProvider({ children }) {
     scheduleFollowUp,
     completeFollowUp,
     completeFollowUpWithMom,
+    markFollowUpNotPicked,
+    markFollowUpCallAgain,
     refreshFollowUps,
     syncTaskWithFollowUp,
     leads,
@@ -1272,6 +1613,8 @@ export function EmployeeProvider({ children }) {
     updateLeadTemperature,
     editLeadDetails,
     refreshLeads,
+    refreshCalls,
+    syncCallyzerData,
     reassignLead,
     teamEmployees,
     refreshTeamEmployees,
@@ -1295,10 +1638,10 @@ export function EmployeeProvider({ children }) {
     reloadWorkspace,
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
-    followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
-    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, refreshLeads,
+    followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, markFollowUpNotPicked, markFollowUpCallAgain, refreshFollowUps,
+    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, refreshLeads, refreshCalls, syncCallyzerData,
     reassignLead, teamEmployees, refreshTeamEmployees,
-    usingApi, calls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
+    usingApi, calls, setCalls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
     workspaceError, reloadWorkspace,
   ]);

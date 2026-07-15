@@ -1,4 +1,46 @@
-import { formatEmpPipelineValue } from "../data/employeeMock.js";
+import {
+  formatEmpPipelineValue,
+  mapEmpLeadKanbanStage,
+  getEmpStageMeta,
+  EMP_KANBAN_STAGES,
+} from "../data/employeeMock.js";
+
+/** Canonical pipeline_stage values written to DB (employee kanban labels). */
+export const CANONICAL_STAGE_LABELS = EMP_KANBAN_STAGES.map((s) => s.label);
+
+/** Admin pipeline column id → canonical DB pipeline_stage label. */
+export const ADMIN_PIPELINE_TO_DB_STAGE = {
+  new: "Conversation",
+  contacted: "Conversation",
+  qualified: "Booked",
+  proposal: "Proposal Sent",
+  negotiation: "Proposal Sent",
+  closed_won: "Converted",
+  not_interested: "Not Interested",
+};
+
+export function adminPipelineIdToDbStage(adminStageId) {
+  return ADMIN_PIPELINE_TO_DB_STAGE[adminStageId] || adminStageId;
+}
+
+/** Normalize any legacy stage string to canonical employee label for display/storage. */
+export function normalizeToCanonicalStage(raw, status = "") {
+  const stageId = mapEmpLeadKanbanStage(raw, status);
+  return getEmpStageMeta(stageId).label;
+}
+
+export function getPipelineQualifiedCount(stats, stageBreakdown) {
+  if (stats?.pipelineQualified != null) return stats.pipelineQualified;
+  if (Array.isArray(stageBreakdown) && stageBreakdown.length) {
+    const booked = stageBreakdown.find((s) => s.label === "Booked")?.count || 0;
+    const showed = stageBreakdown.find((s) => s.label === "Showed up")?.count || 0;
+    return booked + showed;
+  }
+  if (stats?.booked != null || stats?.showedUp != null) {
+    return (stats.booked || 0) + (stats.showedUp || 0);
+  }
+  return 0;
+}
 
 const AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
 
@@ -17,11 +59,15 @@ export function temperatureToApi(status) {
     hot: "Hot Lead",
     warm: "Warm Lead",
     cold: "Cold Lead",
-    notpick: "Cold Lead",
-    converted: "Hot Lead",
-    ni: "Cold Lead",
+    notpick: "Not Pick",
+    converted: "Converted",
+    ni: "Not Interested",
   };
   return map[status] || "Warm Lead";
+}
+
+export function workflowStatusFromTemperature(status) {
+  return temperatureToApi(status);
 }
 
 export function formatRelativeTime(iso) {
@@ -95,6 +141,7 @@ function workflowStatusFromStage(stageRaw) {
   if (s.includes("attempted")) return "attempted";
   if (s.includes("contacted") || s.includes("qualified")) return "contacted";
   if (s.includes("booked") || s.includes("call booked")) return "booked";
+  if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up")) return "showed_up";
   if (s.includes("proposal")) return "proposal";
   if (s.includes("negotiation")) return "negotiation";
   if (s.includes("converted") || s === "won") return "converted";
@@ -120,8 +167,9 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   const name = lead.leadName || lead.lead_name || "Lead";
   const id = lead.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const rawStage = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Conversation";
   const status = normalizeEmployeeLeadStatus(lead);
-  const stage = lead.pipelineStage || lead.pipeline_stage || lead.status || "Conversation";
+  const stage = normalizeToCanonicalStage(rawStage, lead.status || status);
   const revenue = Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0);
 
   return {
@@ -180,7 +228,10 @@ export function apiLeadToAdmin(lead) {
     country: lead.country,
     source: lead.source,
     form_name: lead.formName || lead.form_name,
-    pipeline_stage: lead.pipelineStage || lead.pipeline_stage,
+    pipeline_stage: normalizeToCanonicalStage(
+      lead.pipelineStage || lead.pipeline_stage,
+      lead.status,
+    ),
     temperature: lead.temperature,
     status: lead.status,
     expected_revenue: lead.expectedRevenue ?? lead.expected_revenue,
@@ -196,26 +247,12 @@ export function apiLeadToAdmin(lead) {
 }
 
 export function employeeStagePatch(stageLabel, currentStatus) {
-  const STAGE_STATUS = {
-    Conversation: "attempted",
-    Booked: "booked",
-    "Showed up": "contacted",
-    "Proposal Sent": "proposal",
-    "New Lead": "new",
-    "Not Pick": "notpick",
-    Attempted: "attempted",
-    Contacted: "contacted",
-    Proposal: "proposal",
-    Negotiation: "negotiation",
-    Converted: "converted",
-    Closed: "ni",
-  };
-  const employeeStatus = STAGE_STATUS[stageLabel] || currentStatus;
+  const canonical = normalizeToCanonicalStage(stageLabel, currentStatus);
   return {
-    stage: stageLabel,
-    pipelineStage: stageLabel,
-    status: stageLabel,
-    employeeStatus,
+    stage: canonical,
+    pipelineStage: canonical,
+    status: canonical,
+    employeeStatus: canonical,
   };
 }
 
@@ -234,6 +271,12 @@ const PIPELINE_STAGE_MAP = [
   ["closed won", "closed_won"],
   ["converted", "closed_won"],
   ["won", "closed_won"],
+  ["proposal sent", "proposal"],
+  ["showed up", "qualified"],
+  ["showed-up", "qualified"],
+  ["show up", "qualified"],
+  ["booked", "qualified"],
+  ["conversation", "contacted"],
   ["not interested", "not_interested"],
   ["not_interested", "not_interested"],
   ["ni", "not_interested"],
@@ -243,6 +286,81 @@ const PIPELINE_STAGE_MAP = [
   ["contacted", "contacted"],
   ["new", "new"],
 ];
+
+/** Fetch all leads from paginated /api/v1/leads (admin lists were capped at 200). */
+export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPages = 40, extraQuery = {} } = {}) {
+  const all = [];
+  let page = 1;
+
+  while (page <= maxPages) {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(pageSize),
+      ...Object.fromEntries(
+        Object.entries(extraQuery).filter(([, v]) => v != null && v !== ""),
+      ),
+    });
+    const res = await apiGetFn(`/api/v1/leads?${params.toString()}`, {
+      headers,
+      skipCache: true,
+      cacheTtl: 0,
+    });
+    const items = unwrapApiData(res);
+    if (!Array.isArray(items) || items.length === 0) break;
+    all.push(...items);
+
+    const total = Number(res?.total);
+    if (Number.isFinite(total) && all.length >= total) break;
+    if (items.length < pageSize) break;
+    page += 1;
+  }
+
+  return all;
+}
+
+/** Fetch all leads for an employee (paginates when API returns partial pages). */
+export async function fetchAllEmployeeLeads(apiGetFn, employeeId, { headers, pageSize = 500, maxPages = 40, extraQuery = {} } = {}) {
+  if (!employeeId) return [];
+
+  const extra = Object.fromEntries(
+    Object.entries(extraQuery).filter(([, v]) => v != null && v !== ""),
+  );
+  const extraQs = new URLSearchParams(extra).toString();
+  const bulkPath = `/api/v1/employee/${employeeId}/leads${extraQs ? `?${extraQs}` : ""}`;
+  const bulkRes = await apiGetFn(bulkPath, { headers, skipCache: true, cacheTtl: 0 });
+  const bulkItems = unwrapApiData(bulkRes);
+  const bulkTotal = Number(bulkRes?.total);
+
+  if (Array.isArray(bulkItems) && bulkItems.length) {
+    if (!Number.isFinite(bulkTotal) || bulkItems.length >= bulkTotal) return bulkItems;
+  }
+
+  const all = Array.isArray(bulkItems) ? [...bulkItems] : [];
+  let page = Math.floor(all.length / pageSize) + 1 || 1;
+
+  while (page <= maxPages) {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(pageSize),
+      ...extra,
+    });
+    const res = await apiGetFn(`/api/v1/employee/${employeeId}/leads?${params.toString()}`, {
+      headers,
+      skipCache: true,
+      cacheTtl: 0,
+    });
+    const items = unwrapApiData(res);
+    if (!Array.isArray(items) || items.length === 0) break;
+    all.push(...items);
+
+    const total = Number(res?.total);
+    if (Number.isFinite(total) && all.length >= total) break;
+    if (items.length < pageSize) break;
+    page += 1;
+  }
+
+  return all;
+}
 
 export function apiLeadToPipeline(lead) {
   const stageRaw = String(

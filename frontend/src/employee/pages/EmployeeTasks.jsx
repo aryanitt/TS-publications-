@@ -14,24 +14,7 @@ import {
   EmpEmptyState, BtnPrimary, BtnSecondary, AvatarCircle,
   FormLabel, FormInput, FormSelect, FormGroup, FormRow, MOBILE_ACTION,
 } from "../components/EmpUI.jsx";
-
-const parseTime12 = (time24 = "14:00") => {
-  const [hStr, mStr] = (time24 || "14:00").split(":");
-  let h = parseInt(hStr || "14", 10);
-  const m = mStr || "00";
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12;
-  if (h === 0) h = 12;
-  return { hour: String(h), minute: m, ampm };
-};
-
-const formatTime24 = (hour, minute, ampm) => {
-  let h = parseInt(hour || "12", 10);
-  if (ampm === "PM" && h < 12) h += 12;
-  if (ampm === "AM" && h === 12) h = 0;
-  const hStr = String(h).padStart(2, "0");
-  return `${hStr}:${minute}`;
-};
+import { TimeOfDaySelects } from "../components/TimeOfDaySelects.jsx";
 
 const INPUT = "w-full h-10 px-3 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition";
 const LABEL = "block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5";
@@ -200,47 +183,14 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
             />
           </Field>
           <Field label="Deadline">
-            <div className="flex gap-1.5 items-center">
-              <select
-                className={`${INPUT} flex-1 text-center px-1`}
-                value={parseTime12(newTask.deadline).hour}
-                onChange={(e) => {
-                  const { minute, ampm } = parseTime12(newTask.deadline);
-                  const newTime = formatTime24(e.target.value, minute, ampm);
-                  setNewTask((p) => ({ ...p, deadline: newTime }));
-                }}
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
-              <span className="text-slate-400 font-bold">:</span>
-              <select
-                className={`${INPUT} flex-1 text-center px-1`}
-                value={parseTime12(newTask.deadline).minute}
-                onChange={(e) => {
-                  const { hour, ampm } = parseTime12(newTask.deadline);
-                  const newTime = formatTime24(hour, e.target.value, ampm);
-                  setNewTask((p) => ({ ...p, deadline: newTime }));
-                }}
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")).map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              <select
-                className={`${INPUT} w-20 text-center px-1`}
-                value={parseTime12(newTask.deadline).ampm}
-                onChange={(e) => {
-                  const { hour, minute } = parseTime12(newTask.deadline);
-                  const newTime = formatTime24(hour, minute, e.target.value);
-                  setNewTask((p) => ({ ...p, deadline: newTime }));
-                }}
-              >
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
-            </div>
+            <TimeOfDaySelects
+              value={newTask.deadline}
+              onChange={(deadline) => setNewTask((p) => ({ ...p, deadline }))}
+              selectClassName="h-10 rounded-xl bg-white border-slate-200 text-sm"
+              SelectComponent={({ className, children, ...props }) => (
+                <select className={className} {...props}>{children}</select>
+              )}
+            />
           </Field>
         </div>
 

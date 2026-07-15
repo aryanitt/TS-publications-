@@ -68,7 +68,7 @@ export default function CallyzerStatsPanel({
             </p>
           )}
         </div>
-        <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Live from Callyzer</span>
+        <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Auto-sync · Callyzer</span>
       </div>
 
       <div className={gridClass}>

@@ -5,13 +5,16 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
+import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { EMP_APP_TODAY } from "../../data/employeeMock.js";
+import { EMP_APP_TODAY, isFollowUpCompleted } from "../../data/employeeMock.js";
+import { formatIndianPhone } from "../../lib/indianFormat.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   EmpEmptyState, EmpModal, BtnPrimary, BtnSecondary, BtnGhost,
   FormLabel, FormInput, FormSelect, FormGroup, FormRow, AvatarCircle,
 } from "../components/EmpUI.jsx";
+import { TimeOfDaySelects } from "../components/TimeOfDaySelects.jsx";
 
 const URGENCY = {
   overdue: {
@@ -96,15 +99,22 @@ function CompletedFollowUpCard({ item }) {
   );
 }
 
-function FollowUpCard({ item, onCall, onDone }) {
+function FollowUpCard({ item, onCall }) {
   const u = URGENCY[item.urgency] || URGENCY.upcoming;
   const TypeIcon = TYPE_ICON[item.type] || Phone;
-  const statusLabel = item.urgency === "overdue" ? "Overdue" : item.urgency === "today" ? "Today" : "Upcoming";
+  const statusLabel = item.notPicked
+    ? "Not Picked"
+    : item.urgency === "overdue"
+      ? "Overdue"
+      : item.urgency === "today"
+        ? "Today"
+        : "Upcoming";
   const statusPill = {
     overdue: "bg-red-50 text-red-700 border-red-200",
     today: "bg-amber-50 text-amber-800 border-amber-200",
     upcoming: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  }[item.urgency] || "bg-slate-50 text-slate-600 border-slate-200";
+    notpicked: "bg-slate-100 text-slate-700 border-slate-300",
+  }[item.notPicked ? "notpicked" : item.urgency] || "bg-slate-50 text-slate-600 border-slate-200";
 
   return (
     <article className="group flex flex-col rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-2.5 sm:p-4 hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition-all duration-200 min-w-0">
@@ -112,7 +122,13 @@ function FollowUpCard({ item, onCall, onDone }) {
         <AvatarCircle initials={item.av} color={item.color} size={28} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1.5">
-            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{item.name}</p>
+            <button
+              type="button"
+              onClick={() => onCall(item)}
+              className="text-xs sm:text-sm font-bold text-slate-900 truncate text-left hover:text-rose-700 transition"
+            >
+              {item.name}
+            </button>
             <span className={`sm:hidden shrink-0 text-[7px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusPill}`}>
               {statusLabel}
             </span>
@@ -120,7 +136,7 @@ function FollowUpCard({ item, onCall, onDone }) {
           <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">{item.company}</p>
         </div>
         <span className="hidden sm:inline-flex shrink-0">
-          <Badge tone={u.tone}>{statusLabel}</Badge>
+          <Badge tone={item.notPicked ? "muted" : u.tone}>{statusLabel}</Badge>
         </span>
       </div>
 
@@ -138,56 +154,29 @@ function FollowUpCard({ item, onCall, onDone }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100">
-        <button
-          type="button"
-          onClick={() => onCall(item)}
-          className={`${CARD_BTN} bg-rose-700 text-white border-rose-700 hover:bg-rose-800`}
-        >
-          <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Call
-        </button>
-        <button
-          type="button"
-          onClick={() => onDone(item)}
-          className={`${CARD_BTN} bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-800`}
-        >
-          <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Done
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => onCall(item)}
+        className={`${CARD_BTN} mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 col-span-2 bg-rose-700 text-white border-rose-700 hover:bg-rose-800`}
+      >
+        <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> View Script &amp; Call on Callyzer
+      </button>
     </article>
   );
 }
 
-function FollowUpGrid({ items, onCall, onDone }) {
+function FollowUpGrid({ items, onCall }) {
   return (
     <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 xl:grid-cols-3 sm:gap-3">
       {items.map((item) => (
-        <FollowUpCard key={item.id} item={item} onCall={onCall} onDone={onDone} />
+        <FollowUpCard key={item.id} item={item} onCall={onCall} />
       ))}
     </div>
   );
 }
 
-const parseTime12 = (time24 = "14:00") => {
-  const [hStr, mStr] = (time24 || "14:00").split(":");
-  let h = parseInt(hStr || "14", 10);
-  const m = mStr || "00";
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12;
-  if (h === 0) h = 12;
-  return { hour: String(h), minute: m, ampm };
-};
-
-const formatTime24 = (hour, minute, ampm) => {
-  let h = parseInt(hour || "12", 10);
-  if (ampm === "PM" && h < 12) h += 12;
-  if (ampm === "AM" && h === 12) h = 0;
-  const hStr = String(h).padStart(2, "0");
-  return `${hStr}:${minute}`;
-};
-
 const EMPTY_SCHEDULE = {
-  leadName: "",
+  leadId: "",
   date: EMP_APP_TODAY,
   time: "14:00",
   type: "Call",
@@ -195,7 +184,7 @@ const EMPTY_SCHEDULE = {
 };
 
 export default function EmployeeFollowUps() {
-  const { leads, followUps, scheduleFollowUp, completeFollowUp } = useEmployee();
+  const { leads, followUps, scheduleFollowUp } = useEmployee();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
@@ -204,18 +193,25 @@ export default function EmployeeFollowUps() {
   const [form, setForm] = useState(EMPTY_SCHEDULE);
 
   useEffect(() => {
+    const urlFilter = searchParams.get("filter");
+    if (urlFilter && FILTERS.some((f) => f.id === urlFilter)) {
+      setFilter(urlFilter);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (searchParams.get("action") === "add") setModalOpen(true);
   }, [searchParams]);
 
   const openFollowUps = useMemo(
-    () => followUps.filter((f) => !f.done && !f.completedWithMom),
+    () => followUps.filter((f) => !isFollowUpCompleted(f)),
     [followUps],
   );
 
   const completedFollowUps = useMemo(
     () => followUps
-      .filter((f) => f.completedWithMom && f.completedAt)
-      .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt)),
+      .filter((f) => isFollowUpCompleted(f))
+      .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0)),
     [followUps],
   );
 
@@ -236,9 +232,10 @@ export default function EmployeeFollowUps() {
   }), [filterCounts]);
 
   const filtered = useMemo(() => {
-    if (filter === "completed") return completedFollowUps;
-    let list = openFollowUps;
-    if (filter !== "all") list = list.filter((f) => f.urgency === filter);
+    let list = filter === "completed" ? completedFollowUps : openFollowUps;
+    if (filter !== "all" && filter !== "completed") {
+      list = list.filter((f) => f.urgency === filter);
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -246,7 +243,8 @@ export default function EmployeeFollowUps() {
           f.name.toLowerCase().includes(q) ||
           f.company.toLowerCase().includes(q) ||
           f.note.toLowerCase().includes(q) ||
-          f.type.toLowerCase().includes(q),
+          f.type.toLowerCase().includes(q) ||
+          (f.momSnippet || "").toLowerCase().includes(q),
       );
     }
     return list;
@@ -268,6 +266,21 @@ export default function EmployeeFollowUps() {
     return list;
   }, [filter, search, completedFollowUps]);
 
+  const leadOptions = useMemo(() => {
+    return [...leads]
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" }))
+      .map((l) => {
+        const phone = formatIndianPhone(l.phone);
+        const company = l.company && l.company !== "—" ? l.company : "";
+        return {
+          value: String(l.id),
+          label: l.name || "Unnamed lead",
+          subtitle: phone !== "—" ? phone : (company || ""),
+          searchText: `${l.name || ""} ${l.phone || ""} ${l.company || ""}`,
+        };
+      });
+  }, [leads]);
+
   const grouped = useMemo(() => {
     if (filter !== "all") return null;
     return ["overdue", "today", "upcoming"]
@@ -280,13 +293,11 @@ export default function EmployeeFollowUps() {
   }, [filter, filtered]);
 
   const handleCall = (item) => {
-    const params = new URLSearchParams({ lead: item.name });
+    const params = new URLSearchParams();
+    if (item.leadId) params.set("leadId", String(item.leadId));
+    if (item.name) params.set("lead", item.name);
     if (item.id) params.set("followUp", String(item.id));
     navigate(`/employee/call-assistant?${params.toString()}`);
-  };
-  const handleDone = (item) => {
-    completeFollowUp(item.id);
-    toast.success(`${item.name} marked done`);
   };
 
   const closeModal = () => {
@@ -297,7 +308,7 @@ export default function EmployeeFollowUps() {
   };
 
   const handleSchedule = () => {
-    if (!form.leadName) {
+    if (!form.leadId) {
       toast.error("Select a lead");
       return;
     }
@@ -305,15 +316,19 @@ export default function EmployeeFollowUps() {
       toast.error("Pick date and time");
       return;
     }
-    const lead = leads.find((l) => l.name === form.leadName);
+    const lead = leads.find((l) => String(l.id) === String(form.leadId));
+    if (!lead) {
+      toast.error("Selected lead not found");
+      return;
+    }
     scheduleFollowUp({
-      leadName: form.leadName,
-      company: lead?.company,
+      leadName: lead.name,
+      company: lead.company,
       type: form.type,
       date: form.date,
       time: form.time,
       note: form.note,
-      leadId: lead?.id,
+      leadId: lead.id,
     });
     closeModal();
     setForm(EMPTY_SCHEDULE);
@@ -357,7 +372,7 @@ export default function EmployeeFollowUps() {
           value={String(stats.total)}
           icon={List}
           tone="primary"
-          change={`${stats.completed} with MOM`}
+          change={`${stats.completed} completed`}
           changeTone="success"
           sub=""
         />
@@ -420,7 +435,7 @@ export default function EmployeeFollowUps() {
 
           <p className="text-[9px] sm:text-[11px] font-semibold text-slate-400">
             {filterCounts.overdue} overdue · {filterCounts.today} today · {filtered.length} open shown
-            <span className="hidden sm:inline"> · {filterCounts.upcoming} upcoming · {filterCounts.completed} completed (MOM)</span>
+            <span className="hidden sm:inline"> · {filterCounts.upcoming} upcoming · {filterCounts.completed} completed</span>
           </p>
         </div>
       </GlassCard>
@@ -431,7 +446,7 @@ export default function EmployeeFollowUps() {
             <EmpEmptyState
               icon="✅"
               title="No completed follow-ups yet"
-              subtitle="Call a lead, save the MOM in Call Assistant, and they will appear here with date & time"
+              subtitle="Mark follow-ups done or finish a call — completed items appear here with date & time"
             />
           </GlassCard>
         ) : (
@@ -448,7 +463,7 @@ export default function EmployeeFollowUps() {
                   </span>
                 </div>
                 <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
-                  Call logged with Minutes of Meeting saved
+                  Finished follow-ups with completion date & time
                 </p>
               </div>
             </div>
@@ -500,7 +515,7 @@ export default function EmployeeFollowUps() {
                       </p>
                     </div>
                   </div>
-                  <FollowUpGrid items={items} onCall={handleCall} onDone={handleDone} />
+                  <FollowUpGrid items={items} onCall={handleCall} />
                 </GlassCard>
               );
             })
@@ -514,7 +529,7 @@ export default function EmployeeFollowUps() {
                   <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium">{filtered.length} follow-ups</p>
                 </div>
               </div>
-              <FollowUpGrid items={filtered} onCall={handleCall} onDone={handleDone} />
+              <FollowUpGrid items={filtered} onCall={handleCall} />
             </GlassCard>
           )}
 
@@ -532,7 +547,7 @@ export default function EmployeeFollowUps() {
                     </span>
                   </div>
                   <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
-                    Call finished and MOM saved — with date & time
+                    Finished follow-ups with completion date & time
                   </p>
                 </div>
               </div>
@@ -560,15 +575,15 @@ export default function EmployeeFollowUps() {
       >
         <FormGroup>
           <FormLabel>Lead</FormLabel>
-          <FormSelect
-            value={form.leadName}
-            onChange={(e) => setForm((p) => ({ ...p, leadName: e.target.value }))}
-          >
-            <option value="">Select lead…</option>
-            {leads.map((l) => (
-              <option key={l.id} value={l.name}>{l.name} — {l.company}</option>
-            ))}
-          </FormSelect>
+          <CustomSelect
+            value={form.leadId}
+            onChange={(val) => setForm((p) => ({ ...p, leadId: val }))}
+            options={leadOptions}
+            searchable
+            searchPlaceholder="Search by name or phone number…"
+            placeholder="Select lead…"
+            compact
+          />
         </FormGroup>
         <FormRow>
           <FormGroup>
@@ -581,47 +596,10 @@ export default function EmployeeFollowUps() {
           </FormGroup>
           <FormGroup>
             <FormLabel>Time</FormLabel>
-            <div className="flex gap-1.5 items-center">
-              <FormSelect
-                value={parseTime12(form.time).hour}
-                onChange={(e) => {
-                  const { minute, ampm } = parseTime12(form.time);
-                  const newTime = formatTime24(e.target.value, minute, ampm);
-                  setForm((p) => ({ ...p, time: newTime }));
-                }}
-                className="flex-1 text-center"
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </FormSelect>
-              <span className="text-slate-400 font-bold">:</span>
-              <FormSelect
-                value={parseTime12(form.time).minute}
-                onChange={(e) => {
-                  const { hour, ampm } = parseTime12(form.time);
-                  const newTime = formatTime24(hour, e.target.value, ampm);
-                  setForm((p) => ({ ...p, time: newTime }));
-                }}
-                className="flex-1 text-center"
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")).map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </FormSelect>
-              <FormSelect
-                value={parseTime12(form.time).ampm}
-                onChange={(e) => {
-                  const { hour, minute } = parseTime12(form.time);
-                  const newTime = formatTime24(hour, minute, e.target.value);
-                  setForm((p) => ({ ...p, time: newTime }));
-                }}
-                className="w-20 text-center"
-              >
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </FormSelect>
-            </div>
+            <TimeOfDaySelects
+              value={form.time}
+              onChange={(time) => setForm((p) => ({ ...p, time }))}
+            />
           </FormGroup>
         </FormRow>
         <FormGroup>

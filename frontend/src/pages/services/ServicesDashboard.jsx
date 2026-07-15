@@ -12,8 +12,7 @@ import toast from "react-hot-toast";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import {
   getAllServices, SERVICE_CATEGORIES, SERVICE_STATUSES, SERVICE_PRICING_SORT,
-  SALES_DISTRIBUTION, SALES_TOTAL, REVENUE_TRAJECTORY,
-  formatServiceMoney, formatServicePriceLabel, serviceBadgeTone, registerService,
+  formatServiceMoney, formatServicePriceLabel, serviceBadgeTone,
 } from "../../data/servicesMock.js";
 import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
 import { formatIndianNumber } from "../../lib/indianFormat.js";
@@ -58,7 +57,7 @@ function ChartCardHeader({ title, subtitle }) {
 
 export default function ServicesDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [catalog, setCatalog] = useState(() => getAllServices());
+  const [catalog, setCatalog] = useState([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -73,7 +72,7 @@ export default function ServicesDashboard() {
           setCatalog(data.services.map(normalizeCatalogService));
         }
       } catch {
-        // keep getAllServices mock
+        setCatalog([]);
       }
     })();
   }, []);
@@ -103,14 +102,20 @@ export default function ServicesDashboard() {
     return [...salesWithPct].sort((a, b) => b.sales - a.sales)[0];
   }, [salesWithPct]);
 
+  const revenueTrajectory = useMemo(
+    () => catalog.map((s, i) => ({ period: `S${i + 1}`, revenue: Number(s.revenue) || 0, name: s.name })),
+    [catalog],
+  );
+
   const revenueStats = useMemo(() => {
-    const values = REVENUE_TRAJECTORY.map((d) => d.revenue);
+    const values = revenueTrajectory.map((d) => d.revenue);
+    if (!values.length) return { start: 0, peak: 0, latest: 0, growth: 0 };
     const start = values[0];
     const peak = Math.max(...values);
     const latest = values[values.length - 1];
     const growth = start ? Math.round(((latest - start) / start) * 100) : 0;
     return { start, peak, latest, growth };
-  }, []);
+  }, [revenueTrajectory]);
 
   const openAddService = () => setAddOpen(true);
 
@@ -121,15 +126,10 @@ export default function ServicesDashboard() {
         invalidateCache("/api/services");
         const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
         if (data.services?.length) setCatalog(data.services.map(normalizeCatalogService));
-        else {
-          registerService(newService);
-          setCatalog(getAllServices());
-        }
+        else setCatalog([]);
         toast.success(`${newService.name} saved to catalog`);
       } catch {
-        registerService(newService);
-        setCatalog(getAllServices());
-        toast.success(`${newService.name} added locally (API unavailable)`);
+        toast.error("Could not save service — API unavailable");
       }
     }
     setAddOpen(false);
@@ -236,7 +236,7 @@ export default function ServicesDashboard() {
           <div className="flex-1 min-h-[148px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
-                data={REVENUE_TRAJECTORY}
+                data={revenueTrajectory.length ? revenueTrajectory : [{ period: "—", revenue: 0 }]}
                 margin={{ top: 6, right: 8, left: 0, bottom: 0 }}
               >
                 <defs>

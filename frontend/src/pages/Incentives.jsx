@@ -16,6 +16,8 @@ import {
 import { useIsMobile } from "../hooks/use-mobile.tsx";
 import toast from "react-hot-toast";
 import { apiGet } from "../lib/api.js";
+import { apiLeadToEmployee } from "../lib/leadSync.js";
+import { useEmployeeKraMetrics } from "../lib/useEmployeeKraMetrics.js";
 import { CustomSelect } from "../components/CustomSelect.jsx";
 
 const MONTH_OPTIONS = [
@@ -33,7 +35,7 @@ const LEAD_TABS = ["Converted", "Qualified", "Un-Qualified", "Not Interested"];
 /** 2-col grid: visible row count × card height + gaps (card height unchanged) */
 const LEAD_CARD_ROW_PX = 84;
 const LEAD_GRID_GAP_PX = 6;
-const LEAD_VISIBLE_ROWS = 3;
+const LEAD_VISIBLE_ROWS = 4;
 const LEAD_GRID_VIEWPORT_PX =
   LEAD_VISIBLE_ROWS * LEAD_CARD_ROW_PX + (LEAD_VISIBLE_ROWS - 1) * LEAD_GRID_GAP_PX;
 
@@ -54,91 +56,147 @@ const LEAD_SERVICES = [
 
 const LEAD_SOURCES = ["Website", "Meta Ads", "Referral", "Google Ads", "WhatsApp"];
 
-const LEAD_STATUS_CARD_POOL = [
-  { name: "Ananya Sharma", company: "Penguin India", value: 478000, priority: "HOT" },
-  { name: "Rohan Mehta", company: "Mehta Textiles", value: 215000, priority: "WARM" },
-  { name: "Kavya Nair", company: "Nair Foods", value: 89000, priority: "COLD" },
-  { name: "Meera Joshi", company: "Joshi Retail", value: 175000, priority: "HOT" },
-  { name: "Isha Banerjee", company: "Banerjee Media", value: 340000, priority: "HOT" },
-  { name: "Deepak Malhotra", company: "Malhotra Finance", value: 520000, priority: "HOT" },
-  { name: "Vivek Choudhary", company: "Choudhary Pharma", value: 750000, priority: "WARM" },
-  { name: "Amit Desai", company: "Desai Logistics", value: 450000, priority: "HOT" },
-  { name: "Rohit Saxena", company: "Saxena Auto", value: 890000, priority: "WARM" },
-  { name: "Arjun Patel", company: "Patel Logistics", value: 156000, priority: "COLD" },
-  { name: "Neha Gupta", company: "ScaleUp Co", value: 280000, priority: "WARM" },
-  { name: "Karan Malhotra", company: "SaaS.io", value: 52000, priority: "COLD" },
-];
+function readLeadText(lead, ...keys) {
+  for (const key of keys) {
+    const val = lead[key];
+    if (val != null && val !== "") return String(val).toLowerCase().trim();
+  }
+  return "";
+}
 
-function getLeadSnapshot(employee, month) {
-  if (employee.leadDataByMonth?.[month]) {
-    return employee.leadDataByMonth[month];
+/** Map employee/team lead rows to incentive Lead Status tabs (synced from employee panel). */
+function classifyIncentiveLeadTab(lead) {
+  const stage = readLeadText(lead, "pipeline_stage", "pipelineStage", "stage");
+  const status = readLeadText(lead, "status", "employeeStatus");
+  const temp = readLeadText(lead, "temperature");
+
+  if (
+    stage.includes("converted")
+    || status === "converted"
+    || stage.includes("won")
+    || status === "won"
+    || temp === "converted"
+  ) {
+    return "Converted";
   }
 
-  if (month === "2026-06") {
-    return {
-      leadStatus: employee.leadStatus,
-      weeklyLeads: employee.weeklyLeads,
-    };
+  if (
+    stage.includes("not interested")
+    || status === "ni"
+    || status.includes("not interested")
+    || temp.includes("not interested")
+  ) {
+    return "Not Interested";
   }
 
-  const seed = String(employee.id + month).split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-  const factor = 0.65 + (seed % 35) / 100;
+  const qualifiedKeys = [
+    "booked",
+    "call booked",
+    "showed up",
+    "show up",
+  ];
+  if (qualifiedKeys.some((k) => stage.includes(k) || status.includes(k))) {
+    return "Qualified";
+  }
 
-  const leadStatus = {};
-  const weeklyLeads = {};
+  return "Un-Qualified";
+}
 
+function tempToPriorityLabel(temp) {
+  const t = String(temp || "").toLowerCase();
+  if (t.includes("hot")) return "HOT";
+  if (t.includes("cold")) return "COLD";
+  return "WARM";
+}
+
+function getLeadWeekIndex(dateIso, monthValue) {
+  if (!dateIso) return 0;
+  const d = new Date(dateIso);
+  if (Number.isNaN(d.getTime())) return 0;
+  const [y, m] = monthValue.split("-").map(Number);
+  if (d.getFullYear() !== y || d.getMonth() + 1 !== m) return -1;
+  const day = d.getDate();
+  if (day <= 7) return 0;
+  if (day <= 14) return 1;
+  if (day <= 21) return 2;
+  return 3;
+}
+
+function buildLeadStatusSnapshot(leads, monthValue, weekRanges) {
+  const leadStatus = Object.fromEntries(LEAD_TABS.map((tab) => [tab, 0]));
+  const weeklyLeads = Object.fromEntries(LEAD_TABS.map((tab) => [tab, [0, 0, 0, 0]]));
+
+  for (const lead of leads) {
+    const tab = classifyIncentiveLeadTab(lead);
+    leadStatus[tab] += 1;
+    const weekIdx = getLeadWeekIndex(
+      lead.updated_at || lead.updatedAt || lead.created_at || lead.createdAt,
+      monthValue,
+    );
+    const bucket = weekIdx >= 0 ? weekIdx : 0;
+    weeklyLeads[tab][bucket] += 1;
+  }
+
+  // When no leads fall in the selected month, spread totals across weeks for chart visibility
   LEAD_TABS.forEach((tab) => {
-    const baseCount = employee.leadStatus[tab] ?? 0;
-    const total = Math.max(0, Math.round(baseCount * factor));
-    leadStatus[tab] = total;
-
-    const baseWeeks = employee.weeklyLeads?.[tab] || [0, 0, 0, 0];
-    const baseSum = baseWeeks.reduce((sum, n) => sum + n, 0) || 1;
-    const scaled = baseWeeks.map((n) => Math.max(0, Math.round((n / baseSum) * total)));
-    const scaledSum = scaled.reduce((sum, n) => sum + n, 0);
-    if (scaled.length && scaledSum !== total) {
-      scaled[scaled.length - 1] += total - scaledSum;
+    const monthTotal = weeklyLeads[tab].reduce((sum, n) => sum + n, 0);
+    const tabTotal = leadStatus[tab] || 0;
+    if (tabTotal > 0 && monthTotal === 0) {
+      const perWeek = Math.floor(tabTotal / weekRanges.length);
+      const remainder = tabTotal % weekRanges.length;
+      weeklyLeads[tab] = weekRanges.map((_, i) => perWeek + (i < remainder ? 1 : 0));
     }
-    weeklyLeads[tab] = scaled;
   });
 
   return { leadStatus, weeklyLeads };
 }
 
-function buildFilteredLeads(leadChartData, leadTab, employee, monthLabel) {
-  const tabSeed = LEAD_TABS.indexOf(leadTab);
-  const empSeed = employee.id * 13;
-  const leads = [];
-  let idx = 0;
+function mapTeamLeadToStatusCardWithWeek(lead, tab, employee, monthLabel, weekRanges, monthValue) {
+  const mapped = apiLeadToEmployee(lead);
+  const updatedAt = lead.updated_at || lead.updatedAt || lead.created_at || lead.createdAt;
+  let weekIdx = getLeadWeekIndex(updatedAt, monthValue);
+  if (weekIdx < 0) weekIdx = 0;
+  const weekMeta = weekRanges[weekIdx] || weekRanges[0] || { key: "W1", label: "Week 1", range: "—" };
 
-  leadChartData.forEach((weekRow, weekIdx) => {
-    for (let i = 0; i < weekRow.count; i += 1) {
-      const template = LEAD_STATUS_CARD_POOL[(empSeed + tabSeed * 7 + weekIdx * 4 + i) % LEAD_STATUS_CARD_POOL.length];
-      const firstName = template.name.split(" ")[0].toLowerCase();
-      const companySlug = template.company.split(" ")[0].toLowerCase();
+  return {
+    id: String(mapped.id ?? lead.id),
+    name: mapped.name,
+    company: mapped.company,
+    value: Number(mapped.expectedRevenue ?? lead.expected_revenue ?? 0),
+    priority: tempToPriorityLabel(lead.temperature || mapped.temperature),
+    status: tab,
+    week: weekMeta.key,
+    weekLabel: weekMeta.label,
+    weekRange: weekMeta.range,
+    owner: employee.name,
+    employeeId: employee.id,
+    month: monthLabel,
+    service: lead.form_name || mapped.service || "—",
+    source: mapped.source || lead.source || "—",
+    phone: mapped.phone || lead.phone || "—",
+    email: mapped.email || lead.email || "—",
+    updatedAt: updatedAt || new Date().toISOString(),
+    notes: `${tab} · ${mapped.stage || lead.pipeline_stage || lead.status || "—"}`,
+    pipelineStage: mapped.stage || lead.pipeline_stage || "—",
+  };
+}
 
-      leads.push({
-        id: `${employee.id}-${monthLabel}-${leadTab}-${weekRow.week}-${i}`,
-        ...template,
-        status: leadTab,
-        week: weekRow.week,
-        weekLabel: weekRow.weekLabel,
-        weekRange: weekRow.range,
-        owner: employee.name,
-        employeeId: employee.id,
-        month: monthLabel,
-        service: LEAD_SERVICES[(empSeed + weekIdx + i) % LEAD_SERVICES.length],
-        source: LEAD_SOURCES[(empSeed + weekIdx + i) % LEAD_SOURCES.length],
-        phone: `+91 98${String(10000000 + empSeed * 100 + tabSeed * 10 + idx).slice(-8)}`,
-        email: `${firstName}@${companySlug}.in`,
-        updatedAt: new Date(Date.now() - (idx + 1) * 7200000).toISOString(),
-        notes: `${leadTab} lead for ${employee.name} in ${monthLabel} (${weekRow.week}, ${weekRow.range}).`,
-      });
-      idx += 1;
-    }
-  });
+function buildRealFilteredLeads(employeeLeads, leadTab, employee, monthLabel, weekRanges, monthValue) {
+  return employeeLeads
+    .filter((lead) => classifyIncentiveLeadTab(lead) === leadTab)
+    .map((lead) => mapTeamLeadToStatusCardWithWeek(lead, leadTab, employee, monthLabel, weekRanges, monthValue))
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
 
-  return leads;
+function getLeadSnapshot() {
+  return {
+    leadStatus: Object.fromEntries(LEAD_TABS.map((tab) => [tab, 0])),
+    weeklyLeads: Object.fromEntries(LEAD_TABS.map((tab) => [tab, [0, 0, 0, 0]])),
+  };
+}
+
+function buildFilteredLeads() {
+  return [];
 }
 
 function LeadStatusCard({ lead, onClick }) {
@@ -159,7 +217,7 @@ function LeadStatusCard({ lead, onClick }) {
         <span className="text-[10px] font-black text-rose-700 tabular-nums">{formatPipelineValue(lead.value)}</span>
         <span className="text-[8px] font-medium text-slate-400">{timeAgoShort(lead.updatedAt)}</span>
       </div>
-      <p className="text-[8px] text-slate-400 mt-1 truncate">{lead.week} · {lead.weekRange}</p>
+      <p className="text-[8px] text-slate-400 mt-1 truncate">{lead.pipelineStage || lead.week} · {lead.weekRange}</p>
     </button>
   );
 }
@@ -236,165 +294,6 @@ const DEFAULT_KRA_ROWS = [
   { key: "cash", label: "Cash Collection", weight: 25 },
 ];
 
-const INITIAL_TEAMMATES = [
-  {
-    id: 1,
-    name: "Suresh Kumar",
-    role: "Senior Sales Executive",
-    team: "Sales & Growth",
-    status: "APPROVED",
-    baseSalary: 12000,
-    callsCompleted: 200,
-    callsTarget: 250,
-    qualifiedLeads: 40,
-    qualifiedTarget: 50,
-    meetingsScheduled: 20,
-    meetingsTarget: 25,
-    cashCollected: 20000,
-    cashTarget: 40000,
-    incRate: 6,
-    incBonus: 0,
-    penaltyDeduction: 0,
-    responseTimeMin: 1.8,
-    pickupRate: 78,
-    qualificationRate: 80,
-    objectionHandling: 88,
-    conversionRate: 45,
-    followUpQuality: 82,
-    leadStatus: { Converted: 18, Qualified: 40, "Un-Qualified": 52, "Not Interested": 30 },
-    weeklyLeads: {
-      Converted: [3, 4, 5, 6],
-      Qualified: [8, 10, 11, 11],
-      "Un-Qualified": [12, 13, 14, 13],
-      "Not Interested": [6, 7, 8, 9],
-    },
-    competency: {
-      "Product Value Alignment": 78,
-      "Call Control": 85,
-      "Listening Skills": 72,
-      "KYC Questioning": 80,
-      "Objection Handling": 88,
-    },
-  },
-  {
-    id: 2,
-    name: "Sarah Chen",
-    role: "Senior Sales Executive",
-    team: "Sales & Growth",
-    status: "APPROVED",
-    baseSalary: 8500,
-    callsCompleted: 456,
-    callsTarget: 400,
-    qualifiedLeads: 45,
-    qualifiedTarget: 40,
-    meetingsScheduled: 38,
-    meetingsTarget: 35,
-    cashCollected: 145000,
-    cashTarget: 125000,
-    incRate: 3.5,
-    incBonus: 2500,
-    penaltyDeduction: 0,
-    responseTimeMin: 1.2,
-    pickupRate: 92,
-    qualificationRate: 112,
-    objectionHandling: 91,
-    conversionRate: 73,
-    followUpQuality: 94,
-    leadStatus: { Converted: 45, Qualified: 62, "Un-Qualified": 38, "Not Interested": 22 },
-    weeklyLeads: {
-      Converted: [9, 11, 12, 13],
-      Qualified: [14, 16, 16, 16],
-      "Un-Qualified": [8, 10, 10, 10],
-      "Not Interested": [4, 6, 6, 6],
-    },
-    competency: {
-      "Product Value Alignment": 92,
-      "Call Control": 88,
-      "Listening Skills": 90,
-      "KYC Questioning": 85,
-      "Objection Handling": 91,
-    },
-  },
-  {
-    id: 3,
-    name: "James Wilson",
-    role: "Key Account Manager",
-    team: "Enterprise Sales",
-    status: "PAID",
-    baseSalary: 7500,
-    callsCompleted: 392,
-    callsTarget: 400,
-    qualifiedLeads: 39,
-    qualifiedTarget: 40,
-    meetingsScheduled: 28,
-    meetingsTarget: 30,
-    cashCollected: 118000,
-    cashTarget: 120000,
-    incRate: 2.8,
-    incBonus: 1000,
-    penaltyDeduction: 104,
-    responseTimeMin: 2.1,
-    pickupRate: 71,
-    qualificationRate: 97,
-    objectionHandling: 74,
-    conversionRate: 81,
-    followUpQuality: 76,
-    leadStatus: { Converted: 39, Qualified: 48, "Un-Qualified": 44, "Not Interested": 19 },
-    weeklyLeads: {
-      Converted: [8, 9, 11, 11],
-      Qualified: [10, 12, 13, 13],
-      "Un-Qualified": [9, 11, 12, 12],
-      "Not Interested": [4, 5, 5, 5],
-    },
-    competency: {
-      "Product Value Alignment": 75,
-      "Call Control": 70,
-      "Listening Skills": 78,
-      "KYC Questioning": 72,
-      "Objection Handling": 74,
-    },
-  },
-  {
-    id: 4,
-    name: "Emily Davis",
-    role: "Outbound Sales Associate",
-    team: "Sales & Growth",
-    status: "PENDING",
-    baseSalary: 6000,
-    callsCompleted: 540,
-    callsTarget: 400,
-    qualifiedLeads: 54,
-    qualifiedTarget: 40,
-    meetingsScheduled: 42,
-    meetingsTarget: 35,
-    cashCollected: 240000,
-    cashTarget: 177778,
-    incRate: 4.0,
-    incBonus: 4500,
-    penaltyDeduction: 0,
-    responseTimeMin: 1.0,
-    pickupRate: 96,
-    qualificationRate: 135,
-    objectionHandling: 89,
-    conversionRate: 100,
-    followUpQuality: 91,
-    leadStatus: { Converted: 54, Qualified: 71, "Un-Qualified": 29, "Not Interested": 15 },
-    weeklyLeads: {
-      Converted: [11, 13, 15, 15],
-      Qualified: [15, 18, 19, 19],
-      "Un-Qualified": [6, 7, 8, 8],
-      "Not Interested": [3, 4, 4, 4],
-    },
-    competency: {
-      "Product Value Alignment": 88,
-      "Call Control": 94,
-      "Listening Skills": 86,
-      "KYC Questioning": 90,
-      "Objection Handling": 89,
-    },
-  },
-];
-
 function getSafeNum(val) {
   const num = Number(val);
   return Number.isNaN(num) ? 0 : num;
@@ -410,7 +309,6 @@ function formatCash(val) {
   if (v >= 1000) return `₹${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}K`;
   return `₹${v.toLocaleString()}`;
 }
-
 
 function getWeekRanges(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
@@ -580,8 +478,6 @@ function buildDraftFromEmployee(emp) {
   };
 }
 
-
-/** Build a blank teammate record from a real API employee — defined outside component */
 function buildBlankTeammate(emp) {
   return {
     id: emp.id,
@@ -636,6 +532,12 @@ export default function Incentives() {
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcDraft, setCalcDraft] = useState(null);
   const [calcResult, setCalcResult] = useState(null);
+  const [employeeLeads, setEmployeeLeads] = useState([]);
+  const [loadingEmployeeLeads, setLoadingEmployeeLeads] = useState(false);
+  const { metrics: kraMetrics } = useEmployeeKraMetrics(selectedId, selectedMonth, {
+    enabled: Boolean(selectedId),
+  });
+
   useEffect(() => {
     (async () => {
       setLoadingEmployees(true);
@@ -700,61 +602,63 @@ export default function Incentives() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMonth]);
 
-  // Fetch real Callyzer call stats and cash collections when employee or month changes
+  // Sync KRA metrics from same sources as Team page + employee panel
   useEffect(() => {
-    if (!selectedId) return;
-    (async () => {
-      // 1. Fetch Callyzer stats
-      try {
-        const res = await apiGet(
-          `/api/callyzer/employee-stats?employeeId=${selectedId}&month=${selectedMonth}`,
-          { skipCache: true, cacheTtl: 0 }
-        );
-        if (res?.success && res.stats) {
-          const s = res.stats;
-          setTeammates((prev) =>
-            prev.map((t) =>
-              t.id === selectedId
-                ? {
-                    ...t,
-                    callsCompleted: s.total ?? t.callsCompleted,
-                    pickupRate: s.pickupRate ?? t.pickupRate,
-                    responseTimeMin:
-                      s.avgDurationSec != null
-                        ? Math.round((s.avgDurationSec / 60) * 10) / 10
-                        : t.responseTimeMin,
-                  }
-                : t
-            )
-          );
-        }
-      } catch {
-        // silently ignore — keep blank metrics
-      }
+    if (!selectedId || !kraMetrics) return;
+    setTeammates((prev) =>
+      prev.map((t) =>
+        t.id === selectedId
+          ? {
+              ...t,
+              callsCompleted: kraMetrics.calls5Min || kraMetrics.totalCalls || t.callsCompleted,
+              qualifiedLeads: kraMetrics.qualified,
+              meetingsScheduled: kraMetrics.meetings,
+              cashCollected: kraMetrics.cash,
+              pickupRate: kraMetrics.pickupRate ?? t.pickupRate,
+              responseTimeMin:
+                kraMetrics.avgDurationSec != null
+                  ? Math.round((kraMetrics.avgDurationSec / 60) * 10) / 10
+                  : t.responseTimeMin,
+              conversionRate: kraMetrics.totalLeads
+                ? Math.round((kraMetrics.converted / kraMetrics.totalLeads) * 1000) / 10
+                : t.conversionRate,
+              qualificationRate: kraMetrics.totalLeads
+                ? Math.min(100, Math.round((kraMetrics.qualified / kraMetrics.totalLeads) * 100))
+                : t.qualificationRate,
+            }
+          : t,
+      ),
+    );
+  }, [selectedId, selectedMonth, kraMetrics]);
 
-      // 2. Fetch Cash Collections
+  // Sync real leads from employee panel (same source as Team Management)
+  useEffect(() => {
+    if (!selectedId) {
+      setEmployeeLeads([]);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setLoadingEmployeeLeads(true);
       try {
-        const cashRes = await apiGet(
-          `/api/incentives/employee/${selectedId}/cash-summary?month=${selectedMonth}`,
-          { skipCache: true, cacheTtl: 0 }
-        );
-        if (cashRes?.success) {
-          setTeammates((prev) =>
-            prev.map((t) =>
-              t.id === selectedId
-                ? {
-                    ...t,
-                    cashCollected: cashRes.cashCollected ?? t.cashCollected,
-                  }
-                : t
-            )
-          );
-        }
+        const params = new URLSearchParams({ employee_id: String(selectedId) });
+        const data = await apiGet(`/api/team/employees/leads?${params.toString()}`, {
+          skipCache: true,
+          cacheTtl: 0,
+        });
+        if (cancelled || !data?.success) return;
+        const leads = Array.isArray(data.leads) ? data.leads : [];
+        setEmployeeLeads(leads);
       } catch {
-        // silently ignore
+        if (!cancelled) setEmployeeLeads([]);
+      } finally {
+        if (!cancelled) setLoadingEmployeeLeads(false);
       }
     })();
-  }, [selectedId, selectedMonth]);
+
+    return () => { cancelled = true; };
+  }, [selectedId]);
 
   const selected = useMemo(
     () => teammates.find((t) => t.id === selectedId) || teammates[0],
@@ -798,10 +702,13 @@ export default function Incentives() {
 
   const monthLabel = MONTH_OPTIONS.find((m) => m.value === selectedMonth)?.label ?? selectedMonth;
 
-  const leadSnapshot = useMemo(
-    () => selected ? getLeadSnapshot(selected, selectedMonth) : { leadStatus: {}, weeklyLeads: {} },
-    [selected, selectedMonth],
-  );
+  const leadSnapshot = useMemo(() => {
+    if (!selected) return { leadStatus: {}, weeklyLeads: {} };
+    if (employeeLeads.length) {
+      return buildLeadStatusSnapshot(employeeLeads, selectedMonth, weekRanges);
+    }
+    return getLeadSnapshot();
+  }, [selected, selectedMonth, weekRanges, employeeLeads]);
 
   const leadChartData = useMemo(() => {
     const values = leadSnapshot.weeklyLeads?.[leadTab] || [0, 0, 0, 0];
@@ -818,10 +725,20 @@ export default function Incentives() {
     [leadSnapshot, leadTab, leadChartData],
   );
 
-  const filteredLeads = useMemo(
-    () => selected ? buildFilteredLeads(leadChartData, leadTab, selected, monthLabel) : [],
-    [leadChartData, leadTab, selected, monthLabel],
-  );
+  const filteredLeads = useMemo(() => {
+    if (!selected) return [];
+    if (employeeLeads.length) {
+      return buildRealFilteredLeads(
+        employeeLeads,
+        leadTab,
+        selected,
+        monthLabel,
+        weekRanges,
+        selectedMonth,
+      );
+    }
+    return [];
+  }, [employeeLeads, leadTab, selected, monthLabel, weekRanges, selectedMonth]);
 
   const avgServiceScore = useMemo(
     () => (serviceMetrics.length
@@ -1079,14 +996,17 @@ export default function Incentives() {
       </div>
 
       {/* ── Bottom row: Lead Status + Competency ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:items-stretch min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:items-start min-h-0">
         {/* Lead Status */}
-        <GlassCard className="p-4 flex flex-col h-full min-h-0">
+        <GlassCard className="p-4 flex flex-col min-h-0">
           <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
             <div className="min-w-0">
               <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Lead Status</h3>
               <p className="text-[10px] text-slate-500 mt-0.5 truncate">
                 {selected.name} · {monthLabel}
+                {employeeLeads.length > 0 && (
+                  <span className="text-emerald-600 font-semibold"> · {employeeLeads.length} synced</span>
+                )}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -1120,20 +1040,31 @@ export default function Incentives() {
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-2 flex flex-col shrink-0">
             <div className="flex items-center justify-between gap-2 mb-2 px-0.5 shrink-0">
               <p className="text-[9px] text-slate-400">
-                Showing <span className="font-bold text-slate-600">{filteredLeads.length}</span> {leadTab.toLowerCase()} leads for {selected.name}
+                {loadingEmployeeLeads ? (
+                  "Syncing leads from employee panel…"
+                ) : (
+                  <>
+                    Showing <span className="font-bold text-slate-600">{filteredLeads.length}</span> {leadTab.toLowerCase()} leads for {selected.name}
+                  </>
+                )}
               </p>
               <Badge tone={LEAD_STATUS_TONE[leadTab] || "muted"}>{leadTab}</Badge>
             </div>
-            {filteredLeads.length === 0 ? (
-              <div className="min-h-[120px] rounded-lg border border-dashed border-rose-200 bg-white/60 flex items-center justify-center px-3 text-center">
+            {loadingEmployeeLeads ? (
+              <div className="min-h-[80px] rounded-lg border border-dashed border-rose-200 bg-white/60 flex items-center justify-center px-3 text-center">
+                <p className="text-[10px] text-slate-400">Loading employee leads…</p>
+              </div>
+            ) : filteredLeads.length === 0 ? (
+              <div className="min-h-[80px] rounded-lg border border-dashed border-rose-200 bg-white/60 flex items-center justify-center px-3 text-center">
                 <p className="text-[10px] text-slate-400">
-                  No {leadTab.toLowerCase()} leads for {selected.name} in {monthLabel}
+                  No {leadTab.toLowerCase()} leads for {selected.name}
+                  {employeeLeads.length > 0 ? ` (${employeeLeads.length} total synced)` : ""}
                 </p>
               </div>
             ) : (
               <div
                 className="overflow-y-auto overscroll-contain scrollbar-thin shrink-0"
-                style={{ height: LEAD_GRID_VIEWPORT_PX, maxHeight: LEAD_GRID_VIEWPORT_PX }}
+                style={{ maxHeight: LEAD_GRID_VIEWPORT_PX }}
               >
                 <div className="grid grid-cols-2 gap-1.5 content-start">
                   {filteredLeads.map((lead) => (
@@ -1147,11 +1078,10 @@ export default function Incentives() {
               </div>
             )}
           </div>
-          <div className="flex-1 min-h-0 shrink-0" aria-hidden="true" />
         </GlassCard>
 
         {/* Competency Breakdown */}
-        <GlassCard className="p-4 flex flex-col h-full min-h-0">
+        <GlassCard className="p-4 flex flex-col min-h-0">
           <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
             <div className="min-w-0">
               <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Competency Breakdown</h3>
@@ -1162,15 +1092,13 @@ export default function Incentives() {
 
           <div
             className={`flex flex-row gap-2 items-stretch min-w-0 shrink-0 ${
-              isMobile ? "h-[210px]" : "flex-1 min-h-[180px]"
+              isMobile ? "h-[170px]" : "h-[150px]"
             }`}
           >
             <div
-              className={`rounded-xl border border-slate-200 bg-slate-50/50 p-1.5 flex-1 min-w-0 ${
-                isMobile ? "h-[210px]" : "min-h-[190px] h-full"
-              }`}
+              className={`rounded-xl border border-slate-200 bg-slate-50/50 p-1.5 flex-1 min-w-0 h-full`}
             >
-              <ResponsiveContainer width="100%" height={isMobile ? 196 : "100%"}>
+              <ResponsiveContainer width="100%" height={isMobile ? 156 : 140}>
                 <RadarChart
                   cx="50%"
                   cy="52%"
@@ -1193,7 +1121,7 @@ export default function Incentives() {
 
             <div
               className={`shrink-0 flex flex-col gap-1 min-w-0 ${
-                isMobile ? "w-[118px] h-[210px]" : "sm:w-[156px] flex-1 sm:flex-none min-h-[190px]"
+                isMobile ? "w-[118px] h-[170px]" : "sm:w-[156px] h-[150px]"
               }`}
             >
               {radarData.map((d) => (

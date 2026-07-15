@@ -6,7 +6,9 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.jsx";
+import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
+import { formatIndianPhone } from "../../lib/indianFormat.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   MEETING_PLATFORMS,
@@ -16,6 +18,7 @@ import {
 import {
   BtnPrimary, BtnSecondary, EmpEmptyState, AvatarCircle,
 } from "../components/EmpUI.jsx";
+import { TimeOfDaySelects } from "../components/TimeOfDaySelects.jsx";
 
 
 const PLATFORM_TONE = {
@@ -36,24 +39,6 @@ const EMPTY_FORM = {
   agenda: "",
 };
 
-const parseTime12 = (time24 = "14:00") => {
-  const [hStr, mStr] = (time24 || "14:00").split(":");
-  let h = parseInt(hStr || "14", 10);
-  const m = mStr || "00";
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12;
-  if (h === 0) h = 12;
-  return { hour: String(h), minute: m, ampm };
-};
-
-const formatTime24 = (hour, minute, ampm) => {
-  let h = parseInt(hour || "12", 10);
-  if (ampm === "PM" && h < 12) h += 12;
-  if (ampm === "AM" && h === 12) h = 0;
-  const hStr = String(h).padStart(2, "0");
-  return `${hStr}:${minute}`;
-};
-
 const INPUT = "w-full h-10 px-3 rounded-xl bg-white border border-rose-100 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition";
 const LABEL = "block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5";
 
@@ -71,6 +56,7 @@ function BookMeetingDrawer({
   form,
   setForm,
   leads,
+  leadOptions,
   employee,
   selectedPlatform,
   onClose,
@@ -108,58 +94,28 @@ function BookMeetingDrawer({
             <input type="date" className={INPUT} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
           </Field>
           <Field label="Time">
-            <div className="flex gap-1.5 items-center">
-              <select
-                className={`${INPUT} flex-1 text-center px-1`}
-                value={parseTime12(form.time).hour}
-                onChange={(e) => {
-                  const { minute, ampm } = parseTime12(form.time);
-                  const newTime = formatTime24(e.target.value, minute, ampm);
-                  setForm((f) => ({ ...f, time: newTime }));
-                }}
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
-              <span className="text-slate-400 font-bold">:</span>
-              <select
-                className={`${INPUT} flex-1 text-center px-1`}
-                value={parseTime12(form.time).minute}
-                onChange={(e) => {
-                  const { hour, ampm } = parseTime12(form.time);
-                  const newTime = formatTime24(hour, e.target.value, ampm);
-                  setForm((f) => ({ ...f, time: newTime }));
-                }}
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")).map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              <select
-                className={`${INPUT} w-20 text-center px-1`}
-                value={parseTime12(form.time).ampm}
-                onChange={(e) => {
-                  const { hour, minute } = parseTime12(form.time);
-                  const newTime = formatTime24(hour, minute, e.target.value);
-                  setForm((f) => ({ ...f, time: newTime }));
-                }}
-              >
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
-            </div>
+            <TimeOfDaySelects
+              value={form.time}
+              onChange={(time) => setForm((f) => ({ ...f, time }))}
+              selectClassName="h-10 rounded-xl bg-white border-rose-100 text-sm"
+              SelectComponent={({ className, children, ...props }) => (
+                <select className={className} {...props}>{children}</select>
+              )}
+            />
           </Field>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Lead">
-            <select className={INPUT} value={form.leadId} onChange={(e) => setForm((f) => ({ ...f, leadId: e.target.value }))} required>
-              <option value="">Select lead…</option>
-              {leads.map((l) => (
-                <option key={l.id} value={l.id}>{l.name}{l.company ? ` — ${l.company}` : ""}</option>
-              ))}
-            </select>
+            <CustomSelect
+              value={form.leadId}
+              onChange={(val) => setForm((f) => ({ ...f, leadId: val }))}
+              options={leadOptions}
+              searchable
+              searchPlaceholder="Search by name or phone number…"
+              placeholder="Select lead…"
+              compact
+            />
             {leads.length === 0 && (
               <p className="text-[10px] text-amber-600 mt-1">No leads loaded — add or assign leads first.</p>
             )}
@@ -402,6 +358,21 @@ export default function EmployeeMeetings() {
 
   const selectedPlatform = MEETING_PLATFORMS.find((p) => p.id === form.platform) || MEETING_PLATFORMS[0];
 
+  const leadOptions = useMemo(() => {
+    return [...leads]
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" }))
+      .map((l) => {
+        const phone = formatIndianPhone(l.phone);
+        const company = l.company && l.company !== "—" ? l.company : "";
+        return {
+          value: String(l.id),
+          label: l.name || "Unnamed lead",
+          subtitle: phone !== "—" ? phone : (company || ""),
+          searchText: `${l.name || ""} ${l.phone || ""} ${l.company || ""}`,
+        };
+      });
+  }, [leads]);
+
   const stats = useMemo(() => ({
     today: meetingsUpcoming.filter((m) => String(m.time || "").toLowerCase().includes("today")).length,
     week: meetingsUpcoming.length,
@@ -598,6 +569,7 @@ export default function EmployeeMeetings() {
         form={form}
         setForm={setForm}
         leads={leads}
+        leadOptions={leadOptions}
         employee={employee}
         selectedPlatform={selectedPlatform}
         onClose={closeDrawer}

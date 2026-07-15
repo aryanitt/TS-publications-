@@ -19,9 +19,6 @@ import {
   StatCard, GlassCard, Badge, Avatar, Drawer,
   SectionHeader, priorityTone, stageTone
 } from "../components/Primitives.jsx";
-import {
-  kpis, recentLeads, aiInsights, performers, revenueSeries
-} from "../data/mock.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import { apiGet, readCachedJson, readStaleCachedJson } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
@@ -109,214 +106,6 @@ const EMPTY_FILTER_DATA = {
   today: EMPTY_FILTER_RANGE,
   week: EMPTY_FILTER_RANGE,
   month: EMPTY_FILTER_RANGE,
-};
-
-// ─── Per-filter mock data ─────────────────────────────────────────────────────
-// Pipeline data per service per filter
-const SERVICE_PIPELINE = {
-  today: {
-    "All Services":    [14, 12, 6, 4, 2, 1],
-    "Web Development": [5, 4, 2, 2, 1, 1],
-    "SEO":             [3, 3, 1, 1, 0, 0],
-    "UI/UX Design":    [2, 2, 1, 0, 0, 0],
-    "Automation":      [2, 1, 1, 0, 0, 0],
-    "CRM Setup":       [1, 1, 1, 1, 1, 0],
-    "Marketing":       [1, 1, 0, 0, 0, 0],
-  },
-  week: {
-    "All Services":    [100, 92, 40, 30, 12, 10],
-    "Web Development": [32, 28, 14, 10, 4, 3],
-    "SEO":             [22, 20, 8, 6, 2, 2],
-    "UI/UX Design":    [18, 16, 7, 5, 2, 2],
-    "Automation":      [14, 12, 5, 4, 2, 1],
-    "CRM Setup":       [8, 8, 4, 3, 1, 1],
-    "Marketing":       [6, 8, 2, 2, 1, 1],
-  },
-  month: {
-    "All Services":    [380, 344, 148, 112, 48, 40],
-    "Web Development": [120, 108, 48, 36, 16, 13],
-    "SEO":             [82, 74, 30, 24, 9, 8],
-    "UI/UX Design":    [68, 62, 28, 20, 8, 7],
-    "Automation":      [54, 48, 20, 16, 7, 5],
-    "CRM Setup":       [32, 30, 14, 10, 5, 4],
-    "Marketing":       [24, 22, 8, 6, 3, 3],
-  },
-};
-
-// Service breakdown per service per filter
-const SERVICE_BREAKDOWN = {
-  today: {
-    "All Services": [
-      { name: "Web Development", leads: 28, qualified: 18, conv: 9,  rev: "₹0.6L" },
-      { name: "SEO",             leads: 22, qualified: 14, conv: 6,  rev: "₹0.5L" },
-      { name: "UI/UX Design",    leads: 18, qualified: 10, conv: 5,  rev: "₹0.4L" },
-      { name: "Automation",      leads: 15, qualified: 8,  conv: 3,  rev: "₹0.3L" },
-      { name: "CRM Setup",       leads: 12, qualified: 6,  conv: 2,  rev: "₹0.2L" },
-    ],
-    "Web Development": [{ name: "Web Development", leads: 28, qualified: 18, conv: 9, rev: "₹0.6L" }],
-    "SEO":             [{ name: "SEO",             leads: 22, qualified: 14, conv: 6, rev: "₹0.5L" }],
-    "UI/UX Design":    [{ name: "UI/UX Design",    leads: 18, qualified: 10, conv: 5, rev: "₹0.4L" }],
-    "Automation":      [{ name: "Automation",      leads: 15, qualified: 8,  conv: 3, rev: "₹0.3L" }],
-    "CRM Setup":       [{ name: "CRM Setup",       leads: 12, qualified: 6,  conv: 2, rev: "₹0.2L" }],
-    "Marketing":       [{ name: "Marketing",       leads: 10, qualified: 5,  conv: 1, rev: "₹0.1L" }],
-  },
-  week: {
-    "All Services": [
-      { name: "Web Development", leads: 160, qualified: 112, conv: 48, rev: "₹1.8L" },
-      { name: "SEO",             leads: 140, qualified: 92,  conv: 38, rev: "₹1.6L" },
-      { name: "UI/UX Design",    leads: 120, qualified: 78,  conv: 30, rev: "₹1.4L" },
-      { name: "Automation",      leads: 100, qualified: 60,  conv: 22, rev: "₹1.1L" },
-      { name: "CRM Setup",       leads: 80,  qualified: 42,  conv: 14, rev: "₹0.8L" },
-    ],
-    "Web Development": [{ name: "Web Development", leads: 160, qualified: 112, conv: 48, rev: "₹1.8L" }],
-    "SEO":             [{ name: "SEO",             leads: 140, qualified: 92,  conv: 38, rev: "₹1.6L" }],
-    "UI/UX Design":    [{ name: "UI/UX Design",    leads: 120, qualified: 78,  conv: 30, rev: "₹1.4L" }],
-    "Automation":      [{ name: "Automation",      leads: 100, qualified: 60,  conv: 22, rev: "₹1.1L" }],
-    "CRM Setup":       [{ name: "CRM Setup",       leads: 80,  qualified: 42,  conv: 14, rev: "₹0.8L" }],
-    "Marketing":       [{ name: "Marketing",       leads: 60,  qualified: 32,  conv: 10, rev: "₹0.6L" }],
-  },
-  month: {
-    "All Services": [
-      { name: "Web Development", leads: 620, qualified: 442, conv: 190, rev: "₹7.2L" },
-      { name: "SEO",             leads: 540, qualified: 368, conv: 148, rev: "₹6.4L" },
-      { name: "UI/UX Design",    leads: 460, qualified: 302, conv: 112, rev: "₹5.6L" },
-      { name: "Automation",      leads: 380, qualified: 244, conv: 88,  rev: "₹4.4L" },
-      { name: "CRM Setup",       leads: 310, qualified: 188, conv: 58,  rev: "₹3.2L" },
-    ],
-    "Web Development": [{ name: "Web Development", leads: 620, qualified: 442, conv: 190, rev: "₹7.2L" }],
-    "SEO":             [{ name: "SEO",             leads: 540, qualified: 368, conv: 148, rev: "₹6.4L" }],
-    "UI/UX Design":    [{ name: "UI/UX Design",    leads: 460, qualified: 302, conv: 112, rev: "₹5.6L" }],
-    "Automation":      [{ name: "Automation",      leads: 380, qualified: 244, conv: 88,  rev: "₹4.4L" }],
-    "CRM Setup":       [{ name: "CRM Setup",       leads: 310, qualified: 188, conv: 58,  rev: "₹3.2L" }],
-    "Marketing":       [{ name: "Marketing",       leads: 240, qualified: 148, conv: 42,  rev: "₹2.4L" }],
-  },
-};
-
-const FILTER_DATA = {
-  today: {
-    kpis: [
-      { label: "Total Revenue", value: "₹12.0L", icon: "DollarSign" },
-      { label: "Cash Collected", value: "₹1.2L", icon: "DollarSign" },
-      { label: "Total Leads", value: "15", icon: "Users" },
-      { label: "Total Calls Made", value: "48", icon: "Phone" },
-      { label: "Qualified Leads", value: "7", icon: "FileText" },
-      { label: "Pipeline Value", value: "₹91.3L", icon: "DollarSign" },
-      { label: "Closings", value: "3", icon: "Trophy" },
-    ],
-    leaderboard: [
-      { name: "Aryan S.", leads: 18, resp: "1h 20m", qualR: "72%", convR: "19%", conv: 3,  rev: "₹0.3L" },
-      { name: "Priya M.", leads: 14, resp: "1h 45m", qualR: "66%", convR: "14%", conv: 2,  rev: "₹0.2L" },
-      { name: "Rahul K.", leads: 11, resp: "2h 10m", qualR: "59%", convR: "11%", conv: 1,  rev: "₹0.1L" },
-    ],
-    metrics: { pickup: 68, qualification: 38, conversion: 8 },
-    insights: [
-      { type: "check", text: "₹0.2L stuck in negotiation > 2 days" },
-      { type: "check", text: "6 leads inactive since 4 hours" },
-      { type: "warn",  text: "Meta CAC increased 4%" },
-      { type: "warn",  text: "Aryan outperforming team by 38%" },
-      { type: "warn",  text: "1 high-ticket lead inactive for 4h" },
-      { type: "warn",  text: "Meeting-to-close rate dropped 3%" },
-       
-    ],
-    activity: [
-      { type: "check", text: "Meeting-to-close rate dropped 3%" },
-      { type: "check", text: "Rahul at 118% capacity today" },
-      { type: "warn",  text: "1 high-ticket lead inactive for 4h" },
-      { type: "check", text: "New lead from paid campaign — Web Dev" },
-      { type: "warn",  text: "Aryan's follow-up overdue by 2h" },
-      { type: "check", text: "CRM Setup proposal sent to Nexus Corp" },
-      { type: "warn",  text: "SEO lead dropped from Qualified to Contact" },
-      { type: "check", text: "Priya closed ₹0.08L deal — UI/UX Design" },
-      { type: "check", text: "3 discovery calls completed before noon" },
-      { type: "warn",  text: "Rahul at 118% capacity today" },
-    ],
-  },
-  week: {
-    kpis: [
-      { label: "Total Revenue", value: "₹7.9L", icon: "DollarSign" },
-      { label: "Cash Collected", value: "₹4.2L", icon: "DollarSign" },
-      { label: "Total Leads", value: "112", icon: "Users" },
-      { label: "Total Calls Made", value: "342", icon: "Phone" },
-      { label: "Qualified Leads", value: "721", icon: "FileText" },
-      { label: "Pipeline Value", value: "₹12.4L", icon: "DollarSign" },
-      { label: "Closings", value: "78", icon: "Trophy" },
-    ],
-    leaderboard: [
-      { name: "Aman T.",  leads: 142, resp: "4h 20m", qualR: "78%", convR: "24%", conv: 34, rev: "₹1.2L" },
-      { name: "Priya M.", leads: 118, resp: "5h 10m", qualR: "71%", convR: "19%", conv: 22, rev: "₹0.9L" },
-      { name: "Rahul K.", leads: 98,  resp: "6h 45m", qualR: "64%", convR: "14%", conv: 14, rev: "₹0.6L" },
-    ],
-    metrics: { pickup: 73, qualification: 41, conversion: 10 },
-    insights: [
-      { type: "check", text: "₹2.4L stuck in negotiation > 14 days" },
-      { type: "check", text: "43 leads inactive since 7 days" },
-      { type: "warn",  text: "Meta CAC increased 28%" },
-      { type: "warn",  text: "Aman outperforming team by 41%" },
-      { type: "warn",  text: "3 high-ticket leads inactive for 48h" },
-      { type: "warn",  text: "Meeting-to-close rate dropped 14%" },
-      { type: "check", text: "Automation service generated 32% more qualified leads" },
-      { type: "warn", text: "12 proposals are pending approval for over 5 days" },
-     
-    ],
-    activity: [
-      { type: "check", text: "Meeting-to-close rate dropped 14%" },
-      { type: "check", text: "Rahul overloaded at 127% capacity" },
-      { type: "warn",  text: "3 high-ticket leads inactive for 48h" },
-      { type: "check", text: "Aman closed ₹0.4L deal — Automation" },
-      { type: "warn",  text: "SEO pipeline conversion below target" },
-      { type: "check", text: "Marketing campaign drove 14 new leads" },
-      { type: "warn",  text: "CRM Setup proposal pending for 5 days" },
-      { type: "check", text: "Priya's qualification rate up to 71%" },
-      { type: "warn",  text: "2 demos no-showed this week" },
-      { type: "check", text: "UI/UX Design revenue target exceeded" },
-      { type: "warn",  text: "CRM Setup proposal pending for 5 days" },
-      { type: "check", text: "Priya's qualification rate up to 71%" },
-      { type: "warn",  text: "2 demos no-showed this week" },
-     
-    ],
-  },
-  month: {
-    kpis: [
-      { label: "Total Revenue", value: "₹31.4L", icon: "DollarSign" },
-      { label: "Cash Collected", value: "₹18.7L", icon: "DollarSign" },
-      { label: "Total Leads", value: "3,520", icon: "Users" },
-      { label: "Total Calls Made", value: "1,240", icon: "Phone" },
-      { label: "Qualified Leads", value: "2,840", icon: "FileText" },
-      { label: "Pipeline Value", value: "₹48.6L", icon: "DollarSign" },
-      { label: "Closings", value: "312", icon: "Trophy" },
-    ],
-    leaderboard: [
-      { name: "Aman T.",  leads: 560, resp: "3h 40m", qualR: "82%", convR: "28%", conv: 157, rev: "₹4.8L" },
-      { name: "Priya M.", leads: 480, resp: "4h 20m", qualR: "74%", convR: "22%", conv: 106, rev: "₹3.9L" },
-      { name: "Rahul K.", leads: 390, resp: "5h 55m", qualR: "68%", convR: "16%", conv: 62,  rev: "₹2.4L" },
-    ],
-    metrics: { pickup: 79, qualification: 46, conversion: 14 },
-    insights: [
-      { type: "check", text: "₹8.4L stuck in negotiation > 30 days" },
-      { type: "check", text: "174 leads inactive since 14 days" },
-      { type: "warn",  text: "Meta CAC increased 18% MoM" },
-      { type: "warn",  text: "Aman outperforming team by 52%" },
-      { type: "warn",  text: "11 high-ticket leads inactive for 72h" },
-      { type: "warn",  text: "Meeting-to-close rate dropped 8%" },
-    ],
-    activity: [
-      { type: "check", text: "Monthly close target exceeded by 4%" },
-      { type: "check", text: "Pipeline coverage at 3.2x — healthy" },
-      { type: "warn",  text: "11 high-ticket leads inactive for 72h" },
-      { type: "warn",  text: "Rahul overloaded at 134% capacity" },
-      { type: "warn",  text: "CAC up 18% vs last month" },
-      { type: "check", text: "Aman's team hit 28% conversion rate" },
-      { type: "check", text: "Web Dev revenue at ₹7.2L — record high" },
-      { type: "warn",  text: "Marketing funnel drop-off at Qualified" },
-      { type: "check", text: "CRM Setup closed 58 deals this month" },
-      { type: "warn",  text: "UI/UX Design CAC rose 12% this month" },
-       { type: "check", text: "Monthly close target exceeded by 4%" },
-      { type: "check", text: "Pipeline coverage at 3.2x — healthy" },
-      { type: "warn",  text: "11 high-ticket leads inactive for 72h" },
-      { type: "warn",  text: "Rahul overloaded at 134% capacity" },
-      { type: "warn",  text: "CAC up 18% vs last month" },
-    ],
-  },
 };
 
 // ─── Animation variants ───────────────────────────────────────────────────────
@@ -2231,7 +2020,7 @@ export default function Dashboard() {
   const [dashboardError, setDashboardError] = useState(null);
 
   const filterKey = preset === "custom" ? "week" : preset;
-  const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
+  const mergedFilter = mergeFilterData(null, apiFilterData);
   const fd = mergedFilter?.[filterKey] || EMPTY_FILTER_RANGE;
 
   const leaderboardData = useMemo(() => {
@@ -2333,23 +2122,22 @@ export default function Dashboard() {
   // Reset service filter when time filter changes
   useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
 
-  const serviceBreakdownData = SERVICE_BREAKDOWN[filterKey];
+  const serviceBreakdownData = apiFilterData?.serviceBreakdown || null;
   const services = serviceBreakdownData?.[selectedService] || serviceBreakdownData?.["All Services"] || [];
 
   const totalRevenueCard = fd.kpis?.find(k => k.label === "Total Revenue" || k.label === "Revenue") || 
                            { label: "Total Revenue", value: "₹0", icon: "DollarSign" };
   const cashCollectedCard = fd.kpis?.find(k => k.label === "Cash Collected") || 
                             { label: "Cash Collected", value: "₹0", icon: "DollarSign" };
-  const totalLeadsValue = pipelineStats?.totalLeads != null ? String(pipelineStats.totalLeads) : 
-                          (fd.kpis?.find(k => k.label === "Total Leads")?.value || (filterKey === "today" ? "15" : filterKey === "week" ? "112" : "480"));
-  const totalCallsValue = fd.kpis?.find(k => k.label === "Total Calls Made")?.value || 
-                          (filterKey === "today" ? "48" : filterKey === "week" ? "342" : "1,420");
+  const totalLeadsValue = pipelineStats?.totalLeads != null ? String(pipelineStats.totalLeads) :
+                          (fd.kpis?.find(k => k.label === "Total Leads")?.value || "0");
+  const totalCallsValue = fd.kpis?.find(k => k.label === "Total Calls Made")?.value || "0";
   const qualifiedLeadsCard = fd.kpis?.find(k => k.label === "Qualified Leads") || 
                              { label: "Qualified Leads", value: "0", icon: "FileText" };
   const pipelineValueCard = fd.kpis?.find(k => k.label === "Pipeline Value") || 
                             { label: "Pipeline Value", value: "₹0", icon: "DollarSign" };
-  const closingsValue = pipelineStats?.conversions != null ? String(pipelineStats.conversions) : 
-                        (fd.kpis?.find(k => k.label === "Closings")?.value || (filterKey === "today" ? "3" : filterKey === "week" ? "18" : "84"));
+  const closingsValue = pipelineStats?.conversions != null ? String(pipelineStats.conversions) :
+                        (fd.kpis?.find(k => k.label === "Closings")?.value || "0");
 
   const finalKpis = [
     { label: "Total Revenue", value: totalRevenueCard.value, icon: "DollarSign", trendVal: totalRevenueCard.trendVal, sub: totalRevenueCard.sub },

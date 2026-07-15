@@ -15,12 +15,6 @@ import {
   Cell,
 } from "recharts";
 import { GlassCard, SectionHeader, StatCard, Badge } from "../components/Primitives.jsx";
-import {
-  revenueSeries,
-  conversionSeries,
-  departmentDistribution,
-  performers,
-} from "../data/mock.js";
 import { motion } from "framer-motion";
 import { apiGet, readCachedJson } from "../lib/api.js";
 import { formatINR } from "../lib/indianFormat.js";
@@ -87,18 +81,11 @@ const globalStyles = `
   }
 `;
 
-const goals = [
-  { label: "Revenue target",  current: 1240, target: 1500, unit: "L" },
-  { label: "Closed deals",    current: 84,   target: 120,  unit: ""  },
-  { label: "Qualified leads", current: 146,  target: 180,  unit: ""  },
-  { label: "Customer NPS",    current: 64,   target: 70,   unit: ""  },
-];
-
-const kpiCards = [
-  { label: "Total Revenue",   value: "₹1.24Cr", Icon: DollarSign },
-  { label: "Conversion Rate", value: "24.6%",  Icon: Activity   },
-  { label: "MoM Growth",      value: "12.8%",  Icon: TrendingUp },
-  { label: "Forecast Q3",     value: "₹1.62Cr", Icon: FileText   },
+const EMPTY_KPI_CARDS = [
+  { label: "Total Revenue", value: "—", Icon: DollarSign },
+  { label: "Conversion Rate", value: "—", Icon: Activity },
+  { label: "MoM Growth", value: "—", Icon: TrendingUp },
+  { label: "Forecast Q3", value: "—", Icon: FileText },
 ];
 function TeamTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -187,29 +174,14 @@ function TeamTooltip({ active, payload, label }) {
 }
 export default function Reports() {
   const [exportFormat, setExportFormat] = useState("PDF");
-  const [chartRevenue, setChartRevenue] = useState(revenueSeries);
-  const [leadSources, setLeadSources] = useState([
-    { name: "Facebook Ads", value: 38 },
-    { name: "Google Ads", value: 24 },
-    { name: "Website", value: 18 },
-    { name: "LinkedIn", value: 12 },
-    { name: "Referrals", value: 8 },
-  ]);
-  const [reportKpis, setReportKpis] = useState(kpiCards);
-  const [aiSummaryLines, setAiSummaryLines] = useState([
-    "Revenue increased by 18.4% compared to last month.",
-    "Qualified leads conversion improved by 3.1%.",
-  ]);
+  const [chartRevenue, setChartRevenue] = useState([]);
+  const [leadSources, setLeadSources] = useState([]);
+  const [reportKpis, setReportKpis] = useState(EMPTY_KPI_CARDS);
+  const [aiSummaryLines, setAiSummaryLines] = useState([]);
+  const [conversionByStage, setConversionByStage] = useState([]);
   const [teamMembers,  setTeamMembers]  = useState(() => {
     const cached = readCachedJson("/api/team/employees");
-    return cached?.success
-      ? cached.employees.map((e) => ({
-          ...e,
-          productivity:   e.productivity   || Math.floor(Math.random() * 25) + 70,
-          convertedLeads: e.convertedLeads || Math.floor(Math.random() * 10) + 2,
-          callsDone:      e.callsDone      || Math.floor(Math.random() * 80) + 20,
-        }))
-      : [];
+    return cached?.success ? cached.employees : [];
   });
 
   // ── fetch team members ──────────────────────────────────────
@@ -218,14 +190,12 @@ export default function Reports() {
       try {
         const data = await apiGet("/api/team/employees");
         if (data.success) {
-          setTeamMembers(
-            data.employees.map((e) => ({
-              ...e,
-              productivity:   e.productivity   || Math.floor(Math.random() * 25) + 70,
-              convertedLeads: e.convertedLeads || Math.floor(Math.random() * 10) + 2,
-              callsDone:      e.callsDone      || Math.floor(Math.random() * 80) + 20,
-            }))
-          );
+          setTeamMembers(data.employees.map((e) => ({
+            ...e,
+            productivity: e.productivity ?? 0,
+            convertedLeads: e.convertedLeads ?? 0,
+            callsDone: e.callsDone ?? 0,
+          })));
         }
       } catch (err) {
         console.error("Failed to fetch employees:", err);
@@ -243,13 +213,19 @@ export default function Reports() {
         ]);
         if (dash.kpis) {
           setReportKpis([
-            { label: "Total Revenue", value: dash.kpis.totalRevenue?.value || kpiCards[0].value, Icon: DollarSign },
-            { label: "Conversion Rate", value: dash.kpis.conversionRate?.value || kpiCards[1].value, Icon: Activity },
-            { label: "MoM Growth", value: dash.kpis.momGrowth?.value || kpiCards[2].value, Icon: TrendingUp },
-            { label: "Forecast Q3", value: dash.kpis.forecastQ3?.value || kpiCards[3].value, Icon: FileText },
+            { label: "Total Revenue", value: dash.kpis.totalRevenue?.value || "—", Icon: DollarSign },
+            { label: "Conversion Rate", value: dash.kpis.conversionRate?.value || "—", Icon: Activity },
+            { label: "MoM Growth", value: dash.kpis.momGrowth?.value || "—", Icon: TrendingUp },
+            { label: "Forecast Q3", value: dash.kpis.forecastQ3?.value || "—", Icon: FileText },
           ]);
         }
         if (dash.aiSummary?.length) setAiSummaryLines(dash.aiSummary);
+        if (analytics.conversionByStage?.length) {
+          setConversionByStage(analytics.conversionByStage.map((r) => ({
+            name: r.stage || r.name || "—",
+            value: Number(r.count ?? r.value) || 0,
+          })));
+        }
         if (analytics.leadSources?.length) {
           setLeadSources(analytics.leadSources.map((s) => ({
             name: s.source,
@@ -264,10 +240,12 @@ export default function Reports() {
           })));
         }
       } catch {
-        // keep mock defaults
+        // keep empty defaults
       }
     })();
   }, []);
+
+  const leadSourceTotal = leadSources.reduce((sum, s) => sum + (Number(s.value) || 0), 0);
 
   const downloadReport = (format) => {
     setExportFormat(format);
@@ -370,12 +348,10 @@ export default function Reports() {
           </div>
           {/* title — explicit white so it's always visible */}
           <div className="font-display text-sm font-semibold mb-2 text-gray-700">
-            You're tracking 12% above plan with a strong Q3 forecast
+            {aiSummaryLines[0] || "No AI summary available yet"}
           </div>
           <p className="text-sm max-w-3xl text-gray-500">
-            Revenue is accelerating across Enterprise. Conversion improved 3.1pp from last quarter,
-            driven by faster qualification. The biggest risk is concentration: 38% of pipeline sits
-            with two AEs. Consider redistributing to reduce single-point-of-failure exposure.
+            {aiSummaryLines.slice(1).join(" ") || "Connect your CRM data to generate insights from real pipeline activity."}
           </p>
         </div>
       </GlassCard>
@@ -443,7 +419,7 @@ export default function Reports() {
 
                   {/* center label — explicit SVG attributes, no Tailwind classes */}
                   <text x="50%" y="40%" textAnchor="middle" dominantBaseline="middle"  fill="#FF4D8D" fontSize={22} fontWeight="700">
-                    428
+                    {leadSourceTotal || "—"}
                   </text>
                   <text x="50%" y="52%" textAnchor="middle" dominantBaseline="middle" fill="#FF4D8D" fontSize={11}>
                     Leads
@@ -455,23 +431,20 @@ export default function Reports() {
             </div>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-y-3 gap-x-4">
-            {[
-              { label: "Facebook Ads", color: "oklch(0.68 0.22 18)" },
-              { label: "Google Ads",   color: "oklch(0.72 0.18 240)" },
-              { label: "Website",      color: "oklch(0.72 0.18 140)" },
-              { label: "LinkedIn",     color: "oklch(0.74 0.18 70)"  },
-              { label: "Referrals",    color: "oklch(0.7 0.18 320)"  },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm" style={{ color: "oklch(0.52 0.02 280)" }}>
-                <div className="w-3 h-3 rounded-full" style={{ background: item.color }} />
-                <span>{item.label}</span>
+            {leadSources.length ? leadSources.map((item, i) => (
+              <div key={item.name} className="flex items-center gap-2 text-sm" style={{ color: "oklch(0.52 0.02 280)" }}>
+                <div className="w-3 h-3 rounded-full" style={{ background: ["oklch(0.68 0.22 18)","oklch(0.72 0.18 240)","oklch(0.72 0.18 140)","oklch(0.74 0.18 70)","oklch(0.7 0.18 320)"][i % 5] }} />
+                <span>{item.name}</span>
               </div>
-            ))}
+            )) : (
+              <p className="text-xs text-slate-400 col-span-2">No lead source data yet.</p>
+            )}
           </div>
           <div className="mt-5 pt-4 border-t border-border/60">
             <p className="text-xs leading-relaxed" style={{ color: "oklch(0.52 0.02 280)" }}>
-              Facebook Ads generated the highest volume of leads this month,
-              while Website and LinkedIn traffic showed better conversion quality.
+              {leadSources.length
+                ? `${leadSources[0]?.name || "Top source"} is the largest lead source in the current period.`
+                : "Lead source breakdown will appear when leads are captured in the database."}
             </p>
           </div>
         </GlassCard>
@@ -484,7 +457,7 @@ export default function Reports() {
           <div className="h-64 overflow-x-auto">
             <div className="h-64" style={{ minWidth: 560 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={conversionSeries}>
+                <BarChart data={conversionByStage}>
                   <CartesianGrid stroke="oklch(0.28 0.014 25 / 0.4)" vertical={false} />
                   <XAxis dataKey="name" stroke="oklch(0.55 0.02 280)" fontSize={11} />
                   <YAxis stroke="oklch(0.55 0.02 280)" fontSize={11} />
@@ -497,17 +470,18 @@ export default function Reports() {
         </GlassCard>
 
         <GlassCard className="section-card p-6">
-          <SectionHeader title="Goal completion" subtitle="Against quarterly targets" />
+          <SectionHeader title="Goal completion" subtitle="Targets require configuration in settings" />
           <div className="space-y-2">
-            {goals.map((g) => {
-              const pct = Math.min(100, Math.round((g.current / g.target) * 100));
+            {conversionByStage.length === 0 && (
+              <p className="text-xs text-slate-400 text-center py-8">No goal data configured yet.</p>
+            )}
+            {conversionByStage.slice(0, 4).map((g) => {
+              const pct = Math.min(100, g.value);
               return (
-                <div key={g.label} className="goal-item">
+                <div key={g.name} className="goal-item">
                   <div className="flex justify-between text-xs mb-2" style={{ color: "oklch(0.52 0.02 280)" }}>
-                    <span>{g.label}</span>
-                    <span className="font-medium">
-                      {g.current}{g.unit} / {g.target}{g.unit} · {pct}%
-                    </span>
+                    <span>{g.name}</span>
+                    <span className="font-medium">{g.value} leads</span>
                   </div>
                   <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0.28 0.014 25 / 0.4)" }}>
                     <div className="h-full gradient-primary" style={{ width: `${pct}%` }} />

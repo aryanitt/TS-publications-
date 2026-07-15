@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Share2, Download, Pencil, Bot, Database, Target, Briefcase, Code,
@@ -5,7 +6,8 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
-import { getServiceById, formatServiceMoney, formatServicePriceLabel, serviceBadgeTone } from "../../data/servicesMock.js";
+import { formatServiceMoney, formatServicePriceLabel, serviceBadgeTone } from "../../data/servicesMock.js";
+import { apiGet } from "../../lib/api.js";
 
 const ICON_MAP = {
   bot: Bot,
@@ -18,7 +20,33 @@ const ICON_MAP = {
 export default function ServiceDetail() {
   const { serviceId } = useParams();
   const navigate = useNavigate();
-  const service = getServiceById(serviceId);
+  const [service, setService] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
+        const found = (res?.services || []).find((s) => String(s.id) === String(serviceId)) || null;
+        if (!cancelled) setService(found);
+      } catch {
+        if (!cancelled) setService(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [serviceId]);
+
+  if (loading) {
+    return (
+      <GlassCard className="p-10 text-center">
+        <p className="text-sm text-slate-400">Loading service…</p>
+      </GlassCard>
+    );
+  }
 
   if (!service) {
     return (
@@ -90,7 +118,7 @@ export default function ServiceDetail() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         <StatCard label="Total Leads" value={service.leads >= 1000 ? `${(service.leads / 1000).toFixed(1)}k` : String(service.leads)} icon={Users} iconBg="bg-rose-50" iconColor="text-rose-600" hover={false} />
-        <StatCard label="Converted" value={String(service.converted)} change="+8%" sub="this month" icon={CheckCircle2} iconBg="bg-emerald-50" iconColor="text-emerald-600" hover={false} />
+        <StatCard label="Converted" value={String(service.converted)} icon={CheckCircle2} iconBg="bg-emerald-50" iconColor="text-emerald-600" hover={false} />
         <StatCard label="Revenue" value={formatServiceMoney(service.revenue)} icon={DollarSign} iconBg="bg-sky-50" iconColor="text-sky-600" hover={false} />
         <StatCard label="Conv. Rate" value={`${service.convRate}%`} icon={TrendingUp} iconBg="bg-amber-50" iconColor="text-amber-600" hover={false} />
       </div>
@@ -101,7 +129,7 @@ export default function ServiceDetail() {
         </h3>
         <p className="text-sm text-slate-600 leading-relaxed mb-4">{service.description}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {service.features.map((f) => (
+          {(service.features || []).map((f) => (
             <div key={f.title} className="rounded-xl border border-rose-100 bg-white p-3.5">
               <p className="text-xs font-bold text-slate-900">{f.title}</p>
               <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{f.desc}</p>
@@ -113,7 +141,7 @@ export default function ServiceDetail() {
       <GlassCard className="p-4 sm:p-5">
         <h3 className="text-[11px] font-extrabold text-rose-700 uppercase tracking-wider mb-3">Service Tiers</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-          {service.tiers.map((tier) => (
+          {(service.tiers || []).map((tier) => (
             <div
               key={tier.name}
               className={`rounded-xl border p-3.5 flex flex-col ${

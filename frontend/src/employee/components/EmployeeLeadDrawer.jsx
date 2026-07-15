@@ -194,7 +194,7 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
               <p className="text-xs text-slate-500 font-semibold">{liveLead.company}</p>
               <div className="flex flex-wrap items-center gap-2 mt-2">
                 {!isTemperatureStatus && (
-                  <LeadStatusBadge status={liveLead.status} label={LEAD_STATUS_LABELS[liveLead.status]} />
+                  <LeadStatusBadge status={liveLead.status} label={LEAD_STATUS_LABELS[liveLead.status] || liveLead.stage || "Lead"} />
                 )}
                 <div
                   className="inline-flex gap-0.5 p-0.5 rounded-lg bg-white/90 border border-rose-100 shrink-0"

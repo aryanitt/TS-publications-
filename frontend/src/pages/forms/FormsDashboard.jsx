@@ -30,7 +30,7 @@ function statusTone(status) {
 
 export default function FormsDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [forms, setForms] = useState(FORMS);
+  const [forms, setForms] = useState([]);
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -163,8 +163,8 @@ export default function FormsDashboard() {
     <div className="space-y-5 page-shell min-w-0">
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard label="Total Forms" value={String(summary.totalForms)} change="+12%" sub="vs last month" icon={ClipboardList} iconBg="bg-rose-50" iconColor="text-rose-600" />
-        <StatCard label="Total Leads Generated" value={summary.totalLeads >= 1000 ? `${(summary.totalLeads / 1000).toFixed(1)}k` : String(summary.totalLeads)} change="+18%" sub="all forms" icon={Users} iconBg="bg-emerald-50" iconColor="text-emerald-600" />
+        <StatCard label="Total Forms" value={String(summary.totalForms)} icon={ClipboardList} iconBg="bg-rose-50" iconColor="text-rose-600" />
+        <StatCard label="Total Leads Generated" value={summary.totalLeads >= 1000 ? `${(summary.totalLeads / 1000).toFixed(1)}k` : String(summary.totalLeads)} icon={Users} iconBg="bg-emerald-50" iconColor="text-emerald-600" />
         <StatCard label="Active Forms" value={String(summary.activeForms)} icon={CheckCircle2} iconBg="bg-sky-50" iconColor="text-sky-600" hover={false} />
         <StatCard label="Top Performing Source" value={summary.topSource} icon={Star} iconBg="bg-amber-50" iconColor="text-amber-600" hover={false} />
       </div>

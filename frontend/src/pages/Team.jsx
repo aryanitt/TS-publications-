@@ -8,6 +8,7 @@ import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
 import CallyzerStatsPanel, { CallyzerTeamTable } from "../components/CallyzerStatsPanel.jsx";
 import { useCallyzerStats, useCallyzerTeamStats } from "../lib/useCallyzerStats.js";
+import { getPipelineQualifiedCount } from "../lib/leadSync.js";
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
   const s = document.createElement("style");
@@ -268,7 +269,7 @@ import {
   RadialBar,
 } from "recharts";
 import { GlassCard, Badge, StatCard, SectionHeader, Avatar } from "../components/Primitives.jsx";
-import { buildPipelineChartFromLeads } from "../data/employeeMock.js";
+import { buildPipelineChartFromLeads, mapEmpLeadKanbanStage, getEmpStageMeta } from "../data/employeeMock.js";
 
 function mapTeamLeadForChart(row) {
   return {
@@ -2124,11 +2125,15 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     setCashW(parseFloat(activeEmp.cashWeightage || activeEmp.cash_weightage) || 0);
 
     const achieved = activeEmp.achieved || {};
-    setCallA(callyzerStats?.totalCalls ?? achieved.calls ?? stats?.contacted ?? 0);
-    setLeadA(achieved.qualifiedLeads ?? stats?.qualified ?? 0);
-    setMeetA(achieved.meetings ?? stats?.totalMeetings ?? 0);
-    setCashA(achieved.cash ?? stats?.revenue ?? 0);
-  }, [activeEmp, stats, callyzerStats]);
+    setCallA(
+      callyzerStats?.conversations5MinPlus
+      ?? achieved.calls
+      ?? 0,
+    );
+    setLeadA(getPipelineQualifiedCount(stats, stageBreakdown) || achieved.qualifiedLeads || 0);
+    setMeetA(achieved.meetings ?? stats?.booked ?? 0);
+    setCashA(achieved.cash ?? 0);
+  }, [activeEmp, stats, callyzerStats, stageBreakdown]);
 
   const parseVal = (val) => {
     const parsed = parseFloat(val);
@@ -2201,7 +2206,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   const calls     = stats?.contacted ?? 0;
   const meetings  = stats?.totalMeetings ?? 0;
   const assigned  = stats?.totalLeads ?? 0;
-  const qualified = stats?.qualified ?? 0;
+  const qualified = getPipelineQualifiedCount(stats, stageBreakdown);
   const followups = stats?.followUps ?? 0;
   const converted = stats?.converted ?? 0;
   const revenue   = stats?.revenue ?? 0;
@@ -2216,17 +2221,10 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       }))
     : [];
 
-  const pipelineStages = useMemo(() => {
-    if (stageBreakdown?.length) {
-      return stageBreakdown.map((s, i) => ({
-        label: s.label,
-        count: s.count,
-        pct: s.pct,
-        color: ["#e11d48", "#94a3b8", "#3b82f6", "#7c3aed", "#0ea5e9", "#f59e0b", "#f97316", "#10b981"][i] || "#64748b",
-      }));
-    }
-    return buildPipelineChartFromLeads(leads.map(mapTeamLeadForChart));
-  }, [stageBreakdown, leads]);
+  const pipelineStages = useMemo(
+    () => buildPipelineChartFromLeads(leads.map(mapTeamLeadForChart)),
+    [leads],
+  );
 
   const pipelineTotal = pipelineStages.reduce((sum, s) => sum + (s.count || 0), 0);
   const convertedCount = pipelineStages.find((s) => s.label === "Converted")?.count || converted;
@@ -2235,7 +2233,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   const leadsList = leads.map((l) => ({
     name: l.lead_name || "Unknown",
     company: l.business_name || "—",
-    status: l.status || l.pipeline_stage || "New Lead",
+    status: getEmpStageMeta(mapEmpLeadKanbanStage(l.pipeline_stage, l.status)).label,
     priority: l.priority || l.temperature || "Medium",
     temp: l.priority === "Critical" || l.priority === "High" || l.temperature === "hot" ? 4 : l.priority === "Medium" || l.temperature === "warm" ? 3 : 2,
     next: l.follow_up ? new Date(l.follow_up).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—",
@@ -3018,12 +3016,33 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           </div>
         </div>
 
-        <div style={{ overflowX: "auto" }}>
+        <div style={{
+          overflowX: "auto",
+          overflowY: "auto",
+          maxHeight: compact ? 320 : 420,
+          border: "1px solid #f1f5f9",
+          borderRadius: 10,
+        }}>
           <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 11.5 }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)", color: "#64748b" }}>
+              <tr style={{ borderBottom: "1px solid var(--border)", color: "#64748b", background: "#fff" }}>
                 {["Lead Name", "Company", "Status", "Priority", "Temperature", "Next Follow-Up", "Potential", "Prob."].map(h => (
-                  <th key={h} style={{ padding: "10px 8px", textTransform: "uppercase", letterSpacing: ".06em", fontSize: 9.5 }}>{h}</th>
+                  <th
+                    key={h}
+                    style={{
+                      padding: "10px 8px",
+                      textTransform: "uppercase",
+                      letterSpacing: ".06em",
+                      fontSize: 9.5,
+                      position: "sticky",
+                      top: 0,
+                      background: "#fff",
+                      zIndex: 1,
+                      boxShadow: "0 1px 0 #f1f5f9",
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -3105,7 +3124,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           </table>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "#64748b", paddingTop: 8 }}>
-          <span>Showing {leadsList.length} leads</span>
+          <span>Showing {leadsList.length} lead{leadsList.length === 1 ? "" : "s"} · scroll for more</span>
           <div style={{ display: "flex", gap: 6 }}>
             <button disabled style={{ background: "#fff1f2", border: "1px solid #ffe4e6", borderRadius: 6, padding: "4px 8px", cursor: "not-allowed", opacity: 0.5 }}>Previous</button>
             <button disabled style={{ background: "#fff1f2", border: "1px solid #ffe4e6", borderRadius: 6, padding: "4px 8px", cursor: "not-allowed", opacity: 0.5 }}>Next</button>

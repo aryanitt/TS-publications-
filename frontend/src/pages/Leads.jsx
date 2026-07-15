@@ -16,7 +16,7 @@ import LeadDetailDrawer from "../components/leads/LeadDetailDrawer.jsx";
 import { GlassCard, StatCard, Badge, Drawer, SectionHeader } from "../components/Primitives.jsx";
 import { apiGet, apiPost, readCachedJson, invalidateCache } from "../lib/api.js";
 import { getAdminCrmHeaders } from "../lib/crmContext.js";
-import { apiLeadToAdmin, apiEmployeeToAdmin, unwrapApiData } from "../lib/leadSync.js";
+import { apiLeadToAdmin, apiEmployeeToAdmin, fetchAllLeads, unwrapApiData } from "../lib/leadSync.js";
 import {
   getAssignmentState, assignLead, bulkAssign,
   toggleEmployeeReceiving, setDistributionMode, setAutoAssign,
@@ -24,13 +24,6 @@ import {
   workloadStatus, getAssignmentForLead, getLeadId, normalizeSource,
   isConverted, persistAssignmentState,
 } from "../lib/leadAssignment.js";
-import {
-  dummyLeads,
-  dummyEmployees,
-  resolveDemoLeads,
-  resolveDemoEmployees,
-  createDemoAssignmentState,
-} from "../data/leadManagementMock.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
 import { PERIOD_PILL_BTN, PERIOD_PILL_INACTIVE } from "../lib/dateRange.js";
 
@@ -148,14 +141,10 @@ export default function Leads() {
   const [leads, setLeads] = useState(() => {
     const cached = readCachedJson("/api/sales/leads");
     if (cached?.success && cached.leads?.length) return cached.leads;
-    return dummyLeads;
+    return [];
   });
   const [employees, setEmployees] = useState([]);
-  const [assignState, setAssignState] = useState(() => {
-    const existing = getAssignmentState();
-    if (Object.keys(existing.assignments || {}).length > 0) return existing;
-    return createDemoAssignmentState(existing, [], dummyLeads);
-  });
+  const [assignState, setAssignState] = useState(() => getAssignmentState());
   const [loading, setLoading] = useState(() => {
     const cached = readCachedJson("/api/sales/leads");
     return !(cached?.success && cached.leads?.length);
@@ -193,13 +182,9 @@ const showToast = (message, type = "success") => {
 
   useEffect(() => {
     Promise.all([
-      apiGet("/api/v1/leads?limit=200", { headers: getAdminCrmHeaders(), skipCache: true, cacheTtl: 0 })
-        .then((res) => {
-          const items = unwrapApiData(res);
-          if (items.length) return { success: true, leads: items.map(apiLeadToAdmin), fromV1: true };
-          throw new Error("empty");
-        })
-        .catch(() => apiGet("/api/sales/leads").catch(() => ({ success: false, leads: [] }))),
+      fetchAllLeads(apiGet, { headers: getAdminCrmHeaders() })
+        .then((items) => ({ success: true, leads: items.map(apiLeadToAdmin), fromV1: true }))
+        .catch(() => ({ success: false, leads: [] })),
       // prefer /api/team/employees (real Team page data), fall back to v1
       apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 })
         .then((res) => {
@@ -226,38 +211,26 @@ const showToast = (message, type = "success") => {
         ),
     ])
       .then(([leadData, empData]) => {
-        const leadList = resolveDemoLeads(leadData.success ? leadData.leads : []);
-        // Use real employees directly — empty array if none, never fake data
+        const leadList = leadData.success ? leadData.leads : [];
         const empList = empData.employees || [];
-        const isDemo = !leadData.success || !leadData.leads?.length;
 
         setLeads(leadList);
         setEmployees(empList);
 
         setAssignState((prev) => {
-          const hasAssignments = Object.keys(prev.assignments || {}).length > 0;
           let s = syncRoundRobinOrder(prev, empList);
           if (!s.distribution.roundRobinOrder?.length) {
             s = initRoundRobinOrder(s, empList);
           }
-
-          if (isDemo && !hasAssignments) {
-            s = createDemoAssignmentState(s, empList, leadList);
-            persistAssignmentState(s);
-          } else if (!isDemo && !leadData.fromV1) {
+          if (leadList.length && !leadData.fromV1) {
             s = autoAssignUnassigned(s, empList, leadList);
           }
           return s;
         });
       })
       .catch(() => {
-        setLeads(dummyLeads);
+        setLeads([]);
         setEmployees([]);
-        setAssignState((prev) => {
-          const s = createDemoAssignmentState(prev, [], dummyLeads);
-          persistAssignmentState(s);
-          return s;
-        });
       })
     .finally(() => setLoading(false));
 }, []);

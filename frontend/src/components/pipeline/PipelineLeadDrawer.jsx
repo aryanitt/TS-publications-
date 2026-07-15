@@ -7,7 +7,6 @@ import {
 import toast from "react-hot-toast";
 import { Drawer, Badge } from "../Primitives.jsx";
 import { apiGet, apiPost, apiPatch, invalidateCache } from "../../lib/api.js";
-import { EMP_CALLS } from "../../data/employeeMock.js";
 import {
   PIPELINE_STAGES,
   PRIORITY_BADGE,
@@ -53,9 +52,13 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
 
       const saved = localStorage.getItem("emp_calls_list");
       if (saved) {
-        setCalls(JSON.parse(saved));
+        try {
+          setCalls(JSON.parse(saved));
+        } catch {
+          setCalls([]);
+        }
       } else {
-        setCalls(EMP_CALLS);
+        setCalls([]);
       }
     }
   }, [open, lead?.id]);

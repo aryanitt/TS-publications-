@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { GlassCard, Badge, Drawer } from "../../components/Primitives.jsx";
-import { EMP_SOP_CHECKLIST, EMP_LEAD_TEMPERATURES, getEmpAppToday, normalizeCallSop } from "../../data/employeeMock.js";
+import { EMP_SOP_CHECKLIST, EMP_SOP_SCRIPTS, normalizeCallSop } from "../../data/employeeMock.js";
 import useIsMobile from "../../lib/useIsMobile.js";
 import { RoseHero, EmpModal, ChooseLeadPanel, BtnSecondary } from "../components/EmpUI.jsx";
 import { notifyCallStarted } from "../utils/empToast.jsx";
@@ -11,7 +11,7 @@ import {
   Search, Star, Clock, Check, ChevronRight, ClipboardList,
   Sparkles, MessageSquare, Shield, DollarSign, Award, Copy,
   CheckCircle2, ArrowRight, Play, BookOpen, AlertTriangle,
-  RotateCcw, Info, User, HelpCircle, Flame, StarHalf, FileText, PhoneOff,
+  RotateCcw, Info, User, HelpCircle, Flame, StarHalf, FileText, Phone,
   ChevronDown,
 } from "lucide-react";
 
@@ -147,16 +147,25 @@ export default function EmployeeCallAssistant() {
   const urlSop = searchParams.get("sop");
   const urlFollowUp = searchParams.get("followUp");
 
-  const { leads, addCallRecord, addActivityRecord, sops, updateLeadTemperature, completeFollowUpWithMom } = useEmployee();
+  const {
+    leads,
+    employee,
+    sops,
+    startCallyzerCall,
+    syncCallyzerData,
+    completeFollowUp,
+    completeFollowUpWithMom,
+    markFollowUpNotPicked,
+    markFollowUpCallAgain,
+  } = useEmployee();
 
   const [selectedSopId, setSelectedSopId] = useState(1);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
 
-  // Live script customization inputs
   const [leadName, setLeadName] = useState(urlLead || "");
-  const [repName, setRepName] = useState("Amit Kumar");
+  const [repName, setRepName] = useState(employee?.name || "Employee");
 
   // Dynamic status tracking
   const [favorites, setFavorites] = useState([1]);
@@ -167,14 +176,19 @@ export default function EmployeeCallAssistant() {
   const [generalNotes, setGeneralNotes] = useState("");
   const [discoveryAnswers, setDiscoveryAnswers] = useState({});
 
-  // Call duration stopwatch
   const [callDuration, setCallDuration] = useState(0);
+  const [callyzerCallActive, setCallyzerCallActive] = useState(false);
   useEffect(() => {
+    if (!callyzerCallActive) return undefined;
     const timer = setInterval(() => {
       setCallDuration((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [callyzerCallActive]);
+
+  useEffect(() => {
+    if (employee?.name) setRepName(employee.name);
+  }, [employee?.name]);
 
   const formatDuration = (totalSecs) => {
     const m = Math.floor(totalSecs / 60);
@@ -182,14 +196,9 @@ export default function EmployeeCallAssistant() {
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
-  // AI MoM Modal states
   const [isEndingCall, setIsEndingCall] = useState(false);
-  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
-  const [aiMoM, setAiMoM] = useState("");
-  const [callOutcome, setCallOutcome] = useState("Discovery complete");
-  const [callRating, setCallRating] = useState(5);
-  const [callLeadTemp, setCallLeadTemp] = useState("warm");
   const [sopPickerOpen, setSopPickerOpen] = useState(false);
+  const [outcomeSaving, setOutcomeSaving] = useState(false);
 
   const matchedLead = useMemo(() => {
     if (urlLeadId) {
@@ -203,124 +212,71 @@ export default function EmployeeCallAssistant() {
 
   const companyName = matchedLead ? matchedLead.company : "TechSales Lead";
 
-  const handleEndCallClick = () => {
-    if (matchedLead?.status && ["hot", "warm", "cold"].includes(matchedLead.status)) {
-      setCallLeadTemp(matchedLead.status);
+  const handleStartCallyzerCall = async () => {
+    if (!matchedLead) {
+      toast.error("Select a valid lead before calling");
+      return;
     }
-    setIsEndingCall(true);
-    setIsGeneratingSummary(true);
-
-    // Simulate OpenAI API transcription & minutes of meeting extraction
-    setTimeout(() => {
-      const steps = activeSop?.steps || [];
-      const completedQuestionsText = steps
-        .flatMap((step) => step.questions || [])
-        .filter((q) => checkedQuestions[`${selectedSopId}-${q.id}`])
-        .map((q) => `• Verified Checklist: ${q.text}`)
-        .join("\n");
-
-      const discoveryNotesText = Object.entries(discoveryAnswers)
-        .filter(([key]) => key.startsWith(`${selectedSopId}-`))
-        .map(([key, val]) => {
-          const fieldKey = key.replace(`${selectedSopId}-`, "");
-          const label = fieldKey.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-          return `• ${label}: ${val}`;
-        })
-        .join("\n");
-
-      const summaryText = `[AI SUMMARY & MINUTES OF MEETING]
-Call Date: ${new Date().toLocaleDateString("en-IN")} at ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-SOP Guidance Used: ${activeSop.title} (${activeSop.category})
-Rep: ${repName} | Client Lead: ${leadName} (${companyName})
-Call Duration: ${formatDuration(callDuration)}
-
-Key Discussed Points & Qualifications Met:
-${completedQuestionsText || "• No standard qualification checklist checked during call."}
-
-Discovery Parameters Captured:
-${discoveryNotesText || "• No specific discovery notes registered."}
-
-Rep Custom Call Notes:
-"${generalNotes || "No custom notes recorded."}"
-
-Budget Bracket Assessment:
-• Confirmed Budget: ${selectedBudget || "Standard SOP limits (" + activeSop.budgetRange + ")"}
-
-AI Insights & Follow-up Actions:
-• Pitch Urgency: ${completionPercentage > 60 ? "HIGH" : completionPercentage > 20 ? "MODERATE" : "LOW"} (Target checklist completed: ${completionPercentage}%)
-• Next Steps: ${activeStepIndex === steps.length - 1 ? "Schedule kickoff call." : "Schedule follow-up to address subsequent checklist stages."}`;
-
-      setAiMoM(summaryText);
-      setIsGeneratingSummary(false);
-    }, 2500);
+    const session = await startCallyzerCall(matchedLead);
+    if (session) {
+      setCallyzerCallActive(true);
+      setCallDuration(0);
+      toast.success("Opening Callyzer — call from your phone. Recording syncs automatically.");
+    }
   };
 
-  const handleSaveCallToLogs = async () => {
-    if (!matchedLead?.id) {
-      toast.error("Select a lead from your pipeline before saving this call");
-      return;
-    }
+  const handleWrapUpClick = () => {
+    setIsEndingCall(true);
+  };
 
-    const callId = Date.now();
-    const newCallLog = {
-      id: callId,
-      leadId: matchedLead.id,
-      name: leadName,
-      company: companyName,
-      duration: formatDuration(callDuration),
-      type: "out",
-      date: "Today " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-      callAt: new Date().toISOString(),
-      callDay: getEmpAppToday(),
-      period: "today",
-      outcome: callOutcome,
-      hasRec: true,
-      rating: callRating,
-      mood: callLeadTemp,
-      phone: matchedLead.phone || "",
-      note: aiMoM,
-      aiMoM,
-      sopId: selectedSopId,
-      checkedQuestions: checkedQuestions,
-    };
-
-    const saved = await addCallRecord(newCallLog);
-    if (saved === null) {
-      return;
-    }
-
-    if (matchedLead?.status !== callLeadTemp) {
-      updateLeadTemperature(matchedLead.id, callLeadTemp);
-    }
-    addActivityRecord(newCallLog.leadId, {
-      type: "call",
-      text: `Outbound Call — ${callOutcome} (${formatDuration(callDuration)})`,
-      time: "Just now",
-    });
-
-    if (aiMoM) {
-      addActivityRecord(newCallLog.leadId, {
-        type: "note",
-        text: `AI Call Minutes of Meeting auto-summarized & logged by ${repName}.`,
-        time: "Just now",
-      });
-    }
-
-    if (aiMoM?.trim()) {
-      await completeFollowUpWithMom({
+  const handleCallOutcome = async (outcome) => {
+    if (outcomeSaving) return;
+    setOutcomeSaving(true);
+    try {
+      const followUpArgs = {
         followUpId: urlFollowUp || undefined,
-        leadId: matchedLead.id,
-        leadName,
-        mom: aiMoM,
-      });
+        leadId: matchedLead?.id,
+        leadName: leadName || matchedLead?.name,
+      };
+
+      if (outcome === "completed") {
+        if (urlFollowUp) {
+          await completeFollowUp(urlFollowUp);
+        } else if (matchedLead?.id) {
+          await completeFollowUpWithMom({
+            ...followUpArgs,
+            mom: generalNotes?.trim() || "Call completed via Callyzer",
+          });
+        }
+        toast.success("Call marked completed");
+        setIsEndingCall(false);
+        setCallyzerCallActive(false);
+        syncCallyzerData();
+        navigate("/employee/follow-ups?filter=completed");
+        return;
+      }
+
+      if (outcome === "not_picked") {
+        await markFollowUpNotPicked(urlFollowUp, followUpArgs);
+        toast.success("Marked not picked — follow-up stays open for retry");
+        setIsEndingCall(false);
+        setCallyzerCallActive(false);
+        syncCallyzerData();
+        navigate("/employee/follow-ups");
+        return;
+      }
+
+      if (outcome === "call_again") {
+        await markFollowUpCallAgain(urlFollowUp, followUpArgs);
+        toast.success("Follow-up kept open — call again when ready");
+        setIsEndingCall(false);
+        setCallyzerCallActive(false);
+        syncCallyzerData();
+        navigate("/employee/follow-ups");
+      }
+    } finally {
+      setOutcomeSaving(false);
     }
-
-    toast.success(aiMoM?.trim()
-      ? "Call & MOM saved — follow-up moved to Completed"
-      : "Call saved to Reporting database!");
-    setIsEndingCall(false);
-
-    navigate("/employee/calls");
   };
 
   // Active SOP calculations
@@ -353,6 +309,25 @@ AI Insights & Follow-up Actions:
     return activeSop.steps[activeStepIndex] || activeSop.steps[0];
   }, [activeSop, activeStepIndex]);
 
+  const scriptContent = useMemo(() => {
+    const stepScripts = activeStep?.scripts;
+    const defaultBody = EMP_SOP_SCRIPTS[0]?.body || "";
+    const opening = stepScripts?.opening
+      || defaultBody
+        .replace(/\[Name\]/g, leadName || "there")
+        .replace(/\[Your Name\]/g, repName || "your rep")
+        .replace(/\[Product\]/g, activeSop?.title || "our solution")
+        .replace(/\[benefit\]/g, activeSop?.sub || "better results");
+    return {
+      opening,
+      talkingPoints: stepScripts?.talkingPoints?.length
+        ? stepScripts.talkingPoints
+        : [EMP_SOP_SCRIPTS[0]?.use, activeSop?.sub].filter(Boolean),
+      tips: stepScripts?.tips || "Use the checklist on the left. Call recording syncs from Callyzer after you dial.",
+      label: activeStep?.label || "Opening",
+    };
+  }, [activeStep, leadName, repName, activeSop]);
+
   // Overall checklist progress of active SOP
   const completionPercentage = useMemo(() => {
     if (!activeSop?.steps?.length) return 0;
@@ -373,6 +348,10 @@ AI Insights & Follow-up Actions:
   }, [sops, searchQuery, categoryFilter]);
 
   const notifiedLeadRef = useRef(null);
+
+  useEffect(() => {
+    if (matchedLead?.name) setLeadName(matchedLead.name);
+  }, [matchedLead?.name]);
 
   useEffect(() => {
     if (!urlLead || notifiedLeadRef.current === urlLead) return;
@@ -491,22 +470,40 @@ AI Insights & Follow-up Actions:
                   Call Assistant
                 </h1>
               </div>
-              <span className="font-mono text-[10px] sm:text-[11px] text-rose-700 font-extrabold bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100/70 tracking-wider shrink-0 tabular-nums">
-                ⏱ {formatDuration(callDuration)}
+              <span className="font-mono text-[10px] sm:text-[11px] text-rose-700 font-extrabold bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100/70 tracking-wider tabular-nums shrink-0">
+                ⏱ {callyzerCallActive ? formatDuration(callDuration) : "—"}
               </span>
             </div>
 
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[9px] sm:text-[10px] font-bold border border-emerald-200 shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" /> Connected
-              </span>
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              {callyzerCallActive ? (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[9px] sm:text-[10px] font-bold border border-emerald-200 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Callyzer active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-50 text-slate-600 text-[9px] sm:text-[10px] font-bold border border-slate-200 shrink-0">
+                  Dial from Callyzer app
+                </span>
+              )}
+              {callyzerCallActive && (
+                <span className="font-mono text-[10px] sm:text-[11px] text-rose-700 font-extrabold bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100/70 tabular-nums shrink-0">
+                  {formatDuration(callDuration)}
+                </span>
+              )}
               <button
                 type="button"
-                onClick={handleEndCallClick}
-                className="inline-flex items-center justify-center gap-1 px-3 h-8 sm:h-9 rounded-lg sm:rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] sm:text-xs font-bold transition shadow-sm active:scale-95 shrink-0 ml-auto"
+                onClick={handleStartCallyzerCall}
+                className="inline-flex items-center justify-center gap-1 px-3 h-8 sm:h-9 rounded-lg sm:rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] sm:text-xs font-bold transition shadow-sm active:scale-95 shrink-0"
               >
-                <PhoneOff className="w-3.5 h-3.5" />
-                <span>End Call</span>
+                <Phone className="w-3.5 h-3.5" />
+                <span>Call on Callyzer</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleWrapUpClick}
+                className="inline-flex items-center justify-center gap-1 px-3 h-8 sm:h-9 rounded-lg sm:rounded-xl bg-white border border-slate-200 text-slate-700 text-[11px] sm:text-xs font-bold hover:bg-slate-50 transition shrink-0 ml-auto"
+              >
+                Log Outcome
               </button>
             </div>
           </div>
@@ -534,22 +531,32 @@ AI Insights & Follow-up Actions:
               </h1>
             </div>
 
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200 shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Connected
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 text-[10px] font-bold border border-slate-200 shrink-0">
+              {callyzerCallActive ? "Callyzer call in progress" : "Ready — use Callyzer to dial"}
             </span>
 
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-rose-700 font-extrabold bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100/70 tracking-wider tabular-nums shrink-0">
-              <Clock className="w-3.5 h-3.5 text-rose-500" />
-              {formatDuration(callDuration)}
-            </span>
+            {callyzerCallActive && (
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-rose-700 font-extrabold bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100/70 tracking-wider tabular-nums shrink-0">
+                <Clock className="w-3.5 h-3.5 text-rose-500" />
+                {formatDuration(callDuration)}
+              </span>
+            )}
 
             <button
               type="button"
-              onClick={handleEndCallClick}
+              onClick={handleStartCallyzerCall}
               className="inline-flex items-center justify-center gap-1.5 px-4 h-9 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-sm hover:shadow-md active:scale-[0.98] shrink-0"
             >
-              <PhoneOff className="w-3.5 h-3.5" />
-              End Call
+              <Phone className="w-3.5 h-3.5" />
+              Call on Callyzer
+            </button>
+
+            <button
+              type="button"
+              onClick={handleWrapUpClick}
+              className="inline-flex items-center justify-center gap-1.5 px-4 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition shrink-0"
+            >
+              Log Outcome
             </button>
           </div>
 
@@ -986,15 +993,15 @@ AI Insights & Follow-up Actions:
           </GlassCard>
 
           {/* Live Script Card */}
-          {activeStep && activeStep.scripts && (
+          {scriptContent && (
             <GlassCard className="p-4 space-y-3 bg-rose-50/20 border border-rose-100">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-black uppercase text-rose-700 tracking-wider">
-                  {activeStep.label} Call Script
+                  {scriptContent.label} Call Script
                 </span>
                 <button
                   type="button"
-                  onClick={() => copyToClipboard(formatScriptText(activeStep.scripts?.opening || ""))}
+                  onClick={() => copyToClipboard(formatScriptText(scriptContent.opening || ""))}
                   className="p-1 rounded-lg hover:bg-rose-100/50 text-rose-700 transition"
                   title="Copy Script"
                 >
@@ -1004,7 +1011,7 @@ AI Insights & Follow-up Actions:
 
               <div className="p-3 bg-white border border-rose-100 rounded-xl">
                 <p className="text-xs text-slate-700 leading-relaxed font-semibold italic">
-                  "{formatScriptText(activeStep.scripts?.opening || "")}"
+                  "{formatScriptText(scriptContent.opening || "")}"
                 </p>
               </div>
 
@@ -1013,7 +1020,7 @@ AI Insights & Follow-up Actions:
                   Important Talking Points
                 </span>
                 <ul className="space-y-1 pl-1">
-                  {(activeStep.scripts?.talkingPoints || []).map((tp, idx) => (
+                  {(scriptContent.talkingPoints || []).map((tp, idx) => (
                     <li key={idx} className="text-[10px] text-slate-655 flex items-start gap-1 font-semibold">
                       <span className="text-rose-500">•</span>
                       <span>{tp}</span>
@@ -1025,7 +1032,7 @@ AI Insights & Follow-up Actions:
               <div className="bg-rose-50 border border-rose-150 p-2.5 rounded-xl flex items-start gap-2">
                 <Info className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
                 <p className="text-[10px] text-rose-800 leading-snug font-bold">
-                  {activeStep.scripts?.tips || ""}
+                  {scriptContent.tips}
                 </p>
               </div>
             </GlassCard>
@@ -1198,119 +1205,55 @@ AI Insights & Follow-up Actions:
         </div>
       </Drawer>
 
-      {/* End Call & AI MoM Summary Modal */}
       <EmpModal
         open={isEndingCall}
-        onClose={() => !isGeneratingSummary && setIsEndingCall(false)}
-        title={isGeneratingSummary ? "Engaging OpenAI API..." : "AI Call Minutes & Summary"}
-        subtitle={isGeneratingSummary ? "Transcribing dialog and extracting core outcomes" : `Outbound Session Wrap-up: ${leadName}`}
-        footer={
-          !isGeneratingSummary && (
-            <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setIsEndingCall(false)}
-                className="w-full sm:w-auto px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition rounded-xl border border-slate-200 sm:border-transparent"
-              >
-                Discard & Resume
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveCallToLogs}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition shadow-sm"
-              >
-                Save & Log Call
-              </button>
-            </div>
-          )
-        }
+        onClose={() => !outcomeSaving && setIsEndingCall(false)}
+        title="How did the call go?"
+        subtitle={`${leadName || "Lead"} · recording & duration sync from Callyzer`}
+        footer={null}
       >
-        {isGeneratingSummary ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">
-            <div className="w-12 h-12 rounded-full border-4 border-rose-100 border-t-rose-600 animate-spin" />
-            <div>
-              <p className="text-sm font-bold text-slate-800">Processing Audio Feed & Notes...</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
-                Analyzing checked qualification checklist, custom notes, and discovery values to generate the Minutes of Meeting (MoM).
-              </p>
-            </div>
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Pick an outcome for this follow-up. Call details and recordings are pulled from Callyzer automatically — no manual logging needed.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button
+              type="button"
+              disabled={outcomeSaving}
+              onClick={() => handleCallOutcome("completed")}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition text-center disabled:opacity-60"
+            >
+              <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+              <span className="text-xs font-bold text-emerald-800">Call Completed</span>
+            </button>
+            <button
+              type="button"
+              disabled={outcomeSaving}
+              onClick={() => handleCallOutcome("not_picked")}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 transition text-center disabled:opacity-60"
+            >
+              <Phone className="w-6 h-6 text-amber-700 rotate-12" />
+              <span className="text-xs font-bold text-amber-900">Not Picked</span>
+            </button>
+            <button
+              type="button"
+              disabled={outcomeSaving}
+              onClick={() => handleCallOutcome("call_again")}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-sky-200 bg-sky-50 hover:bg-sky-100 transition text-center disabled:opacity-60"
+            >
+              <RotateCcw className="w-6 h-6 text-sky-700" />
+              <span className="text-xs font-bold text-sky-900">Call Again</span>
+            </button>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                Call Outcome / Status
-              </label>
-              <select
-                value={callOutcome}
-                onChange={(e) => setCallOutcome(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-200"
-              >
-                <option value="Discovery complete">Discovery complete</option>
-                <option value="BANT Qualified">BANT Qualified</option>
-                <option value="Demo Scheduled">Demo Scheduled</option>
-                <option value="Follow-up confirmed">Follow-up confirmed</option>
-                <option value="Pricing shared">Pricing shared</option>
-                <option value="Not interested">Not interested</option>
-                <option value="Not picked">Not picked</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                  Lead Score / Rating
-                </label>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setCallRating(star)}
-                      className="text-amber-400 hover:scale-110 transition shrink-0"
-                    >
-                      <Star className={`w-5 h-5 ${star <= callRating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                  Lead Temperature
-                </label>
-                <select
-                  value={callLeadTemp}
-                  onChange={(e) => setCallLeadTemp(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-200"
-                >
-                  {EMP_LEAD_TEMPERATURES.map(({ id, label }) => (
-                    <option key={id} value={id}>
-                      {label} Lead
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                  Generated AI Call Summary & MoM
-                </label>
-                <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5 text-rose-600 animate-pulse" /> OpenAI GPT-4o
-                </span>
-              </div>
-              <textarea
-                rows={isMobile ? 5 : 8}
-                value={aiMoM}
-                onChange={(e) => setAiMoM(e.target.value)}
-                className="w-full p-3.5 text-[11px] bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-350 resize-none max-h-[28vh] sm:max-h-none"
-              />
-            </div>
-          </div>
-        )}
+          <button
+            type="button"
+            disabled={outcomeSaving}
+            onClick={() => setIsEndingCall(false)}
+            className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 rounded-xl border border-slate-200"
+          >
+            Back to script
+          </button>
+        </div>
       </EmpModal>
     </div>
   );

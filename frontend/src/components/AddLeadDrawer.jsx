@@ -8,7 +8,6 @@ import { Drawer } from "./Primitives.jsx";
 import { apiPost, invalidateCache } from "../lib/api.js";
 import { getAdminCrmHeaders } from "../lib/crmContext.js";
 import { apiLeadToAdmin, unwrapApiData } from "../lib/leadSync.js";
-import { createLocalLead } from "../data/leadManagementMock.js";
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa",
@@ -186,22 +185,7 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Ne
           onClose(apiLeadToAdmin(saved));
         } catch (error) {
           console.error("Create lead error:", error);
-          const useLocal =
-            !error.status ||
-            error.status >= 500 ||
-            error.message === "Failed to fetch" ||
-            /network/i.test(String(error.message || ""));
-          if (useLocal) {
-            const local = createLocalLead({
-              ...payload,
-              source: payload.source || "Manual",
-            });
-            invalidateCache("/api/sales/leads");
-            showToast("Lead saved locally (backend unavailable)");
-            onClose(local.lead);
-          } else {
-            showToast(error.message || "Failed to create lead", "error");
-          }
+          showToast(error.message || "Failed to create lead", "error");
         } finally {
           setLoading(false);
         }

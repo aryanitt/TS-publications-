@@ -72,7 +72,7 @@ export const EMP_LEADS = [
 export function buildPipelineChartFromLeads(leads = []) {
   const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
   for (const lead of leads) {
-    const stageId = mapEmpLeadKanbanStage(lead.stage, lead.status);
+    const stageId = mapEmpLeadKanbanStage(lead.pipelineStage || lead.stage, lead.status);
     counts[stageId] = (counts[stageId] || 0) + 1;
   }
   const max = Math.max(1, ...Object.values(counts));
@@ -82,6 +82,16 @@ export function buildPipelineChartFromLeads(leads = []) {
     pct: Math.round(((counts[s.id] || 0) / max) * 100),
     color: s.color,
   }));
+}
+
+/** Stable key for pipeline chart — only changes when stage counts change. */
+export function pipelineStageCountsKey(leads = []) {
+  const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
+  for (const lead of leads) {
+    const stageId = mapEmpLeadKanbanStage(lead.pipelineStage || lead.stage, lead.status);
+    counts[stageId] = (counts[stageId] || 0) + 1;
+  }
+  return EMP_KANBAN_STAGES.map((s) => counts[s.id] || 0).join(",");
 }
 
 export function buildSourceChartFromLeads(leads = []) {
@@ -184,9 +194,7 @@ export function filterCallsForPeriod(calls, period) {
 export function computeCallStatsFromCalls(calls, period = "today") {
   const list = filterCallsForPeriod(calls, period);
   const dials = list.length;
-  const missed = list.filter(
-    (c) => c.type === "miss" || /not pick|missed/i.test(String(c.outcome || "")),
-  ).length;
+  const missed = list.filter((c) => isMissedCall(c)).length;
   const connected = dials - missed;
   const pickupRate = dials ? Math.round((connected / dials) * 100) : 0;
   const missRate = dials ? Math.round((missed / dials) * 100) : 0;
@@ -640,6 +648,7 @@ export const EMP_KANBAN_STAGES = [
   { id: "booked", label: "Booked", color: "#0ea5e9", badgeTone: "info" },
   { id: "showed_up", label: "Showed up", color: "#7c3aed", badgeTone: "primary" },
   { id: "proposal_sent", label: "Proposal Sent", color: "#f59e0b", badgeTone: "warning" },
+  { id: "converted", label: "Converted", color: "#10b981", badgeTone: "success" },
 ];
 
 export function parseEmpBudget(budget) {
@@ -693,8 +702,14 @@ export function getEmpPipelineSummary(leads) {
       stage === "ni"
     );
   }).length;
+  const converted = leads.filter((l) => {
+    const stageId = mapEmpLeadKanbanStage(l.pipelineStage || l.stage, l.status);
+    return stageId === "converted" || String(l.status || "").toLowerCase() === "converted";
+  }).length;
+  const active = Math.max(0, total - notInterested);
+  const winRate = total ? Math.round((converted / total) * 100) : 0;
 
-  return { total, hot, warm, cold, value, notInterested };
+  return { total, hot, warm, cold, value, notInterested, active, winRate, converted };
 }
 
 export function getEmpStageMeta(stageId) {
@@ -713,7 +728,7 @@ const DRAWER_STAGE_TO_EMP = {
   Attempted: "Conversation",
   "Not Pick": "Conversation",
   Negotiation: "Proposal Sent",
-  Converted: "Proposal Sent",
+  Converted: "Converted",
 };
 
 export function empLeadFromDrawerPayload(raw, avatarColors) {
@@ -752,16 +767,36 @@ export function isEmployeeNewAssignedLead(lead) {
   return assignStatus === "assigned" || assignStatus === "pending" || assignStatus === "unassigned";
 }
 
+export function resolvePipelineStageLabel(input, status = "") {
+  if (input == null || input === "") return undefined;
+  const raw = String(input).trim();
+  const byId = EMP_KANBAN_STAGES.find((stage) => stage.id === raw);
+  if (byId) return byId.label;
+  const byLabel = EMP_KANBAN_STAGES.find(
+    (stage) => stage.label.toLowerCase() === raw.toLowerCase(),
+  );
+  if (byLabel) return byLabel.label;
+  const stageId = mapEmpLeadKanbanStage(raw, status);
+  return getEmpStageMeta(stageId).label;
+}
+
 export function mapEmpLeadKanbanStage(stage, status) {
-  const s = (stage || "").toLowerCase();
+  const raw = String(stage || "").trim();
+  const s = raw.toLowerCase();
+  const normalized = s.replace(/_/g, " ");
   const st = (status || "").toLowerCase();
-  if (s.includes("proposal sent") || s === "proposal sent") return "proposal_sent";
-  if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up")) return "showed_up";
-  if (s.includes("booked") || s.includes("call booked")) return "booked";
-  if (s.includes("conversation")) return "conversation";
-  if (s.includes("proposal") || s.includes("negotiation") || s.includes("converted") || s === "won") {
-    return "proposal_sent";
-  }
+
+  const directId = EMP_KANBAN_STAGES.find(
+    (item) => item.id === s || item.id === raw || item.label.toLowerCase() === s || item.label.toLowerCase() === normalized,
+  );
+  if (directId) return directId.id;
+
+  if (normalized.includes("converted") || normalized === "won" || normalized.includes("closed won")) return "converted";
+  if (normalized.includes("proposal sent")) return "proposal_sent";
+  if (normalized.includes("showed up") || normalized.includes("show up")) return "showed_up";
+  if (normalized.includes("booked") || normalized.includes("call booked")) return "booked";
+  if (normalized.includes("conversation")) return "conversation";
+  if (normalized.includes("proposal") || normalized.includes("negotiation")) return "proposal_sent";
   if (
     s.includes("contacted")
     || s.includes("qualified")
@@ -772,7 +807,8 @@ export function mapEmpLeadKanbanStage(stage, status) {
   ) {
     return "conversation";
   }
-  if (st.includes("proposal") || st === "converted") return "proposal_sent";
+  if (st === "converted") return "converted";
+  if (st.includes("proposal")) return "proposal_sent";
   if (st.includes("booked")) return "booked";
   return "conversation";
 }
@@ -780,7 +816,7 @@ export function mapEmpLeadKanbanStage(stage, status) {
 export function groupEmpLeadsKanban(leads) {
   const map = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, []]));
   leads.forEach((l) => {
-    const id = mapEmpLeadKanbanStage(l.stage, l.status);
+    const id = mapEmpLeadKanbanStage(l.pipelineStage || l.stage, l.status);
     if (map[id]) map[id].push(l);
   });
   return map;
@@ -966,6 +1002,18 @@ export function formatFollowUpCompletedAt(iso) {
   });
 }
 
+export function isFollowUpCompleted(followUp) {
+  if (!followUp) return false;
+  const status = String(followUp.status || "").toLowerCase();
+  return Boolean(
+    followUp.done
+    || followUp.completedAt
+    || followUp.completedWithMom
+    || status === "completed"
+    || status === "done",
+  );
+}
+
 export function formatFollowUpSchedule(dateStr, timeStr) {
   const d = new Date(`${dateStr}T00:00:00`);
   const today = new Date(`${getEmpAppToday()}T00:00:00`);
@@ -1037,6 +1085,24 @@ export function parseDurationToSeconds(value) {
   return 0;
 }
 
+export function isMissedCall(call = {}) {
+  if (call.type === "miss") return true;
+  const outcome = String(call.outcome || "").toLowerCase();
+  if (/not connected|not pick|missed|rejected|no answer|busy|unanswered|not answered/.test(outcome)) {
+    return true;
+  }
+  const durationSec = Number.isFinite(call.durationSec)
+    ? call.durationSec
+    : parseDurationToSeconds(call.duration);
+  return durationSec <= 2 && !/connected/i.test(outcome);
+}
+
+export function resolveEmployeeCallType(call = {}) {
+  if (isMissedCall(call)) return "miss";
+  if (call.type === "in" || call.direction === "inbound") return "in";
+  return "out";
+}
+
 export function formatDurationFromSeconds(totalSecs) {
   if (!totalSecs) return "—";
   const m = Math.floor(totalSecs / 60);
@@ -1077,6 +1143,49 @@ export function phonesMatchLoose(a, b) {
   return da.slice(-10) === db.slice(-10);
 }
 
+export function resolveLeadForCall(call, leadList = []) {
+  if (!call || !Array.isArray(leadList)) return null;
+
+  if (call.leadId) {
+    const byId = leadList.find((l) => String(l.id) === String(call.leadId));
+    if (byId) return byId;
+  }
+
+  const phone = call.phone || "";
+  if (phone) {
+    const byPhone = leadList.find((l) => phonesMatchLoose(l.phone, phone));
+    if (byPhone) return byPhone;
+  }
+
+  const name = (call.name || "").trim().toLowerCase();
+  if (name && name !== "unknown lead" && name !== "unknown") {
+    const byExact = leadList.find((l) => String(l.name || "").trim().toLowerCase() === name);
+    if (byExact) return byExact;
+
+    const byPartial = leadList.find((l) => {
+      const leadName = String(l.name || "").trim().toLowerCase();
+      if (!leadName) return false;
+      return leadName.includes(name) || name.includes(leadName);
+    });
+    if (byPartial) return byPartial;
+  }
+
+  return null;
+}
+
+export function mergeCallsById(prev, next) {
+  if (!Array.isArray(next) || next.length === 0) {
+    return Array.isArray(prev) ? prev : [];
+  }
+  const map = new Map((Array.isArray(prev) ? prev : []).map((c) => [String(c.id), c]));
+  next.forEach((c) => map.set(String(c.id), c));
+  return Array.from(map.values()).sort((a, b) => {
+    const ta = new Date(a.callAt || a.date || 0).getTime();
+    const tb = new Date(b.callAt || b.date || 0).getTime();
+    return tb - ta;
+  });
+}
+
 export function callFromApi(apiCall, leads = []) {
   const lead = leads.find((l) => String(l.id) === String(apiCall.leadId));
   const created = apiCall.startedAt || apiCall.createdAt;
@@ -1099,6 +1208,13 @@ export function callFromApi(apiCall, leads = []) {
     : `${createdDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${createdDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
 
   const dir = apiCall.direction === "inbound" ? "in" : "out";
+  const type = isMissedCall({
+    type: dir,
+    outcome: apiCall.outcome,
+    durationSec: apiCall.durationSec,
+  })
+    ? "miss"
+    : dir;
 
   return {
     id: apiCall.id,
@@ -1106,7 +1222,7 @@ export function callFromApi(apiCall, leads = []) {
     name: lead?.name || lead?.leadName || apiCall.clientName || "Unknown Lead",
     company: lead?.company || lead?.companyName || "—",
     duration: formatDurationFromSeconds(apiCall.durationSec),
-    type: dir,
+    type,
     date: dateLabel,
     callAt: created || createdDate.toISOString(),
     callDay,
@@ -1178,6 +1294,8 @@ export function followUpFromApi(apiFollowup, leads = [], type) {
   const leadName = lead?.name || lead?.leadName || apiFollowup.leadName || "Lead";
   const resolvedType = inferFollowUpType(apiFollowup.note, type);
   const status = String(apiFollowup.status || "pending").toLowerCase();
+  const isCompleted = status === "completed" || status === "done";
+  const completedAt = apiFollowup.completedAt || apiFollowup.completed_at || null;
 
   return {
     id: apiFollowup.id,
@@ -1191,10 +1309,11 @@ export function followUpFromApi(apiFollowup, leads = [], type) {
     note: apiFollowup.note || "",
     scheduledDate: dateStr,
     scheduledTime: timeStr,
-    done: status === "completed" || status === "done",
+    status,
+    done: isCompleted,
     completedWithMom: Boolean(apiFollowup.completedWithMom || apiFollowup.completed_with_mom),
-    completedAt: apiFollowup.completedAt || apiFollowup.completed_at || null,
-    completedTime: formatFollowUpCompletedAt(apiFollowup.completedAt || apiFollowup.completed_at),
+    completedAt,
+    completedTime: formatFollowUpCompletedAt(completedAt),
     taskId: apiFollowup.taskId,
     leadId: apiFollowup.leadId,
   };
@@ -1260,8 +1379,8 @@ export function getEmployeePerformanceSnapshot(employee, leads = []) {
     callsTarget: employee.callsTarget,
     revenueL: stats.revenueL ?? (liveRevenueL || 24),
     revenueTargetL: stats.revenueTargetL ?? 30,
-    qualifiedLeads: stats.qualifiedLeads ?? 14,
-    meetingsBooked: stats.meetingsBooked ?? 6,
+    qualifiedLeads: stats.qualifiedLeads ?? 0,
+    meetingsBooked: stats.meetingsBooked ?? 0,
     responseTimeMin: employee.responseTimeMin,
     pickupRate: employee.pickupRate,
     qualificationRate: employee.qualificationRate,

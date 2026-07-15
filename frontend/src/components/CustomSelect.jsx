@@ -34,11 +34,14 @@ export function CustomSelect({
   placeholder = "Select…",
   searchable = false,
   showAvatars = false,
+  searchPlaceholder = "Search by name or phone…",
   className = "",
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [menuStyle, setMenuStyle] = useState(null);
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
 
   const selected = useMemo(
     () => options.find((o) => String(o.value) === String(value)),
@@ -47,24 +50,52 @@ export function CustomSelect({
 
   const filtered = useMemo(() => {
     if (!searchable || !query.trim()) return options;
-    const q = query.toLowerCase();
-    return options.filter(
-      (o) =>
-        o.label?.toLowerCase().includes(q) ||
-        o.subtitle?.toLowerCase().includes(q),
-    );
+    const q = query.toLowerCase().trim();
+    const qDigits = query.replace(/\D/g, "");
+    return options.filter((o) => {
+      if (o.label?.toLowerCase().includes(q)) return true;
+      if (o.subtitle?.toLowerCase().includes(q)) return true;
+      if (o.searchText?.toLowerCase().includes(q)) return true;
+      if (qDigits) {
+        const phoneDigits = String(o.searchText || o.subtitle || "").replace(/\D/g, "");
+        if (phoneDigits.includes(qDigits)) return true;
+      }
+      return false;
+    });
   }, [options, query, searchable]);
 
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setMenuStyle(null);
       return undefined;
     }
+    const updateMenuPosition = () => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const menuHeight = Math.min(280, spaceBelow - 12);
+      setMenuStyle({
+        position: "fixed",
+        top: menuHeight > 120 ? rect.bottom + 6 : Math.max(8, rect.top - 280 - 6),
+        left: rect.left,
+        width: rect.width,
+        zIndex: 9999,
+        maxHeight: Math.max(160, menuHeight),
+      });
+    };
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
     const onDoc = (e) => {
       if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+      document.removeEventListener("mousedown", onDoc);
+    };
   }, [open]);
 
   const triggerH = compact ? "h-9" : "h-10";
@@ -79,6 +110,7 @@ export function CustomSelect({
       )}
 
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`w-full min-w-0 ${triggerH} px-3 rounded-xl border bg-white text-left font-semibold outline-none transition flex items-center gap-2 ${
@@ -87,14 +119,26 @@ export function CustomSelect({
       >
         {Icon && <Icon className={`text-rose-300 shrink-0 ${compact ? "w-3.5 h-3.5" : "w-4 h-4"}`} />}
         {showAvatars && selected?.label && <MiniAvatar name={selected.label} size={compact ? 22 : 26} />}
-        <span className={`flex-1 truncate ${selected ? "text-slate-800" : "text-slate-400"}`}>
-          {selected?.label || placeholder}
+        <span className={`flex-1 min-w-0 truncate ${selected ? "text-slate-800" : "text-slate-400"}`}>
+          {selected ? (
+            <>
+              <span className="font-semibold">{selected.label}</span>
+              {selected.subtitle && selected.subtitle !== "—" && (
+                <span className="text-slate-500 font-medium"> · {selected.subtitle}</span>
+              )}
+            </>
+          ) : (
+            placeholder
+          )}
         </span>
         <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1.5 rounded-2xl border border-rose-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] overflow-hidden animate-fade-in">
+      {open && menuStyle && (
+        <div
+          className="rounded-2xl border border-rose-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] overflow-hidden animate-fade-in flex flex-col"
+          style={menuStyle}
+        >
           {searchable && (
             <div className="p-2 border-b border-rose-50">
               <div className="relative">
@@ -103,15 +147,15 @@ export function CustomSelect({
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search…"
-                  className="w-full h-8 pl-8 pr-2 rounded-lg border border-rose-100 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-rose-300"
+                  placeholder={searchPlaceholder}
+                  className="w-full h-9 pl-8 pr-2 rounded-lg border border-rose-100 bg-slate-50/80 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-rose-300 focus:bg-white"
                   autoFocus
                 />
               </div>
             </div>
           )}
 
-          <ul className="max-h-52 overflow-y-auto py-1">
+          <ul className="flex-1 min-h-0 overflow-y-auto py-1 scrollbar-thin">
             {filtered.length === 0 ? (
               <li className="px-3 py-4 text-center text-xs text-slate-400">No matches</li>
             ) : (
@@ -136,8 +180,10 @@ export function CustomSelect({
                         <span className={`block text-xs font-bold truncate ${active ? "text-rose-800" : "text-slate-800"}`}>
                           {opt.label}
                         </span>
-                        {opt.subtitle && (
-                          <span className="block text-[10px] text-slate-400 truncate mt-0.5">{opt.subtitle}</span>
+                        {opt.subtitle && opt.subtitle !== "—" && (
+                          <span className={`block text-[10px] truncate mt-0.5 tabular-nums ${active ? "text-rose-600/80" : "text-slate-500"}`}>
+                            {opt.subtitle}
+                          </span>
                         )}
                       </span>
                       {active && <Check className="w-4 h-4 text-rose-600 shrink-0" />}

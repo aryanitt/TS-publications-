@@ -11,6 +11,7 @@ import {
   computeCallStatsFromCalls,
   filterCallsForPeriod,
   LEAD_STATUS_LABELS,
+  resolveEmployeeCallType,
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
@@ -122,7 +123,8 @@ function CallMetricCard({ pct, color, label, shortLabel, footer, accentRgb }) {
 }
 
 function CallLogItem({ call, active, onSelect }) {
-  const meta = TYPE_META[call.type] || TYPE_META.out;
+  const callType = resolveEmployeeCallType(call);
+  const meta = TYPE_META[callType] || TYPE_META.out;
   const Icon = meta.icon;
   const timeOnly = call.date?.includes("Today")
     ? call.date.replace("Today ", "")
@@ -244,7 +246,7 @@ export default function EmployeeCalls() {
   const calls = useMemo(() => {
     let list = filterCallsForPeriod(contextCalls, period);
 
-    if (typeFilter !== "all") list = list.filter((c) => c.type === typeFilter);
+    if (typeFilter !== "all") list = list.filter((c) => resolveEmployeeCallType(c) === typeFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(

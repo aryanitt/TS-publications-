@@ -7,7 +7,6 @@ import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import PipelineLeadDrawer from "../components/pipeline/PipelineLeadDrawer.jsx";
 import {
   PIPELINE_STAGES,
-  PIPELINE_LEADS,
   PRIORITY_BADGE,
   formatPipelineValue,
   groupLeadsByStage,
@@ -19,7 +18,7 @@ import {
 } from "../data/pipelineMock.js";
 import { apiGet, apiPatch, invalidateCache } from "../lib/api.js";
 import { getAdminCrmHeaders } from "../lib/crmContext.js";
-import { apiLeadToPipeline, unwrapApiData } from "../lib/leadSync.js";
+import { apiLeadToPipeline, fetchAllLeads, adminPipelineIdToDbStage } from "../lib/leadSync.js";
 import { getAssignmentState, getLeadEmployeeName } from "../lib/leadAssignment.js";
 import useIsMobile from "../lib/useIsMobile.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
@@ -62,11 +61,12 @@ export default function Pipeline() {
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
-  const [leads, setLeads] = useState(PIPELINE_LEADS);
+  const [leads, setLeads] = useState([]);
   const [search, setSearch] = useState("");
   const [activeStage, setActiveStage] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [leadsLoading, setLeadsLoading] = useState(true);
   const [dragLeadId, setDragLeadId] = useState(null);
   const [dropStageId, setDropStageId] = useState(null);
   const columnRefs = useRef({});
@@ -103,14 +103,14 @@ export default function Pipeline() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setLeadsLoading(true);
       try {
-        const res = await apiGet("/api/v1/leads?limit=200", {
-          headers: getAdminCrmHeaders(),
-          skipCache: true,
-          cacheTtl: 0,
-        });
-        const items = unwrapApiData(res);
-        if (cancelled || !items.length) return;
+        const items = await fetchAllLeads(apiGet, { headers: getAdminCrmHeaders() });
+        if (cancelled) return;
+        if (!items.length) {
+          setLeads([]);
+          return;
+        }
         const assignmentState = getAssignmentState();
         setLeads(
           items.map((lead) => {
@@ -135,8 +135,10 @@ export default function Pipeline() {
             }),
           );
         } catch {
-          // keep PIPELINE_LEADS mock
+          if (!cancelled) setLeads([]);
         }
+      } finally {
+        if (!cancelled) setLeadsLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -206,7 +208,7 @@ export default function Pipeline() {
     applyLeadUpdate(updated);
     const dbId = lead._dbId || leadId;
     if (dbId && String(dbId).match(/^\d+$/)) {
-      const stageLabel = getStageMeta(stageId).label;
+      const stageLabel = adminPipelineIdToDbStage(stageId);
       apiPatch(`/api/v1/leads/${dbId}/stage`, { stage: stageLabel, status: stageLabel }, {
         headers: getAdminCrmHeaders(),
       })
@@ -232,17 +234,17 @@ export default function Pipeline() {
             icon={TrendingUp}
             iconBg="bg-emerald-50"
             iconColor="text-emerald-600"
-            change="+14%"
-            sub="vs last month"
+            change=""
+            sub=""
           />
           <StatCard
             label="Total Leads"
-            value={String(summary.total)}
+            value={leadsLoading ? "…" : String(summary.total)}
             icon={Kanban}
             iconBg="bg-rose-50"
             iconColor="text-rose-600"
-            change="+8%"
-            sub="this month"
+            change={leadsLoading ? "Loading" : ""}
+            sub={leadsLoading ? "syncing from database" : ""}
           />
           <StatCard
             label="Hot Leads"

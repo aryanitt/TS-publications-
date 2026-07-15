@@ -17,7 +17,6 @@ import {
   GlassCard, Badge, Drawer, SectionHeader,
   priorityTone, stageTone, Avatar, StatCard,
 } from "../components/Primitives.jsx";
-import { salesKpis } from "../data/mock.js";
 import { formatIndianNumber } from "../lib/indianFormat.js";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import { apiGet, apiPut, apiDelete } from "../lib/api.js";
@@ -421,20 +420,18 @@ function PipelineRow({ rowKey, label, stops, data, bubbleRefs, hoveredBubble, se
   );
 }
 
-const MOCK_STATS = {
-  Hot: { Contacted: 41, Qualified: 22, Meeting: 18, Negotiation: 8, Conversion: 7 },
-  Warm: { Contacted: 32, Qualified: 12, Meeting: 8, Negotiation: 3, Conversion: 2 },
-  Cold: { Contacted: 19, Qualified: 6, Meeting: 4, Negotiation: 1, Conversion: 1 }
+const EMPTY_PIPELINE_STATS = {
+  Hot: { Contacted: 0, Qualified: 0, Meeting: 0, Negotiation: 0, Conversion: 0 },
+  Warm: { Contacted: 0, Qualified: 0, Meeting: 0, Negotiation: 0, Conversion: 0 },
+  Cold: { Contacted: 0, Qualified: 0, Meeting: 0, Negotiation: 0, Conversion: 0 },
 };
 
 function SalesPipelineStatus({ service, employee }) {
-  const [stats,       setStats]       = useState(MOCK_STATS);
+  const [stats,       setStats]       = useState(EMPTY_PIPELINE_STATS);
   const [stageTotals, setStageTotals] = useState({
-    Contacted: 92, Qualified: 40, Meeting: 30, Negotiation: 12, Conversion: 10
+    Contacted: 0, Qualified: 0, Meeting: 0, Negotiation: 0, Conversion: 0,
   });
-  const [tempTotals,  setTempTotals]  = useState({
-    Hot: 96, Warm: 57, Cold: 31
-  });
+  const [tempTotals,  setTempTotals]  = useState({ Hot: 0, Warm: 0, Cold: 0 });
   const [hoveredBubble, setHoveredBubble] = useState(null);
   const bubbleRefs = useRef({});
 
@@ -566,9 +563,8 @@ function SalesPipelineStatus({ service, employee }) {
     </SectionCard>
   );
 
-  const isMock = stats === MOCK_STATS;
-  const totalLeads = isMock ? 100 : Object.values(tempTotals).reduce((a, b) => a + b, 0);
-  const conversions = isMock ? 10 : (stageTotals["Conversion"] ?? 0);
+  const totalLeads = Object.values(tempTotals).reduce((a, b) => a + b, 0);
+  const conversions = stageTotals["Conversion"] ?? 0;
   const overallConv = totalLeads > 0 ? Math.round((conversions / totalLeads) * 100) : 0;
 
   return (
@@ -637,12 +633,6 @@ function SalesPipelineStatus({ service, employee }) {
 /* ══════════════════════════════════════════════════════════
    3. IMP METRICS — inside SectionCard
 ══════════════════════════════════════════════════════════ */
-const IM_METRICS = [
-  { label: "Pickup Rate", shortLabel: "Pickup", value: 78, rgb: "124,58,237", desc: "Calls answered vs dialed", trend: "+6% vs last week" },
-  { label: "Qualification Rate", shortLabel: "Qualify", value: 42, rgb: "220,38,120", desc: "Qualified vs total contacts", trend: "+3% vs last week" },
-  { label: "Conversion Rate", shortLabel: "Convert", value: 23, rgb: "16,185,129", desc: "Closed deals vs qualified", trend: "+1.2% vs last week" },
-];
-
 function CircleRing({ value, rgb, size = 88 }) {
   const stroke = size <= 56 ? 5 : 8;
   const r = (size - stroke * 2) / 2;
@@ -669,7 +659,15 @@ function CircleRing({ value, rgb, size = 88 }) {
 function IMMetrics({ metrics }) {
   const isMobile = useIsMobile();
   const ringSize = isMobile ? 56 : 88;
-  const displayMetrics = metrics || IM_METRICS;
+  const displayMetrics = metrics || [];
+
+  if (!displayMetrics.length) {
+    return (
+      <SectionCard title="IMP Metrics" subtitle={isMobile ? "Messaging funnel" : "Instant messaging funnel performance"} className="flex flex-col min-w-0 w-full">
+        <p className="text-xs text-slate-400 text-center py-8">No metrics data yet.</p>
+      </SectionCard>
+    );
+  }
 
   return (
     <SectionCard title="IMP Metrics" subtitle={isMobile ? "Messaging funnel" : "Instant messaging funnel performance"} className="flex flex-col min-w-0 w-full">
@@ -710,12 +708,6 @@ function IMMetrics({ metrics }) {
 /* ══════════════════════════════════════════════════════════
    5. REVENUE OPPORTUNITY — no tabs, count values, pipeline+closed only
 ══════════════════════════════════════════════════════════ */
-const opportunityCards = [
-  { label: "Not Contacted Leads", count: 14, rgb: "245,158,11" },
-  { label: "Unqualified Leads", count: 22, rgb: "56,189,248" },
-  { label: "Meeting Not Scheduled", count: 9, rgb: "124,58,237" },
-  { label: "Stuck at Negotiation", count: 6, rgb: "239,68,68" },
-];
 
 function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmployee }) {
   const isMobile = useIsMobile();
@@ -749,10 +741,10 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
   };
 
   const dynamicCards = [
-    { label: "Not Contacted Leads", count: oppData.notContacted ?? 14, rgb: "245,158,11" },
-    { label: "Unqualified Leads", count: oppData.unqualified ?? 22, rgb: "56,189,248" },
-    { label: "Meeting Not Scheduled", count: oppData.noMeeting ?? 9, rgb: "124,58,237" },
-    { label: "Stuck at Negotiation", count: oppData.stuckNegotiation ?? 6, rgb: "239,68,68" },
+    { label: "Not Contacted Leads", count: oppData.notContacted ?? 0, rgb: "245,158,11" },
+    { label: "Unqualified Leads", count: oppData.unqualified ?? 0, rgb: "56,189,248" },
+    { label: "Meeting Not Scheduled", count: oppData.noMeeting ?? 0, rgb: "124,58,237" },
+    { label: "Stuck at Negotiation", count: oppData.stuckNegotiation ?? 0, rgb: "239,68,68" },
   ];
 
   return (
@@ -948,9 +940,9 @@ function SalesAIInsights({ showToast, employee }) {
       return { value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match" };
     }
     if (isRitik) {
-      return { value: "₹10.0L", growth: "+12%", comparison: "+12% vs Target", pct: "40%", matchText: "40% target match" };
+      return { value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match" };
     }
-    return { value: "₹8.4L", growth: "+14%", comparison: "+14% vs Target", pct: "34%", matchText: "34% target match" };
+    return { value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match" };
   }, [isAryan, isRitik]);
 
   return (
@@ -1150,7 +1142,7 @@ export default function Sales() {
 
       {/* ── 1. KPI row ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-2.5">
-        {(kpiData.length ? kpiData : salesKpis).map((k, i) => <PremiumKPICard key={k.label} k={k} index={i} />)}
+        {(kpiData.length ? kpiData : []).map((k, i) => <PremiumKPICard key={k.label} k={k} index={i} />)}
       </div>
 
       {/* ── 2. Revenue Opportunity + IMP Metrics (left) + AI Insights (right) ── */}
