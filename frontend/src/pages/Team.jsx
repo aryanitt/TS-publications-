@@ -563,6 +563,9 @@ function normalizeEmployee(emp) {
     cashTarget: Number(emp.cash_target) || 0,
     cashWeightage: Number(emp.cash_weightage) || 0,
     incentiveKRA: Boolean(emp.incentive_kra),
+    activeLeads: Number(emp.active_leads ?? emp.current_active_leads) || 0,
+    currentActiveLeads: Number(emp.current_active_leads ?? emp.active_leads) || 0,
+    maxActiveLeads: Number(emp.max_active_leads) || 40,
   };
 }
 
@@ -3367,7 +3370,22 @@ function EmpDrawer({ employee, onClose, onSaved, onDeleteRequest, members }) {
   );
 }
 
-function MemberCard({ p, onClick, compact = false }) {
+function memberActiveLeads(member = {}) {
+  return Number(member.activeLeads ?? member.active_leads ?? member.currentActiveLeads ?? member.current_active_leads) || 0;
+}
+
+function computeTeamAvgActiveLeads(members = []) {
+  if (!members.length) return 0;
+  const total = members.reduce((sum, member) => sum + memberActiveLeads(member), 0);
+  return total / members.length;
+}
+
+function computeRelativeWorkloadPct(activeLeads, teamAvgActiveLeads) {
+  if (!teamAvgActiveLeads) return activeLeads > 0 ? 100 : 0;
+  return Math.round((activeLeads / teamAvgActiveLeads) * 100);
+}
+
+function MemberCard({ p, onClick, compact = false, teamAvgActiveLeads = 0 }) {
   const dotColor = { active: "#22c55e", remote: "#3b82f6", "on-leave": "#f59e0b", inactive: "#94a3b8" };
   const dc = dotColor[p.status] || "#a855f7";
   const statusBg = { active: "#dcfce7", remote: "#dbeafe", "on-leave": "#fef3c7", inactive: "#f1f5f9" };
@@ -3379,7 +3397,9 @@ function MemberCard({ p, onClick, compact = false }) {
   const converted = Number(p.conv) || 0;
   const contacted = Number(p.contacted) || 0;
   const conversionPct = totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
-  const workload = Math.min(100, Math.round(((p.current_active_leads ?? totalLeads) / (p.max_active_leads || 40)) * 100));
+  const activeLeads = memberActiveLeads(p);
+  const workload = computeRelativeWorkloadPct(activeLeads, teamAvgActiveLeads);
+  const workloadBarWidth = Math.min(100, workload);
   const revenue = Number(p.revenue) || 0;
   const fmtRev = fmtINR(revenue);
   const avgDeal = converted > 0 ? fmtINR(revenue / converted) : "₹0";
@@ -3500,15 +3520,15 @@ function MemberCard({ p, onClick, compact = false }) {
 
         <div style={{ marginTop: 6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#64748b", fontWeight: 600, marginBottom: 3 }}>
-            <span>Workload</span>
-            <span style={{ color: workload >= 80 ? "var(--primary)" : "#64748b" }}>{workload}%</span>
+            <span>{activeLeads} active · {workload}% of avg</span>
+            <span style={{ color: workload >= 100 ? "var(--primary)" : "#64748b" }}>{workload}%</span>
           </div>
           <div style={{ height: 3, borderRadius: 20, background: "#f1f5f9", overflow: "hidden" }}>
             <div style={{
               height: "100%",
               borderRadius: 20,
-              width: workload + "%",
-              background: workload >= 80 ? "var(--primary)" : workload >= 50 ? "#fb7185" : "#fda4af",
+              width: workloadBarWidth + "%",
+              background: workload >= 100 ? "var(--primary)" : workload >= 70 ? "#fb7185" : "#fda4af",
             }} />
           </div>
         </div>
@@ -3571,11 +3591,14 @@ function MemberCard({ p, onClick, compact = false }) {
 
       {/* Workload */}
       <div style={colStyle}>
-        <span style={{ fontSize: 9, color: "#64748b", fontWeight: 600, marginBottom: 4 }}>Workload</span>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+          <span style={{ fontSize: 9, color: "#64748b", fontWeight: 600 }}>{activeLeads} active</span>
+          <span style={{ fontSize: 9, color: workload >= 100 ? "var(--primary)" : "#64748b", fontWeight: 700 }}>{workload}% of avg</span>
+        </div>
         <div style={{ height: 4, borderRadius: 20, background: "#f1f5f9", overflow: "hidden" }}>
           <div style={{
-            height: "100%", borderRadius: 20, width: workload + "%",
-            background: workload >= 80 ? "var(--primary)" : workload >= 50 ? "#fb7185" : "#fda4af",
+            height: "100%", borderRadius: 20, width: workloadBarWidth + "%",
+            background: workload >= 100 ? "var(--primary)" : workload >= 70 ? "#fb7185" : "#fda4af",
             transition: "width 0.6s ease",
           }} />
         </div>
@@ -3771,6 +3794,11 @@ export default function Team() {
   const filtered = useMemo(
     () => members.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())),
     [q, members],
+  );
+
+  const teamAvgActiveLeads = useMemo(
+    () => computeTeamAvgActiveLeads(members),
+    [members],
   );
 
   const addMember = async (formFields) => {
@@ -3987,7 +4015,12 @@ export default function Team() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.03, duration: 0.2 }}
           >
-            <MemberCard p={p} compact={compactMembers} onClick={() => setActiveEmp(p)} />
+            <MemberCard
+              p={p}
+              compact={compactMembers}
+              teamAvgActiveLeads={teamAvgActiveLeads}
+              onClick={() => setActiveEmp(p)}
+            />
           </motion.div>
         ))}
         </div>
