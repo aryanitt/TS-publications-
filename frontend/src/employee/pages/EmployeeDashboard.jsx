@@ -75,7 +75,7 @@ export default function EmployeeDashboard() {
   const [pipeFilter, setPipeFilter] = useState("all");
   const [agendaDone, setAgendaDone] = useState({});
 
-  const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
+  const { stats: callyzerStats, loading: callyzerLoading, syncing: callyzerSyncing, configured: callyzerConfigured, message: callyzerMessage, lastUpdated: callyzerLastUpdated, refresh: refreshCallyzerStats } =
     useCallyzerStats(employee?.id, period, Boolean(employee?.id));
 
   const pipelineCountsKey = useMemo(() => pipelineStageCountsKey(leads), [leads]);
@@ -286,9 +286,12 @@ export default function EmployeeDashboard() {
         <CallyzerStatsPanel
           stats={callyzerStats}
           loading={callyzerLoading}
+          syncing={callyzerSyncing}
+          lastUpdated={callyzerLastUpdated}
+          onRefresh={refreshCallyzerStats}
           configured={callyzerConfigured}
           message={callyzerMessage}
-          subtitle={`${period} · synced from Callyzer device`}
+          subtitle={`${period} · auto-syncs every 15s from Callyzer`}
         />
       )}
 

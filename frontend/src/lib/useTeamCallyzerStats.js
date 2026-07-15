@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet } from "./api.js";
+import { CALLYZER_POLL_INTERVAL_MS } from "./useCallyzerStats.js";
 
 const PERIOD_QUERY = {
   day: "period=today",
@@ -45,8 +46,26 @@ export function useTeamEmployeeCallyzerStats(employeeId, period = "month", enabl
   }, [employeeId, period, enabled]);
 
   useEffect(() => {
+    if (!enabled || !employeeId) return undefined;
+
     load({ silent: false });
-  }, [load]);
+
+    const poll = () => {
+      if (document.hidden) return;
+      load({ silent: true });
+    };
+
+    const intervalId = window.setInterval(poll, CALLYZER_POLL_INTERVAL_MS);
+    const onVisibility = () => {
+      if (!document.hidden) load({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [load, enabled, employeeId]);
 
   return { stats, employeeName, loading, configured, message, refresh: () => load({ silent: true }) };
 }
@@ -78,8 +97,26 @@ export function useTeamCallyzerStats(period = "today", enabled = true) {
   }, [period, enabled]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
+
     load({ silent: false });
-  }, [load]);
+
+    const poll = () => {
+      if (document.hidden) return;
+      load({ silent: true });
+    };
+
+    const intervalId = window.setInterval(poll, CALLYZER_POLL_INTERVAL_MS);
+    const onVisibility = () => {
+      if (!document.hidden) load({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [load, enabled]);
 
   return { stats, loading, configured, periodLabel, refresh: () => load({ silent: true }) };
 }

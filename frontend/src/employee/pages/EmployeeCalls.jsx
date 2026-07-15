@@ -15,8 +15,6 @@ import {
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
-import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
-import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
 import {
   AvatarCircle, BtnPrimary, BtnSecondary, EmpEmptyState, LeadStatusBadge,
 } from "../components/EmpUI.jsx";
@@ -215,43 +213,20 @@ export default function EmployeeCalls() {
   const navigate = useNavigate();
   const period = searchParams.get("period") || "today";
   const { calls: contextCalls = [], employee } = useEmployee();
-  const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
-    useCallyzerStats(employee?.id, period, Boolean(employee?.id));
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const stats = useMemo(() => {
-    if (callyzerStats) {
-      return {
-        dials: callyzerStats.totalCalls,
-        connected: callyzerStats.connectedCalls,
-        missed: callyzerStats.missedCalls,
-        pickupRate: callyzerStats.totalCalls
-          ? Math.round((callyzerStats.connectedCalls / callyzerStats.totalCalls) * 100)
-          : 0,
-        avgDuration: callyzerStats.totalDuration,
-        totalTalk: callyzerStats.workingHours,
-        hotLeads: 0,
-        callbacks: callyzerStats.notPickupByClient,
-        quality: callyzerStats.totalCalls
-          ? Math.round((callyzerStats.connectedCalls / callyzerStats.totalCalls) * 100)
-          : 0,
-        missRate: callyzerStats.totalCalls
-          ? Math.round((callyzerStats.missedCalls / callyzerStats.totalCalls) * 100)
-          : 0,
-      };
-    }
-    return computeCallStatsFromCalls(contextCalls, period);
-  }, [callyzerStats, contextCalls, period]);
+  const stats = useMemo(
+    () => computeCallStatsFromCalls(contextCalls, period),
+    [contextCalls, period],
+  );
 
-  const conversationCount = useMemo(() => {
-    if (callyzerStats?.conversations5MinPlus != null) {
-      return callyzerStats.conversations5MinPlus;
-    }
-    return countConversationCalls(contextCalls, {
+  const conversationCount = useMemo(
+    () => countConversationCalls(contextCalls, {
       periodFilter: (list) => filterCallsForPeriod(list, period),
-    });
-  }, [callyzerStats, contextCalls, period]);
+    }),
+    [contextCalls, period],
+  );
 
   const calls = useMemo(() => {
     let list = filterCallsForPeriod(contextCalls, period);
@@ -261,10 +236,10 @@ export default function EmployeeCalls() {
       const q = search.toLowerCase();
       list = list.filter(
         (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.company.toLowerCase().includes(q) ||
-          c.outcome.toLowerCase().includes(q) ||
-          (c.note && c.note.toLowerCase().includes(q)),
+          String(c.name || "").toLowerCase().includes(q) ||
+          String(c.company || "").toLowerCase().includes(q) ||
+          String(c.outcome || "").toLowerCase().includes(q) ||
+          String(c.note || "").toLowerCase().includes(q),
       );
     }
     return list;
@@ -272,16 +247,6 @@ export default function EmployeeCalls() {
 
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">
-      {callyzerConfigured && (
-        <CallyzerStatsPanel
-          stats={callyzerStats}
-          loading={callyzerLoading}
-          configured={callyzerConfigured}
-          message={callyzerMessage}
-          subtitle={`${PERIOD_LABEL[period] || period} · from Callyzer`}
-          compact
-        />
-      )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
         <StatCard compact label="Total Dials" value={String(stats.dials)} icon={Phone} tone="primary" change={`${stats.connected} connected`} sub="" />
         <StatCard compact label={`Conversations (${CALL_CONVERSATION_LABEL})`} value={String(conversationCount)} icon={MessageCircle} tone="success" change={`${PERIOD_LABEL[period] || period}`} sub="" />

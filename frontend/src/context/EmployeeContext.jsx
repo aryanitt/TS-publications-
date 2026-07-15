@@ -62,12 +62,12 @@ import {
   unwrapWorkspacePayload,
   fetchAllEmployeeLeads,
 } from "../lib/leadSync.js";
-import { invalidateCallyzerStatsCache } from "../lib/useCallyzerStats.js";
+import { invalidateCallyzerStatsCache, CALLYZER_POLL_INTERVAL_MS, dispatchCallyzerRefresh } from "../lib/useCallyzerStats.js";
 
 const EmployeeContext = createContext(null);
 
 const EMPLOYEE_CACHE_TTL = 60_000;
-const CALLYZER_SYNC_INTERVAL_MS = 45_000;
+const CALLYZER_SYNC_INTERVAL_MS = CALLYZER_POLL_INTERVAL_MS;
 const EMPLOYEE_LIST_CACHE_TTL = 5 * 60 * 1000;
 const WORKSPACE_SNAPSHOT_PREFIX = "emp_workspace_v2:";
 const WORKSPACE_SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -505,6 +505,7 @@ export function EmployeeProvider({ children }) {
         const mappedCalls = callItems.map((c) => callFromApi(c, mappedLeads));
         setCalls((prev) => mergeCallsById(prev, mappedCalls));
         persistWorkspaceSnapshot(resolvedId, { calls: mappedCalls, leads: mappedLeads });
+        dispatchCallyzerRefresh(employee.id);
       }
     } catch {
       /* silent background sync */
