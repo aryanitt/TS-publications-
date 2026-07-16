@@ -1,43 +1,37 @@
 import {
   formatEmpPipelineValue,
-  mapEmpLeadKanbanStage,
-  getEmpStageMeta,
+  parseEmpBudget,
   EMP_KANBAN_STAGES,
 } from "../data/employeeMock.js";
+import {
+  ADMIN_PIPELINE_TO_DB_STAGE,
+  mapStageToId,
+  normalizeStageLabel,
+} from "./pipelineStages.js";
 
 /** Canonical pipeline_stage values written to DB (employee kanban labels). */
 export const CANONICAL_STAGE_LABELS = EMP_KANBAN_STAGES.map((s) => s.label);
 
-/** Admin pipeline column id → canonical DB pipeline_stage label. */
-export const ADMIN_PIPELINE_TO_DB_STAGE = {
-  new: "Conversation",
-  contacted: "Conversation",
-  qualified: "Booked",
-  proposal: "Proposal Sent",
-  negotiation: "Proposal Sent",
-  closed_won: "Converted",
-  not_interested: "Not Interested",
-};
+export { ADMIN_PIPELINE_TO_DB_STAGE };
 
 export function adminPipelineIdToDbStage(adminStageId) {
-  return ADMIN_PIPELINE_TO_DB_STAGE[adminStageId] || adminStageId;
+  return ADMIN_PIPELINE_TO_DB_STAGE[adminStageId] || normalizeStageLabel(adminStageId);
 }
 
 /** Normalize any legacy stage string to canonical employee label for display/storage. */
 export function normalizeToCanonicalStage(raw, status = "") {
-  const stageId = mapEmpLeadKanbanStage(raw, status);
-  return getEmpStageMeta(stageId).label;
+  return normalizeStageLabel(raw, status);
 }
 
 export function getPipelineQualifiedCount(stats, stageBreakdown) {
   if (stats?.pipelineQualified != null) return stats.pipelineQualified;
   if (Array.isArray(stageBreakdown) && stageBreakdown.length) {
-    const booked = stageBreakdown.find((s) => s.label === "Booked")?.count || 0;
-    const showed = stageBreakdown.find((s) => s.label === "Showed up")?.count || 0;
-    return booked + showed;
+    const booked = stageBreakdown.find((s) => s.id === "meeting_booked" || String(s.label || "").includes("Meeting Booked"))?.count || 0;
+    const done = stageBreakdown.find((s) => s.id === "meeting_done" || String(s.label || "").includes("Meeting Done"))?.count || 0;
+    return booked + done;
   }
-  if (stats?.booked != null || stats?.showedUp != null) {
-    return (stats.booked || 0) + (stats.showedUp || 0);
+  if (stats?.booked != null || stats?.showedUp != null || stats?.meetingDone != null) {
+    return (stats.booked || stats.meetingBooked || 0) + (stats.showedUp || stats.meetingDone || 0);
   }
   return 0;
 }
@@ -60,7 +54,7 @@ export function temperatureToApi(status) {
     warm: "Warm Lead",
     cold: "Cold Lead",
     notpick: "Not Pick",
-    converted: "Converted",
+    converted: "Payment Complete",
     ni: "Not Interested",
   };
   return map[status] || "Warm Lead";
@@ -136,15 +130,17 @@ const WORKFLOW_STATUS = new Set(["notpick", "converted", "ni", "new", "attempted
 function workflowStatusFromStage(stageRaw) {
   const s = String(stageRaw || "").toLowerCase();
   if (!s) return null;
-  if (s === "new lead" || s === "new") return "new";
+  if (s === "new lead" || s === "new" || s === "lead") return "new";
   if (s.includes("not pick")) return "notpick";
   if (s.includes("attempted")) return "attempted";
-  if (s.includes("contacted") || s.includes("qualified")) return "contacted";
-  if (s.includes("booked") || s.includes("call booked")) return "booked";
-  if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up")) return "showed_up";
+  if (s.includes("contacted") || s.includes("qualified") || s.includes("conversation")) return "contacted";
+  if (s.includes("booked") || s.includes("call booked") || s.includes("meeting booked")) return "booked";
+  if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up") || s.includes("meeting done")) {
+    return "showed_up";
+  }
   if (s.includes("proposal")) return "proposal";
-  if (s.includes("negotiation")) return "negotiation";
-  if (s.includes("converted") || s === "won") return "converted";
+  if (s.includes("objection") || s.includes("negotiation")) return "negotiation";
+  if (s.includes("payment complete") || s.includes("converted") || s === "won") return "converted";
   if (s.includes("closed") || s.includes("not interested")) return "ni";
   return null;
 }
@@ -156,7 +152,7 @@ function normalizeEmployeeLeadStatus(lead) {
   if (fromStage) return fromStage;
   const raw = String(lead.status || lead.lead_status || "").toLowerCase().trim();
   if (raw === "notpick" || raw.includes("not pick")) return "notpick";
-  if (raw === "converted") return "converted";
+  if (raw === "converted" || raw.includes("payment complete")) return "converted";
   if (raw === "ni" || raw.includes("not interested")) return "ni";
   if (raw === "new") return "new";
   if (WORKFLOW_STATUS.has(raw)) return raw;
@@ -167,7 +163,7 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   const name = lead.leadName || lead.lead_name || "Lead";
   const id = lead.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-  const rawStage = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Conversation";
+  const rawStage = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Lead";
   const status = normalizeEmployeeLeadStatus(lead);
   const stage = normalizeToCanonicalStage(rawStage, lead.status || status);
   const revenue = Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0);
@@ -267,26 +263,6 @@ export function apiEmployeeToAdmin(emp) {
   };
 }
 
-const PIPELINE_STAGE_MAP = [
-  ["closed won", "closed_won"],
-  ["converted", "closed_won"],
-  ["won", "closed_won"],
-  ["proposal sent", "proposal"],
-  ["showed up", "qualified"],
-  ["showed-up", "qualified"],
-  ["show up", "qualified"],
-  ["booked", "qualified"],
-  ["conversation", "contacted"],
-  ["not interested", "not_interested"],
-  ["not_interested", "not_interested"],
-  ["ni", "not_interested"],
-  ["negotiation", "negotiation"],
-  ["proposal", "proposal"],
-  ["qualified", "qualified"],
-  ["contacted", "contacted"],
-  ["new", "new"],
-];
-
 /** Fetch all leads from paginated /api/v1/leads (admin lists were capped at 200). */
 export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPages = 40, extraQuery = {} } = {}) {
   const all = [];
@@ -363,16 +339,8 @@ export async function fetchAllEmployeeLeads(apiGetFn, employeeId, { headers, pag
 }
 
 export function apiLeadToPipeline(lead) {
-  const stageRaw = String(
-    lead.pipelineStage || lead.pipeline_stage || lead.status || "new",
-  ).toLowerCase();
-  let stage = "new";
-  for (const [needle, id] of PIPELINE_STAGE_MAP) {
-    if (stageRaw.includes(needle)) {
-      stage = id;
-      break;
-    }
-  }
+  const stageRaw = lead.pipelineStage || lead.pipeline_stage || lead.status || "Lead";
+  const stage = mapStageToId(stageRaw, lead.status);
   const temp = String(lead.temperature || "").toLowerCase();
   const priority = temp.includes("hot") ? "HOT" : temp.includes("cold") ? "COLD" : "WARM";
   const assignedTo = lead.assignedTo;
@@ -402,5 +370,71 @@ export function apiLeadToPipeline(lead) {
     winProbability: lead.winProbability ?? lead.win_probability ?? 50,
     activities: [],
     tasks: [],
+  };
+}
+
+const DETAIL_AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
+
+/** Normalize admin, pipeline, or employee lead shapes for the shared detail drawer. */
+export function normalizeLeadForDetailPanel(lead) {
+  if (!lead) return null;
+
+  const name = lead.name || lead.lead_name || "Lead";
+  const av = lead.av || name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const color = lead.color || DETAIL_AVATAR_COLORS[Number(lead.id) % DETAIL_AVATAR_COLORS.length];
+  const revenue = Number(
+    lead.expectedRevenue ?? lead.expected_revenue ?? lead.value ?? parseEmpBudget(lead.budget) ?? 0,
+  );
+  const stageRaw = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Lead";
+  const stageLabel = normalizeStageLabel(stageRaw, lead.status);
+  const assignee = lead.assignee
+    || lead.owner
+    || lead.assignee_name
+    || lead.employeeName
+    || (typeof lead.assignedTo === "object" ? lead.assignedTo?.name : "")
+    || "—";
+
+  const temp = String(lead.temperature || "").toLowerCase();
+  let status = lead.status || "warm";
+  if (!["hot", "warm", "cold"].includes(status)) {
+    if (temp.includes("hot")) status = "hot";
+    else if (temp.includes("cold")) status = "cold";
+    else if (temp.includes("warm")) status = "warm";
+  }
+
+  return {
+    id: lead.id,
+    name,
+    company: lead.company || lead.company_name || "—",
+    phone: lead.phone || "",
+    email: lead.email || "",
+    stage: stageLabel,
+    pipelineStage: stageLabel,
+    source: lead.source || "—",
+    budget: revenue > 0 ? formatEmpPipelineValue(revenue) : (lead.budget || "—"),
+    expectedRevenue: revenue,
+    service: lead.service || lead.requirements || "—",
+    city: lead.city || "",
+    last: lead.last || formatRelativeTime(lead.updatedAt || lead.updated_at || lead.createdAt || lead.created_at),
+    assignee,
+    assigneeId: lead.assigneeId ?? lead.assigned_to ?? lead.assignedTo?.id ?? null,
+    status,
+    av,
+    color,
+    temperature: lead.temperature,
+  };
+}
+
+export function buildDetailDraft(lead) {
+  if (!lead) return {};
+  return {
+    phone: lead.phone || "",
+    email: lead.email || "",
+    stage: lead.stage || lead.pipelineStage || "Lead",
+    source: lead.source || "",
+    city: lead.city || "",
+    service: lead.service || "",
+    company: lead.company || "",
+    expectedRevenue: String(lead.expectedRevenue || parseEmpBudget(lead.budget) || ""),
   };
 }

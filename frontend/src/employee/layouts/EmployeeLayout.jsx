@@ -71,7 +71,7 @@ export default function EmployeeLayout() {
           onToggleCollapse={() => setCollapsed((c) => !c)}
         />
 
-        <div className="flex-1 min-w-0 flex flex-col w-full max-w-full overflow-x-clip">
+        <div className="flex-1 min-w-0 flex flex-col max-w-full overflow-x-clip">
           <EmployeeTopbar onMenu={() => setSidebarOpen(true)} />
 
           <main className="flex-1 bg-white text-slate-900 p-3 sm:p-4 md:p-6 lg:p-8 xl:px-10 pb-28 lg:pb-8 page-shell overflow-x-clip relative">

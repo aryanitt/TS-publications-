@@ -24,18 +24,27 @@ const EMP_STAGE_OPTIONS = EMP_KANBAN_STAGES.map((stage) => ({
 }));
 
 const LEAD_STATUS_OPTIONS = [
-  { value: "hot", label: "Hot Lead 🔥" },
-  { value: "warm", label: "Warm Lead 😴" },
-  { value: "cold", label: "Cold Lead ❄️" },
-  { value: "converted", label: "Converted 💸" },
-  { value: "notpick", label: "Not Picked ❌" },
-  { value: "ni", label: "Not Interested 👎" },
+  { value: "hot", label: "Hot Lead" },
+  { value: "warm", label: "Warm Lead" },
+  { value: "cold", label: "Cold Lead" },
+  { value: "converted", label: "Converted" },
+  { value: "notpick", label: "Not Picked" },
+  { value: "ni", label: "Not Interested" },
 ];
 
 const PIPELINE_STAGE_OPTIONS = EMP_STAGE_OPTIONS.map((option) => ({
   value: option.id,
   label: option.label,
 }));
+
+const CANONICAL_SERVICES_OPTIONS = [
+  { value: "—", label: "—" },
+  { value: "AI Automation Suite", label: "AI Automation Suite" },
+  { value: "CRM Setup & Onboarding", label: "CRM Setup & Onboarding" },
+  { value: "Lead Gen Engine", label: "Lead Gen Engine" },
+  { value: "Custom Software Dev", label: "Custom Software Dev" },
+  { value: "Strategic Consulting", label: "Strategic Consulting" },
+];
 
 function formatIndianCurrency(numStr) {
   if (!numStr) return "";
@@ -92,12 +101,12 @@ const formatTime = (seconds) => {
 
 // Map mood string to text + emoji + color theme
 const MOOD_META = {
-  hot: { label: "Hot Lead 🔥", bg: "bg-rose-50 border-rose-200 text-rose-700 font-bold" },
+  hot: { label: "Hot Lead", bg: "bg-rose-50 border-rose-200 text-rose-700 font-bold" },
   warm: { label: "Warm Lead", bg: "bg-amber-50 border-amber-200 text-amber-700 font-bold" },
-  cold: { label: "Cold Lead ❄", bg: "bg-sky-50 border-sky-200 text-sky-700 font-bold" },
-  positive: { label: "Excited 😊", bg: "bg-emerald-50 border-emerald-250 text-emerald-700 font-bold" },
-  neutral: { label: "Neutral 😐", bg: "bg-slate-50 border-slate-200 text-slate-600 font-bold" },
-  negative: { label: "Hesitant 😟", bg: "bg-amber-50 border-amber-200 text-amber-700 font-bold" },
+  cold: { label: "Cold Lead", bg: "bg-sky-50 border-sky-200 text-sky-700 font-bold" },
+  positive: { label: "Excited", bg: "bg-emerald-50 border-emerald-250 text-emerald-700 font-bold" },
+  neutral: { label: "Neutral", bg: "bg-slate-50 border-slate-200 text-slate-600 font-bold" },
+  negative: { label: "Hesitant", bg: "bg-amber-50 border-amber-200 text-amber-700 font-bold" },
 };
 
 // Helper to resolve which SOP was used based on metadata / outcome
@@ -188,6 +197,7 @@ export default function EmployeeCallDetail() {
   const [editStatus, setEditStatus] = useState("");
   const [editStage, setEditStage] = useState("");
   const [editBudget, setEditBudget] = useState("");
+  const [editService, setEditService] = useState("");
 
   // Find active call log record
   const call = useMemo(() => {
@@ -288,6 +298,7 @@ export default function EmployeeCallDetail() {
     setEditStatus(lead?.status || "warm");
     setEditStage(stageToSelectValue(lead?.pipelineStage || lead?.stage));
     setEditBudget(budgetToEditDisplay(lead));
+    setEditService(lead?.service || lead?.requirements || "—");
   }, [lead, isEditOpen, call]);
 
   useEffect(() => {
@@ -330,7 +341,6 @@ export default function EmployeeCallDetail() {
         </BtnGhost>
         <GlassCard className="p-8 text-center space-y-3">
           <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-full grid place-items-center text-3xl mx-auto">
-            ⚠️
           </div>
           <h2 className="text-lg font-bold text-slate-800">Call Log Not Found</h2>
           <p className="text-sm text-slate-500 max-w-sm mx-auto">
@@ -429,6 +439,7 @@ export default function EmployeeCallDetail() {
     status = "warm",
     pipelineStage = "Conversation",
     expectedRevenue = 0,
+    service = "",
   }) => {
     const existing = await findExistingLeadForCall();
     if (existing?.id) {
@@ -448,6 +459,7 @@ export default function EmployeeCallDetail() {
       pipelineStage,
       companyName: call.company && call.company !== "—" ? call.company : "",
       expectedRevenue,
+      requirements: service,
     }, { headers: getCrmHeaders() });
 
     const newLead = leadRes?.data?.lead || leadRes?.data;
@@ -470,6 +482,7 @@ export default function EmployeeCallDetail() {
 
     const expectedRevenue = Number(String(editBudget).replace(/\D/g, "") || 0);
     const pipelineStage = stageSelectToLabel(editStage);
+    const serviceVal = editService === "—" ? "" : editService;
 
     try {
       let targetLead = lead || await findExistingLeadForCall();
@@ -480,6 +493,7 @@ export default function EmployeeCallDetail() {
           status: editStatus,
           pipelineStage,
           expectedRevenue,
+          service: serviceVal,
         });
         if (String(call.leadId) !== String(targetLead.id)) {
           await linkCallToLead(call.id, targetLead.id, { name: editName.trim() });
@@ -496,12 +510,14 @@ export default function EmployeeCallDetail() {
           status: editStatus,
           pipelineStage,
           expectedRevenue,
+          service: serviceVal,
         });
         await editLeadDetails(newLeadId, {
           name: editName.trim(),
           status: editStatus,
           pipelineStage,
           expectedRevenue,
+          service: serviceVal,
         });
       }
 
@@ -888,7 +904,7 @@ export default function EmployeeCallDetail() {
           {/* Lead Notes & Comments Card — always shown for every call profile */}
           <GlassCard className="p-4 sm:p-5 flex flex-col gap-3">
             <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 shrink-0 border-b border-rose-50 pb-2">
-              ✍️ Lead Notes & Comments
+Lead Notes & Comments
             </h3>
 
             {!lead && (
@@ -921,7 +937,7 @@ export default function EmployeeCallDetail() {
                 {notesList.map((n) => (
                   <div key={n.id} className="bg-white border border-rose-50 rounded-xl p-2.5 space-y-1 text-[11px] shadow-[0_1px_2px_rgba(244,63,94,0.01)]">
                     <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold">
-                      <span>👤 {n.authorType === "employee" ? "You" : "Admin"}</span>
+                      <span>{n.authorType === "employee" ? "You" : "Admin"}</span>
                       <span>{new Date(n.createdAt).toLocaleDateString()} {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <p className="text-slate-750 leading-relaxed font-medium whitespace-pre-line">{n.body}</p>
@@ -1142,7 +1158,7 @@ export default function EmployeeCallDetail() {
             <FormGroup>
               <FormLabel>Lead Importance</FormLabel>
               <FormSelect defaultValue="high">
-                <option value="high">High Urgency 🔥</option>
+                <option value="high">High Urgency</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
               </FormSelect>
@@ -1205,6 +1221,15 @@ export default function EmployeeCallDetail() {
               onChange={setEditStage}
               options={PIPELINE_STAGE_OPTIONS}
               placeholder="Select pipeline stage…"
+            />
+          </FormGroup>
+          <FormGroup>
+            <FormLabel>Service</FormLabel>
+            <CustomSelect
+              value={editService}
+              onChange={setEditService}
+              options={CANONICAL_SERVICES_OPTIONS}
+              placeholder="Select service…"
             />
           </FormGroup>
           <FormGroup>

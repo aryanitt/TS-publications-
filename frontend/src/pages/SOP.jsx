@@ -16,6 +16,7 @@ import {
 const cn = (...classes) => classes.filter(Boolean).join(" ");
 
 import { StatCard } from "../components/Primitives.jsx";
+import { useAdmin } from "../context/AdminContext.jsx";
 
 /* ─── Tone helpers (kept from original) ─── */
 const priorityTone = (p) =>
@@ -817,6 +818,15 @@ const STATS = ["Draft", "Review", "Active"];
 const PRIS  = ["Low", "Medium", "High", "Critical"];
 const TAG_SUGGESTIONS = ["CRM", "leads", "onboarding", "deployment", "review", "tracking", "enterprise", "automation", "analytics", "compliance"];
 
+const CANONICAL_SERVICES = [
+  "All Services",
+  "Web Development",
+  "App Development",
+  "SEO & Performance Marketing",
+  "Custom Software",
+  "UI/UX Design"
+];
+
 function makeStep(text = "") { return { id: crypto.randomUUID?.() || Math.random().toString(36), text }; }
 function makeBlankForm() {
   return {
@@ -824,6 +834,7 @@ function makeBlankForm() {
     priority: "Medium", tags: [], steps: Array.from({ length: 3 }, () => makeStep()),
     department: "", estimatedTime: "", attachments: [],
     script: "", scripts: [{ heading: "", content: "" }], questions: [""], frameworks: [""],
+    service: "All Services",
   };
 }
 function sopToForm(s) {
@@ -836,6 +847,7 @@ function sopToForm(s) {
     scripts: s.scripts?.length ? s.scripts : [{ heading: "", content: "" }],
     questions: s.questions?.length ? s.questions : [""],
     frameworks: s.frameworks?.length ? s.frameworks : [""],
+    service: s.service || "All Services",
   };
 }
 function formToSop(base, form, isEdit) {
@@ -855,6 +867,7 @@ function formToSop(base, form, isEdit) {
     scripts: form.scripts ? form.scripts.filter(scr => scr.heading.trim() || scr.content.trim()) : [],
     questions: form.questions.filter(Boolean),
     frameworks: form.frameworks.filter(Boolean),
+    service: form.service || "All Services",
     updated: new Date().toISOString().split("T")[0],
     ...(isEdit ? {} :  {
       id: Date.now(),
@@ -877,6 +890,7 @@ function normalizeApiSop(sop) {
     creator:           sop.creator || "Admin",
     created:           sop.created_at?.split("T")[0] || sop.created || "",
     updated:           sop.updated_at?.split("T")[0] || sop.updated || "",
+    service:           sop.service || "All Services",
     estimatedTime:     sop.estimated_time || sop.estimatedTime || "",
     steps:             (sop.instruction_steps || sop.steps || []).map(s => (typeof s === "string" ? s : s.title || "")),
     questions:         sop.questions || [],
@@ -1266,14 +1280,14 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
         </div>
         
         <p className="text-[10px] text-rose-950/80 leading-relaxed font-medium">
-          💡 Enter an SOP **Title** below and click "Generate from Title", or upload a **PDF procedure document** to automatically structure and fill the description, scripts, questions, steps, and frameworks.
+ Enter an SOP **Title** below and click "Generate from Title", or upload a **PDF procedure document** to automatically structure and fill the description, scripts, questions, steps, and frameworks.
         </p>
 
         {/* Loading overlay inside card */}
         {aiLoading && (
           <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 rounded-xl flex flex-col items-center justify-center p-3 text-center transition-all">
             <div className="w-8 h-8 rounded-full border-2 border-rose-200 border-t-rose-700 animate-spin mb-2" />
-            <div className="text-xs font-bold text-rose-800 mb-0.5">✨ AI Smart Architect</div>
+            <div className="text-xs font-bold text-rose-800 mb-0.5">AI Smart Architect</div>
             <div className="text-[10px] text-rose-600 font-semibold tracking-wide h-4 animate-pulse">{aiStatusText}</div>
           </div>
         )}
@@ -1441,6 +1455,11 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
         </Field>
         <Field label="Estimated Time">
           <input value={form.estimatedTime} onChange={e => set("estimatedTime", e.target.value)} className="sop-input" placeholder="e.g. 45 min" />
+        </Field>
+        <Field label="Service">
+          <select value={form.service} onChange={e => set("service", e.target.value)} className="sop-input">
+            {CANONICAL_SERVICES.map(s => <option key={s}>{s}</option>)}
+          </select>
         </Field>
       </div>
 
@@ -1719,6 +1738,7 @@ const PRIORITY_ORDER = { Critical: 0, High: 1, Medium: 2, Low: 3 };
    MAIN SOP PAGE
    ════════════════════════════════════════════ */
 export default function SOP() {
+  const { selectedService } = useAdmin();
   const [sops, setSops] = useState([]);
   const [view, setView]   = useState("grid");
   const [q, setQ]         = useState("");
@@ -1852,6 +1872,7 @@ export default function SOP() {
     let list = sops.filter(s => {
       if (filter !== "All" && s.category !== filter) return false;
       if (statusFilter !== "All" && s.status !== statusFilter) return false;
+      if (selectedService && selectedService !== "All Services" && s.service !== selectedService) return false;
       const qLow = q.toLowerCase();
       return !qLow || s.title.toLowerCase().includes(qLow) || s.tags.join(" ").toLowerCase().includes(qLow) || s.description.toLowerCase().includes(qLow);
     });
@@ -1860,7 +1881,7 @@ export default function SOP() {
     if (sortBy === "category") list = [...list].sort((a, b) => a.category.localeCompare(b.category));
     if (sortBy === "title")    list = [...list].sort((a, b) => a.title.localeCompare(b.title));
     return list;
-  }, [sops, q, filter, statusFilter, sortBy]);
+  }, [sops, q, filter, statusFilter, sortBy, selectedService]);
 
   /* ── Handlers ── */
   const saveSopLocally = (formData, asDraft, existing = null) => {
@@ -1905,6 +1926,7 @@ export default function SOP() {
                            .map((s, i) => ({ step: i + 1, title: s.text }))
                            .filter(s => s.title),
       attachment_url:    null,
+      service:           formData.service || "All Services",
     };
   
     if (editSop) {

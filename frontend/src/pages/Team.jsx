@@ -570,13 +570,13 @@ function normalizeEmployee(emp) {
 }
 
 const COUNTRY_CODES = [
-  { code: "+91", flag: "🇮🇳", label: "IN" },
-  { code: "+1", flag: "🇺🇸", label: "US" },
-  { code: "+44", flag: "🇬🇧", label: "GB" },
-  { code: "+971", flag: "🇦🇪", label: "AE" },
-  { code: "+65", flag: "🇸🇬", label: "SG" },
-  { code: "+61", flag: "🇦🇺", label: "AU" },
-  { code: "+49", flag: "🇩🇪", label: "DE" },
+  { code: "+91", flag: "", label: "IN" },
+  { code: "+1", flag: "", label: "US" },
+  { code: "+44", flag: "", label: "GB" },
+  { code: "+971", flag: "", label: "AE" },
+  { code: "+65", flag: "", label: "SG" },
+  { code: "+61", flag: "", label: "AU" },
+  { code: "+49", flag: "", label: "DE" },
 ];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.(com|in|org|net|co\.in|co\.uk)$/i;
@@ -2238,7 +2238,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   );
 
   const pipelineTotal = pipelineStages.reduce((sum, s) => sum + (s.count || 0), 0);
-  const convertedCount = pipelineStages.find((s) => s.label === "Converted")?.count || converted;
+  const convertedCount = pipelineStages.find((s) => s.label === "Payment Complete")?.count || converted;
   const convRate = pipelineTotal ? `${Math.round((convertedCount / pipelineTotal) * 100)}%` : "0%";
 
   const leadsList = leads.map((l) => ({
@@ -2941,14 +2941,14 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: compact ? 3 : 5 }}>
-            {pipelineStages.filter((s) => s.count > 0 || !compact).map((s) => (
-              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                <span style={{ fontSize: compact ? 8 : 10, fontWeight: 600, color: "#64748b", width: compact ? 52 : 72, flexShrink: 0 }}>{s.label}</span>
-                <div style={{ flex: 1, height: compact ? 6 : 8, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                  <div style={{ width: `${s.pct || 0}%`, height: "100%", background: s.color, borderRadius: 99, minWidth: s.count > 0 ? 4 : 0 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: compact ? 2 : 3 }}>
+            {pipelineStages.filter((s) => s.count > 0).map((s) => (
+              <div key={s.fullLabel || s.label} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, minHeight: compact ? 14 : 16 }}>
+                <span style={{ fontSize: compact ? 7 : 9, fontWeight: 600, color: "#64748b", width: compact ? 48 : 58, flexShrink: 0, lineHeight: 1.1 }} title={s.fullLabel || s.label}>{s.label}</span>
+                <div style={{ flex: 1, height: compact ? 4 : 5, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ width: `${s.pct || 0}%`, height: "100%", background: s.color, borderRadius: 99, minWidth: s.count > 0 ? 3 : 0 }} />
                 </div>
-                <span style={{ fontSize: compact ? 9 : 11, fontWeight: 800, color: "#1e293b", width: 16, textAlign: "right", flexShrink: 0 }}>{s.count}</span>
+                <span style={{ fontSize: compact ? 8 : 10, fontWeight: 800, color: "#1e293b", width: 20, textAlign: "right", flexShrink: 0 }}>{s.count}</span>
               </div>
             ))}
           </div>
@@ -3107,7 +3107,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                   </td>
                   <td style={{ padding: "12px 8px" }}>
                     <span style={{ color: lead.priority === 'Hot' ? "#ef4444" : lead.priority === 'Warm' ? "#f59e0b" : "#22c55e" }}>
-                      {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '🌡️ Warm' : '🎉 Won'}
+                      {lead.priority === 'Hot' ? 'Hot' : lead.priority === 'Warm' ? 'Warm' : 'Won'}
                     </span>
                   </td>
                   <td style={{ padding: "12px 8px" }}>

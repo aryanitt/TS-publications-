@@ -17,12 +17,14 @@ export function LeadStatusBadge({ status, label }) {
   return <Badge tone={LEAD_TONE[status] || "muted"}>{label}</Badge>;
 }
 
-export function EmpEmptyState({ icon = "📋", title, subtitle }) {
+export function EmpEmptyState({ icon = "", title, subtitle }) {
   return (
     <div className="flex flex-col items-center justify-center py-8 sm:py-12 px-4 text-center">
-      <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-rose-50 border border-rose-200 grid place-items-center text-xl sm:text-2xl mb-2.5 sm:mb-3">
-        {icon}
-      </div>
+      {icon && (
+        <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-rose-50 border border-rose-200 grid place-items-center text-xl sm:text-2xl mb-2.5 sm:mb-3">
+          {icon}
+        </div>
+      )}
       <p className="text-xs sm:text-sm font-bold text-slate-700">{title}</p>
       {subtitle && <p className="text-[10px] sm:text-xs text-slate-400 mt-1 max-w-xs">{subtitle}</p>}
     </div>

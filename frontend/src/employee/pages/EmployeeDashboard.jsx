@@ -5,7 +5,7 @@ import {
   Phone, Calendar, ArrowRight, Zap, Target, ChevronRight, MessageCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, LabelList } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Badge, StatCard, GlassCard } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
@@ -17,6 +17,7 @@ import {
   getEmpPipelineSummary,
   getEmpAppToday,
   filterCallsForPeriod,
+  filterPipelineLeadsForPeriod,
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { AvatarCircle } from "../components/EmpUI.jsx";
@@ -26,6 +27,7 @@ import { formatGreeting } from "../../lib/greeting.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
 import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
+import { useEmployeePeriodCalls } from "../../lib/useEmployeePeriodCalls.js";
 import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
 
 const PIPE_FILTERS = [
@@ -61,14 +63,21 @@ function SectionHead({ icon: Icon, title, sub, action, stackAction }) {
 export default function EmployeeDashboard() {
   const {
     employee,
-    leads,
     tasks,
     followUps,
     meetingsUpcoming,
+    meetingsHistory,
     calls,
     activities,
     loading,
+    leads: rawLeads,
+    selectedService,
   } = useEmployee();
+
+  const leads = useMemo(() => {
+    if (!selectedService || selectedService === "All Services") return rawLeads;
+    return rawLeads.filter((l) => l.service === selectedService || l.requirements === selectedService);
+  }, [rawLeads, selectedService]);
   const navigate = useNavigate();
   const isMobile = useIsMobile(640);
   const [period, setPeriod] = useState("Today");
@@ -78,8 +87,36 @@ export default function EmployeeDashboard() {
   const { stats: callyzerStats, loading: callyzerLoading, syncing: callyzerSyncing, configured: callyzerConfigured, message: callyzerMessage, lastUpdated: callyzerLastUpdated, refresh: refreshCallyzerStats } =
     useCallyzerStats(employee?.id, period, Boolean(employee?.id));
 
-  const pipelineCountsKey = useMemo(() => pipelineStageCountsKey(leads), [leads]);
-  const pipeline = useMemo(() => buildPipelineChartFromLeads(leads), [pipelineCountsKey, leads]);
+  const periodKey = period === "This Week" ? "week" : period === "This Month" ? "month" : "today";
+  const { calls: periodCallsFromApi } = useEmployeePeriodCalls(
+    employee?.id,
+    periodKey,
+    rawLeads,
+    Boolean(employee?.id),
+  );
+  const allMeetings = useMemo(
+    () => [...(meetingsUpcoming || []), ...(meetingsHistory || [])],
+    [meetingsUpcoming, meetingsHistory],
+  );
+  const periodCalls = periodCallsFromApi;
+
+  const kanbanOptions = useMemo(
+    () => ({ callScopedOnly: periodKey !== "month", period: periodKey, meetings: allMeetings }),
+    [periodKey, allMeetings],
+  );
+  const pipelineLeads = useMemo(
+    () => filterPipelineLeadsForPeriod(leads, periodCalls, periodKey, allMeetings),
+    [leads, periodCalls, periodKey, allMeetings],
+  );
+  const pipelineMetrics = useMemo(() => ({ callyzerStats }), [callyzerStats]);
+  const pipelineCountsKey = useMemo(
+    () => pipelineStageCountsKey(pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics),
+    [pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics],
+  );
+  const pipeline = useMemo(
+    () => buildPipelineChartFromLeads(pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics),
+    [pipelineCountsKey, pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics],
+  );
   const sourceChart = useMemo(() => buildSourceChartFromLeads(leads), [leads]);
   const summary = useMemo(() => getEmpPipelineSummary(leads), [leads]);
   const agenda = useMemo(
@@ -99,7 +136,6 @@ export default function EmployeeDashboard() {
   const callsTarget = employee?.callsTarget || 60;
   const callPct = callsTarget ? Math.min(100, Math.round((callsToday / callsTarget) * 100)) : 0;
 
-  const periodKey = period === "This Week" ? "week" : period === "This Month" ? "month" : "today";
   const conversations5MinPlus = useMemo(() => {
     if (callyzerStats?.conversations5MinPlus != null) {
       return callyzerStats.conversations5MinPlus;
@@ -175,7 +211,7 @@ export default function EmployeeDashboard() {
     month: "short",
   });
 
-  const pipeChartHeight = isMobile ? 156 : 220;
+
   const pipeFilters = (
     <div className={`${SEGMENT_WRAP} max-w-full`}>
       {PIPE_FILTERS.map((f) => (
@@ -321,50 +357,33 @@ export default function EmployeeDashboard() {
               ))}
             </div>
 
-            <div className="w-full min-w-0" style={{ height: pipeChartHeight }}>
+            <div className="w-full min-w-0 flex flex-col gap-0.5 sm:gap-1">
               {pipelineTotal === 0 && !loading ? (
-                <p className="text-center text-sm text-slate-400 py-12">No leads in pipeline yet</p>
+                <p className="text-center text-sm text-slate-400 py-8">No leads in pipeline yet</p>
               ) : (
-              <ResponsiveContainer width="100%" height={pipeChartHeight}>
-                <BarChart
-                  data={pipeline}
-                  layout="vertical"
-                  margin={{ top: 2, right: isMobile ? 18 : 28, left: 0, bottom: 2 }}
-                >
-                  <XAxis type="number" hide />
-                  <YAxis
-                    dataKey="label"
-                    type="category"
-                    axisLine={false}
-                    tickLine={false}
-                    fontSize={isMobile ? 9 : 11}
-                    fontWeight={600}
-                    tick={{ fill: "#64748b" }}
-                    width={isMobile ? 58 : 84}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
-                    contentStyle={{
-                      borderRadius: 10,
-                      border: "1px solid #e2e8f0",
-                      fontSize: 11,
-                      padding: "6px 10px",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
-                    }}
-                    formatter={(val) => [`${val} leads`, "Count"]}
-                  />
-                  <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={isMobile ? 11 : 16} isAnimationActive={false}>
-                    {pipeline.map((entry) => (
-                      <Cell key={entry.label} fill={entry.color} fillOpacity={0.85} />
-                    ))}
-                    <LabelList
-                      dataKey="count"
-                      position="right"
-                      style={{ fontSize: isMobile ? 9 : 11, fontWeight: 700, fill: "#475569" }}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                pipeline.map((s) => (
+                  <div
+                    key={s.fullLabel || s.label}
+                    className="flex items-center gap-1.5 sm:gap-2 min-h-[14px] sm:min-h-[16px]"
+                    title={s.fullLabel || s.label}
+                  >
+                    <span className="text-[8px] sm:text-[9px] font-semibold text-slate-500 w-[54px] sm:w-[64px] shrink-0 truncate leading-tight">
+                      {s.label}
+                    </span>
+                    <div className="flex-1 h-[4px] sm:h-[5px] bg-slate-100 rounded-full overflow-hidden min-w-0">
+                      <div
+                        className="h-full rounded-full opacity-90"
+                        style={{
+                          width: `${Math.max(s.count > 0 ? 2 : 0, s.pct)}%`,
+                          backgroundColor: s.color,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[8px] sm:text-[9px] font-bold text-slate-700 w-6 sm:w-7 text-right tabular-nums shrink-0">
+                      {s.count}
+                    </span>
+                  </div>
+                ))
               )}
             </div>
 

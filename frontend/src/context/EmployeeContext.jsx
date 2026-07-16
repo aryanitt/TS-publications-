@@ -221,6 +221,7 @@ export function EmployeeProvider({ children }) {
   const [meetingsHistory, setMeetingsHistory] = useState([]);
   const [activities, setActivities] = useState({});
   const [sops, setSopsState] = useState([]);
+  const [selectedService, setSelectedService] = useState("All Services");
   const [teamEmployees, setTeamEmployees] = useState([]);
 
   useEffect(() => {
@@ -951,7 +952,7 @@ export function EmployeeProvider({ children }) {
           name,
           company: form.company || "—",
           status: form.status || "warm",
-          stage: form.stage || "Conversation",
+          stage: form.stage || "Lead",
           source: form.source || "Website",
           budget: form.budget || "—",
           last: "Just now",
@@ -1138,6 +1139,10 @@ export function EmployeeProvider({ children }) {
           ...(updates.status !== undefined ? { status: updates.status } : {}),
           stage: normalizedUpdates.stage || l.stage,
           pipelineStage: normalizedUpdates.pipelineStage || l.pipelineStage,
+          ...(updates.company !== undefined ? { company: updates.company } : {}),
+          ...(updates.city !== undefined ? { city: updates.city } : {}),
+          ...(updates.source !== undefined ? { source: updates.source } : {}),
+          ...(updates.service !== undefined ? { service: updates.service } : {}),
           ...(updates.expectedRevenue !== undefined
             ? {
               expectedRevenue: Number(updates.expectedRevenue) || 0,
@@ -1160,6 +1165,12 @@ export function EmployeeProvider({ children }) {
         }
         if (updates.phone !== undefined) payload.phone = updates.phone;
         if (updates.email !== undefined) payload.email = updates.email;
+        if (updates.company !== undefined) payload.companyName = updates.company;
+        if (updates.city !== undefined) payload.city = updates.city;
+        if (updates.source !== undefined) payload.source = updates.source;
+        if (updates.service !== undefined || updates.requirements !== undefined) {
+          payload.requirements = updates.service ?? updates.requirements;
+        }
         if (updates.expectedRevenue !== undefined) {
           payload.expectedRevenue = Number(updates.expectedRevenue) || 0;
         }
@@ -1191,6 +1202,10 @@ export function EmployeeProvider({ children }) {
               ...(updates.status !== undefined ? { status: updates.status } : {}),
               stage: stageUpdate || updated.stage,
               pipelineStage: stageUpdate || updated.pipelineStage,
+              ...(updates.company !== undefined ? { company: updates.company } : {}),
+              ...(updates.city !== undefined ? { city: updates.city } : {}),
+              ...(updates.source !== undefined ? { source: updates.source } : {}),
+              ...(updates.service !== undefined ? { service: updates.service } : {}),
               ...(updates.expectedRevenue !== undefined
                 ? {
                   expectedRevenue: Number(updates.expectedRevenue) || 0,
@@ -1637,6 +1652,8 @@ export function EmployeeProvider({ children }) {
     linkError,
     workspaceError,
     reloadWorkspace,
+    selectedService,
+    setSelectedService,
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, markFollowUpNotPicked, markFollowUpCallAgain, refreshFollowUps,
@@ -1644,7 +1661,7 @@ export function EmployeeProvider({ children }) {
     reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, setCalls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
-    workspaceError, reloadWorkspace,
+    workspaceError, reloadWorkspace, selectedService,
   ]);
 
   return (

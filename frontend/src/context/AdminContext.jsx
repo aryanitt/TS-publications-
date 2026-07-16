@@ -58,6 +58,7 @@ const AdminContext = createContext(null);
 export function AdminProvider({ children }) {
   const { user } = useAuth();
   const [admin, setAdmin] = useState(loadProfile);
+  const [selectedService, setSelectedService] = useState("All Services");
 
   useEffect(() => {
     if (user?.role === "admin") {
@@ -82,8 +83,10 @@ export function AdminProvider({ children }) {
       admin,
       updateAdmin,
       updateNotifications,
+      selectedService,
+      setSelectedService,
     }),
-    [admin],
+    [admin, selectedService],
   );
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;

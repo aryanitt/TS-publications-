@@ -444,7 +444,7 @@ export default function EmployeeFollowUps() {
         filtered.length === 0 ? (
           <GlassCard className="py-4">
             <EmpEmptyState
-              icon="✅"
+              icon=""
               title="No completed follow-ups yet"
               subtitle="Mark follow-ups done or finish a call — completed items appear here with date & time"
             />
@@ -477,7 +477,7 @@ export default function EmployeeFollowUps() {
       ) : filtered.length === 0 && filteredCompleted.length === 0 ? (
         <GlassCard className="py-4">
           <EmpEmptyState
-            icon="📅"
+            icon=""
             title={search ? "No follow-ups match your search" : "All caught up"}
             subtitle={search ? "Try a different keyword" : "Nothing pending in this category"}
           />

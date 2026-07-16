@@ -28,6 +28,15 @@ const titles = {
   "/reports":    { title: "Reports",               sub: "Analytics and performance exports",           cta: "Export"       },
 };
 
+const CANONICAL_SERVICES = [
+  "All Services",
+  "AI Automation Suite",
+  "CRM Setup & Onboarding",
+  "Lead Gen Engine",
+  "Custom Software Dev",
+  "Strategic Consulting",
+];
+
 function resolvePageMeta(pathname) {
   if (/^\/services\/[^/]+\/edit$/.test(pathname)) {
     return { title: "Edit Service", sub: "Update catalog details, pricing, and features" };
@@ -95,9 +104,10 @@ const TYPE_ICON = {
 
 export default function Topbar({ onMenu }) {
   const { pathname } = useLocation();
+  const isLeadsPage = pathname === "/leads" || pathname === "/pipeline" || pathname === "/sop";
   const showDateRange = !hideDateRange(pathname);
   const navigate     = useNavigate();
-  const { admin }    = useAdmin();
+  const { admin, selectedService, setSelectedService } = useAdmin();
   const { logout }   = useAuth();
   const meta         = resolvePageMeta(pathname);
 
@@ -282,7 +292,11 @@ export default function Topbar({ onMenu }) {
         </div>
 
         {/* Desktop / tablet search */}
-        <div className="relative hidden md:block flex-1 min-w-[140px] lg:min-w-[180px] xl:min-w-[280px] max-w-md mx-2 lg:mx-4" ref={searchRef}>
+        <div className={`relative hidden md:block flex-1 max-w-md mx-2 lg:mx-4 ${
+          isLeadsPage 
+            ? "min-w-[140px] lg:min-w-[200px] xl:min-w-[280px]" 
+            : "min-w-[140px] lg:min-w-[180px] xl:min-w-[280px]"
+        }`} ref={searchRef}>
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#DC143C]" />
           <input
             value={searchQ}
@@ -313,6 +327,23 @@ export default function Topbar({ onMenu }) {
 
         {/* Right actions */}
         <div className="flex items-center gap-1 sm:gap-1.5 justify-end shrink-0">
+
+          {isLeadsPage && (
+            <div className="relative inline-flex w-auto shrink-0 mr-1">
+              <select
+                value={selectedService}
+                onChange={(e) => setSelectedService(e.target.value)}
+                className="bg-white border border-[#FFD6E5] hover:border-[#fda4af] text-xs md:text-sm font-semibold text-[#111827] px-3 py-2 rounded-xl outline-none transition cursor-pointer appearance-none pr-8 w-32 md:w-40 truncate"
+                style={{
+                  background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
+                }}
+              >
+                {CANONICAL_SERVICES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {meta.ctaTo && (
             <button
@@ -448,7 +479,7 @@ export default function Topbar({ onMenu }) {
               border border-[#E5E7EB] bg-white hover:bg-[#FFE4EC] transition"
           >
             <AdminDoodleAvatar size={28} shape="circle" className="shrink-0" />
-            <div className="hidden lg:block text-left leading-tight">
+            <div className={`${isLeadsPage ? "hidden xl:block" : "hidden lg:block"} text-left leading-tight`}>
               <div className="text-xs font-semibold text-[#DC143C]">{admin.fullName}</div>
               <div className="text-[10px] text-[#6B7280]">{admin.role}</div>
             </div>

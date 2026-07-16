@@ -30,3 +30,24 @@ export function countConversationCalls(calls, { periodFilter } = {}) {
   const scoped = periodFilter ? periodFilter(list) : list;
   return scoped.filter((c) => isConversationCall(c?.durationSec ?? c?.duration)).length;
 }
+
+export function phonesMatchLoose(a, b) {
+  const da = String(a || "").replace(/\D/g, "");
+  const db = String(b || "").replace(/\D/g, "");
+  if (!da || !db) return false;
+  if (da === db) return true;
+  return da.slice(-10) === db.slice(-10);
+}
+
+export function isMissedCall(call = {}) {
+  if (call.type === "miss") return true;
+  const outcome = String(call.outcome || "").toLowerCase();
+  if (/not connected|not pick|missed|rejected|no answer|busy|unanswered|not answered/.test(outcome)) {
+    return true;
+  }
+  const durationSec = Number.isFinite(call.durationSec)
+    ? call.durationSec
+    : parseCallDurationSeconds(call.duration);
+  if (durationSec >= CALL_CONVERSATION_MIN_SEC) return false;
+  return durationSec <= 0;
+}

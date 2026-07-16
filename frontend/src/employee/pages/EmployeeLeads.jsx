@@ -13,8 +13,15 @@ import {
   getEmpStageMeta,
   groupEmpLeadsKanban,
   isEmployeeNewAssignedLead,
-  mapEmpLeadKanbanStage,
+  filterPipelineLeadsForPeriod,
+  countPipelineCallMetrics,
+  filterMeetingsForPeriod,
+  getPipelineStageDisplayCounts,
 } from "../../data/employeeMock.js";
+import { resolveLeadKanbanColumn } from "../../lib/leadKanban.js";
+import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
+import { useEmployeePeriodCalls } from "../../lib/useEmployeePeriodCalls.js";
+import { CALL_CONVERSATION_LABEL } from "../../lib/callMetrics.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import useIsMobile from "../../lib/useIsMobile.js";
 import EmployeeLeadDrawer from "../components/EmployeeLeadDrawer.jsx";
@@ -57,34 +64,18 @@ function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd, isNewAssig
   );
 }
 
-function isLeadInPeriod(lead, period, now = new Date()) {
-  const dateStr = lead.createdAt || lead.created_at;
-  if (!dateStr) return true;
-  const leadDate = new Date(dateStr);
-  if (Number.isNaN(leadDate.getTime())) return true;
-
-  const nowClone = new Date(now);
-  const startOfToday = new Date(nowClone.getFullYear(), nowClone.getMonth(), nowClone.getDate());
-
-  if (period === "today") {
-    return leadDate >= startOfToday;
-  }
-  if (period === "week") {
-    const day = nowClone.getDay();
-    const diff = nowClone.getDate() - day + (day === 0 ? -6 : 1);
-    const startOfWeek = new Date(nowClone.setDate(diff));
-    startOfWeek.setHours(0, 0, 0, 0);
-    return leadDate >= startOfWeek;
-  }
-  if (period === "month") {
-    const startOfMonth = new Date(nowClone.getFullYear(), nowClone.getMonth(), 1);
-    return leadDate >= startOfMonth;
-  }
-  return true;
-}
-
 export default function EmployeeLeads() {
-  const { leads, addLead, updateLeadStage, employee } = useEmployee();
+  const {
+    leads,
+    loading: leadsLoading,
+    addLead,
+    updateLeadStage,
+    employee,
+    selectedService,
+    meetingsUpcoming = [],
+    meetingsHistory = [],
+    refreshMeetings,
+  } = useEmployee();
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("filter");
@@ -96,13 +87,42 @@ export default function EmployeeLeads() {
   const [dropStageId, setDropStageId] = useState(null);
   const [cashCollections, setCashCollections] = useState([]);
   const columnRefs = useRef({});
-  const period = searchParams.get("period") || "month";
+  const period = String(searchParams.get("period") || "month").toLowerCase();
+  const callScopedOnly = period !== "month" && period !== "all";
+  const periodLabel = period === "today" ? "Today" : period === "week" ? "This Week" : "This Month";
+
+  const { stats: callyzerStats } = useCallyzerStats(
+    employee?.id,
+    period,
+    Boolean(employee?.id),
+  );
+  const { calls: periodCalls, loading: callsLoading } = useEmployeePeriodCalls(
+    employee?.id,
+    period,
+    leads,
+    Boolean(employee?.id),
+  );
+
+  const allMeetings = useMemo(
+    () => [...meetingsUpcoming, ...meetingsHistory],
+    [meetingsUpcoming, meetingsHistory],
+  );
+  const periodMeetings = useMemo(
+    () => filterMeetingsForPeriod(allMeetings, period),
+    [allMeetings, period],
+  );
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setModalOpen(true);
   }, [searchParams]);
 
-  // Fetch cash collections list for this employee
+  useEffect(() => {
+    if (employee?.id && refreshMeetings) {
+      refreshMeetings(employee.id, leads);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh once per employee
+  }, [employee?.id, refreshMeetings]);
+
   useEffect(() => {
     if (!employee?.id) return;
     let cancelled = false;
@@ -157,30 +177,65 @@ export default function EmployeeLeads() {
     return `₹${val.toLocaleString("en-IN")}`;
   }
 
+
+
+  const callMetrics = useMemo(
+    () => countPipelineCallMetrics(periodCalls),
+    [periodCalls],
+  );
+
   const baseLeads = useMemo(() => {
-    const periodFilteredLeads = leads.filter((l) => isLeadInPeriod(l, period));
-    if (!statusFilter || statusFilter === "all") return periodFilteredLeads;
+    const callsForFilter = callScopedOnly && callsLoading ? [] : periodCalls;
+    let list = filterPipelineLeadsForPeriod(leads, callsForFilter, period, allMeetings);
+    if (!statusFilter || statusFilter === "all") return list;
     const sf = statusFilter.toLowerCase();
-    return periodFilteredLeads.filter((l) => {
+    return list.filter((l) => {
       const status = String(l.status || "").toLowerCase();
       const temp = String(l.temperature || "").toLowerCase();
       return status === sf || temp.includes(sf);
     });
-  }, [leads, statusFilter, period]);
+  }, [leads, statusFilter, period, periodCalls, allMeetings, callScopedOnly, callsLoading]);
 
   const filtered = useMemo(() => {
+    let list = baseLeads;
     const q = search.trim().toLowerCase();
-    if (!q) return baseLeads;
-    return baseLeads.filter(
-      (l) =>
-        l.name.toLowerCase().includes(q) ||
-        l.company.toLowerCase().includes(q) ||
-        l.source.toLowerCase().includes(q),
-    );
-  }, [baseLeads, search]);
+    if (q) {
+      list = list.filter(
+        (l) =>
+          l.name.toLowerCase().includes(q) ||
+          l.company.toLowerCase().includes(q) ||
+          l.source.toLowerCase().includes(q),
+      );
+    }
+    if (selectedService && selectedService !== "All Services") {
+      list = list.filter((l) => l.service === selectedService || l.requirements === selectedService);
+    }
+    return list;
+  }, [baseLeads, search, selectedService]);
 
-  const grouped = useMemo(() => groupEmpLeadsKanban(filtered), [filtered]);
+  const grouped = useMemo(
+    () => groupEmpLeadsKanban(leads, periodCalls, {
+      callScopedOnly,
+      period,
+      meetings: allMeetings,
+      visibleLeads: filtered,
+    }),
+    [leads, filtered, periodCalls, callScopedOnly, period, allMeetings],
+  );
   const summary = useMemo(() => getEmpPipelineSummary(filtered), [filtered]);
+
+  const stageDisplayCounts = useMemo(
+    () => getPipelineStageDisplayCounts(grouped, {
+      callyzerStats,
+      callMetrics,
+      periodMeetings,
+      callScopedOnly,
+    }),
+    [grouped, callyzerStats, callMetrics, periodMeetings, callScopedOnly],
+  );
+
+  const syncedConversationCalls = callyzerStats?.conversations5MinPlus ?? callMetrics.conversations;
+  const syncedMissedCalls = callyzerStats?.missedCalls ?? callMetrics.missed;
 
   const scrollToStage = (stageId) => {
     setActiveStage(stageId);
@@ -195,7 +250,7 @@ export default function EmployeeLeads() {
     const lead = leads.find((l) => l.id === Number(leadId) || l.id === leadId);
     if (!lead) return;
     const target = getEmpStageMeta(stageId);
-    const currentStageId = mapEmpLeadKanbanStage(lead.pipelineStage || lead.stage, lead.status);
+    const currentStageId = resolveLeadKanbanColumn(lead, periodCalls, { callScopedOnly });
     if (currentStageId === stageId) {
       if (scroll) scrollToStage(stageId);
       return;
@@ -221,7 +276,7 @@ export default function EmployeeLeads() {
     if (newLead && typeof newLead === "object") {
       const lead = addLead(newLead);
       toast.success(`${lead.name} added to pipeline`);
-      scrollToStage(mapEmpLeadKanbanStage(lead.stage, lead.status));
+      scrollToStage(resolveLeadKanbanColumn(lead, periodCalls, { callScopedOnly }));
     }
     closeModal();
   };
@@ -229,6 +284,13 @@ export default function EmployeeLeads() {
   const showToast = (message, type = "success") => {
     if (type === "error") toast.error(message);
     else toast.success(message);
+  };
+
+  const getColumnCount = (stageId, columnLeads) => {
+    if (callScopedOnly && (stageId === "conversation_2min" || stageId === "not_pick" || stageId.startsWith("meeting"))) {
+      return stageDisplayCounts[stageId] ?? columnLeads.length;
+    }
+    return columnLeads.length;
   };
 
   return (
@@ -241,8 +303,8 @@ export default function EmployeeLeads() {
             icon={TrendingUp}
             iconBg="bg-emerald-50"
             iconColor="text-emerald-600"
-            change="+14%"
-            sub="vs last month"
+            change={periodLabel}
+            sub=""
           />
           <StatCard
             label="Total Leads"
@@ -250,8 +312,8 @@ export default function EmployeeLeads() {
             icon={Kanban}
             iconBg="bg-rose-50"
             iconColor="text-rose-600"
-            change="+8%"
-            sub="this month"
+            change={`${summary.active} active`}
+            sub=""
           />
           <StatCard
             label="Hot Leads"
@@ -259,7 +321,7 @@ export default function EmployeeLeads() {
             icon={Flame}
             iconBg="bg-red-50"
             iconColor="text-red-600"
-            change="High intent"
+            change={summary.hot ? "High intent" : "None"}
             sub=""
           />
           <StatCard
@@ -277,7 +339,7 @@ export default function EmployeeLeads() {
             icon={Wallet}
             iconBg="bg-green-50"
             iconColor="text-green-600"
-            change="This month"
+            change={period === "today" ? "Today" : period === "week" ? "This week" : "This month"}
             sub=""
           />
         </div>
@@ -305,13 +367,29 @@ export default function EmployeeLeads() {
 
         <div className={`${SEGMENT_WRAP} w-full -mx-0.5`}>
           {EMP_KANBAN_STAGES.map((stage) => {
-            const count = grouped[stage.id]?.length ?? 0;
+            const columnLeads = grouped[stage.id] || [];
+            const count = callScopedOnly
+              ? (stageDisplayCounts[stage.id] ?? columnLeads.length)
+              : columnLeads.length;
             const active = activeStage === stage.id;
+            let callHint = null;
+            if (stage.id === "conversation_2min") {
+              callHint = `${callyzerStats?.conversations5MinPlus ?? syncedConversationCalls} calls ${CALL_CONVERSATION_LABEL} this month`;
+            } else if (stage.id === "not_pick") {
+              callHint = callScopedOnly
+                ? `${syncedMissedCalls} missed calls`
+                : `${callyzerStats?.missedCalls ?? syncedMissedCalls} missed this month`;
+            } else if (stage.id === "meeting_booked") {
+              callHint = `${periodMeetings.filter((m) => m.status !== "completed" && m.status !== "cancelled").length} scheduled`;
+            } else if (stage.id === "meeting_done") {
+              callHint = `${periodMeetings.filter((m) => m.status === "completed").length} completed`;
+            }
             return (
               <button
                 key={stage.id}
                 type="button"
                 onClick={() => scrollToStage(stage.id)}
+                title={callHint || undefined}
                 className={`flex items-center gap-1 ${SEGMENT_BTN} ${
                   active ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
                 }`}
@@ -323,9 +401,22 @@ export default function EmployeeLeads() {
             );
           })}
         </div>
+        {period !== "month" ? (
+          <p className="text-[10px] text-slate-400 px-0.5">
+            {periodLabel} · Callyzer synced · {syncedConversationCalls} calls {CALL_CONVERSATION_LABEL} · {syncedMissedCalls} missed · {periodMeetings.length} meetings
+          </p>
+        ) : (
+          <p className="text-[10px] text-slate-400 px-0.5">
+            This Month · {filtered.length} leads · {callyzerStats?.conversations5MinPlus ?? "—"} calls {CALL_CONVERSATION_LABEL} (Callyzer)
+          </p>
+        )}
       </GlassCard>
 
       <GlassCard className="p-3 sm:p-4 overflow-hidden">
+        {leadsLoading && leads.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-12">Loading your pipeline…</p>
+        ) : (
+        <>
         <p className="text-[10px] text-slate-400 mb-2.5 px-0.5">
           <span className="sm:hidden">Each stage is a row · swipe cards horizontally · tap for details</span>
           <span className="hidden sm:inline">Drag cards between columns · tap card for details</span>
@@ -349,7 +440,7 @@ export default function EmployeeLeads() {
                 >
                   <Badge tone={stage.badgeTone}>{stage.label}</Badge>
                   <span className="w-6 h-6 rounded-lg bg-rose-50 border border-rose-100 text-[10px] font-black text-rose-700 grid place-items-center tabular-nums">
-                    {columnLeads.length}
+                    {getColumnCount(stage.id, columnLeads)}
                   </span>
                 </button>
 
@@ -375,7 +466,19 @@ export default function EmployeeLeads() {
                   {columnLeads.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-rose-200 bg-white/60 p-4 text-center shrink-0 w-[min(72vw,200px)] min-h-[88px] flex items-center justify-center">
                       <p className="text-[11px] text-slate-400">
-                        {stage.id === "conversation" ? "New & active leads start here" : "No leads here"}
+                        {stage.id === "lead"
+                          ? "New leads appear here"
+                          : stage.id === "not_pick"
+                            ? "Leads with not-picked calls"
+                            : stage.id === "conversation_2min"
+                              ? "Leads with 2 min+ connected calls"
+                              : stage.id === "meeting_booked"
+                                ? "Meetings scheduled this period"
+                                : stage.id === "meeting_done"
+                                  ? "Meetings completed this period"
+                                  : stage.id === "lead"
+                                    ? "New leads & short calls"
+                                    : "No leads here"}
                       </p>
                     </div>
                   ) : (
@@ -416,7 +519,7 @@ export default function EmployeeLeads() {
                   >
                     <Badge tone={stage.badgeTone}>{stage.label}</Badge>
                     <span className="w-6 h-6 rounded-lg bg-rose-50 border border-rose-100 text-[10px] font-black text-rose-700 grid place-items-center tabular-nums">
-                      {columnLeads.length}
+                      {getColumnCount(stage.id, columnLeads)}
                     </span>
                   </button>
 
@@ -442,7 +545,17 @@ export default function EmployeeLeads() {
                     {columnLeads.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-rose-200 bg-white/60 p-4 text-center">
                         <p className="text-[11px] text-slate-400">
-                          {stage.id === "conversation" ? "Drop leads here to start conversation" : "Drop leads here"}
+                          {stage.id === "lead"
+                            ? "New leads appear here"
+                            : stage.id === "not_pick"
+                              ? "Leads with not-picked calls"
+                              : stage.id === "conversation_2min"
+                                ? "Leads with 2 min+ connected calls"
+                                : stage.id === "meeting_booked"
+                                  ? "Meetings scheduled this period"
+                                  : stage.id === "meeting_done"
+                                    ? "Meetings completed this period"
+                                    : "No leads here"}
                         </p>
                       </div>
                     ) : (
@@ -464,6 +577,8 @@ export default function EmployeeLeads() {
             })}
           </div>
         </div>
+        </>
+        )}
       </GlassCard>
 
       <AddLeadDrawer
@@ -473,7 +588,7 @@ export default function EmployeeLeads() {
         title="New Lead"
         subtitle="Add a lead directly to your pipeline board."
         pipelineStages={EMP_KANBAN_STAGES.map((s) => s.label)}
-        defaultStage="Conversation"
+        defaultStage="Lead"
       />
 
       <EmployeeLeadDrawer lead={selected} onClose={() => setSelected(null)} />

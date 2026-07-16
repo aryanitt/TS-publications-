@@ -434,7 +434,7 @@ export default function Settings() {
                       </span>
                     ) : (
                       <span className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-200 flex items-center gap-1">
-                        ⚠ Weights Total: {totalKpiWeight}% (must equal 100%)
+ Weights Total: {totalKpiWeight}% (must equal 100%)
                       </span>
                     )}
                   </div>

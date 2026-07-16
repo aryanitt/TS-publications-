@@ -30,23 +30,26 @@ const PAGE_META = {
   "/employee/profile": { title: "Profile", sub: "Your account and preferences" },
 };
 
+const CANONICAL_SERVICES = [
+  "All Services",
+  "AI Automation Suite",
+  "CRM Setup & Onboarding",
+  "Lead Gen Engine",
+  "Custom Software Dev",
+  "Strategic Consulting",
+];
+
 const CALL_PERIODS = [
   { id: "today", label: "Today" },
   { id: "week", label: "Week" },
   { id: "month", label: "Month" },
 ];
 
-const MOCK_NOTIFS = [
-  { text: "Hot lead: Priya Sharma assigned", time: "2 mins ago" },
-  { text: "Not picked — Suresh Jain (retry 1hr)", time: "18 mins ago" },
-  { text: "Converted: InfoSystems — ₹12L", time: "1 hour ago" },
-];
-
 export default function EmployeeTopbar({ onMenu }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { employee } = useEmployee();
+  const { employee, selectedService, setSelectedService } = useEmployee();
   const { logout } = useAuth();
   const meta = pathname.startsWith("/employee/sales-process/") && pathname !== "/employee/sales-process"
     ? { title: "SOP Detail", sub: "Full playbook · Scripts · Checklist" }
@@ -58,12 +61,12 @@ export default function EmployeeTopbar({ onMenu }) {
   const quickRef = useRef(null);
   const userRef = useRef(null);
   const isCallsPage = pathname === "/employee/calls";
-  const isPipelinePage = pathname === "/employee/leads" || pathname === "/employee/pipeline";
-  const currentPeriod = searchParams.get("period") || (isCallsPage ? "today" : "month");
+  const isPipelinePage = pathname === "/employee/leads" || pathname === "/employee/pipeline" || pathname === "/employee/sales-process";
+  const currentPeriod = String(searchParams.get("period") || (isCallsPage ? "today" : "month")).toLowerCase();
 
-  const setPeriod = (period) => {
+  const setPeriod = (nextPeriod) => {
     const newParams = new URLSearchParams(searchParams);
-    newParams.set("period", period);
+    newParams.set("period", String(nextPeriod).toLowerCase());
     setSearchParams(newParams, { replace: true });
   };
 
@@ -139,7 +142,7 @@ export default function EmployeeTopbar({ onMenu }) {
             <p className="text-[10px] text-[#6B7280] leading-tight">{meta.sub}</p>
           </div>
 
-          <div className="relative hidden md:block flex-1 min-w-0 max-w-md mx-2 lg:mx-4">
+          <div className="relative hidden md:block flex-1 max-w-md mx-2 lg:mx-4 min-w-0">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#DC143C]" />
             <input
               value={searchQ}
@@ -169,6 +172,23 @@ export default function EmployeeTopbar({ onMenu }) {
           )}
 
           <div className="flex items-center gap-1 sm:gap-1.5 justify-end shrink-0">
+            {(isPipelinePage) && (
+              <div className="relative inline-flex w-auto shrink-0 mr-1">
+                <select
+                  value={selectedService}
+                  onChange={(e) => setSelectedService(e.target.value)}
+                  className="bg-white border border-[#FFD6E5] hover:border-[#fda4af] text-xs md:text-sm font-semibold text-[#111827] px-3 py-2 rounded-xl outline-none transition cursor-pointer appearance-none pr-8 w-36 sm:w-44 truncate"
+                  style={{
+                    background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
+                  }}
+                >
+                  {CANONICAL_SERVICES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Quick Actions — tablet+ (mobile uses FAB) */}
             <div ref={quickRef} className="relative hidden md:inline-flex w-auto mr-1">
               <button
@@ -273,17 +293,8 @@ export default function EmployeeTopbar({ onMenu }) {
           <div className="fixed top-[3.25rem] right-3 sm:right-6 z-50 w-[min(100vw-1.5rem,320px)] rounded-2xl border border-[#FFD6E5] bg-white shadow-[0_12px_40px_rgba(220,20,60,0.12)] p-4 animate-fade-in">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-display font-bold text-slate-900">Notifications</span>
-              <span className="text-[10px] font-bold uppercase tracking-wide text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">5 New</span>
             </div>
-            {MOCK_NOTIFS.map((n) => (
-              <div key={n.text} className="flex gap-2.5 py-2.5 border-b border-rose-50 last:border-0">
-                <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-slate-800">{n.text}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{n.time}</p>
-                </div>
-              </div>
-            ))}
+            <p className="text-xs text-slate-400 py-4 text-center">No new notifications</p>
           </div>
         </>
       )}

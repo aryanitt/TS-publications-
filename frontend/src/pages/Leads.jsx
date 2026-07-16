@@ -898,13 +898,14 @@ const showToast = (message, type = "success") => {
         open={!!detailLead}
         onClose={() => setDetailLead(null)}
         lead={detailLead}
-        assignment={detailLead ? getAssignmentForLead(assignState, detailLead) : null}
-        employees={employees}
-        onAssign={(lead, emp) => {
-          handleAssign(lead, emp, detailLead?._assignment ? "reassign" : "manual");
-          setDetailLead(null);
+        onLeadUpdated={(updated) => {
+          setLeads((prev) => prev.map((l) => (
+            String(l.id) === String(updated.id) ? { ...l, ...updated } : l
+          )));
+          setDetailLead((current) => (
+            current && String(current.id) === String(updated.id) ? { ...current, ...updated } : current
+          ));
         }}
-        auditEntries={detailLead ? leadAudit(detailLead) : []}
       />
 
       <Drawer open={historyOpen} onClose={() => setHistoryOpen(false)} title="Assignment Audit Log">

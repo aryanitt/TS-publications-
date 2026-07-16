@@ -311,7 +311,7 @@ export default function EmployeeAssets() {
         id: Date.now(),
         name: form.name.trim(),
         cat: form.cat,
-        icon: "📄",
+        icon: "",
         size: formatFileSize(form.file.size),
         date: "Today",
         tag: tagFromFile(form.file),
@@ -326,7 +326,7 @@ export default function EmployeeAssets() {
         id: Date.now(),
         name: form.name.trim(),
         cat: form.cat,
-        icon: "📝",
+        icon: "",
         size: formatFileSize(new Blob([form.text]).size),
         date: "Today",
         tag: "TEXT",
@@ -418,7 +418,7 @@ export default function EmployeeAssets() {
       {items.length === 0 ? (
         <GlassCard>
           <EmpEmptyState
-            icon="📁"
+            icon=""
             title="No assets found"
             subtitle={search ? "Try a different search or category" : "No assets in this category"}
           />

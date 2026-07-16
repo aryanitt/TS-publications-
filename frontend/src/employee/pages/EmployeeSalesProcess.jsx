@@ -29,7 +29,7 @@ function SopCard({ sop }) {
         onClick={() => navigate(`/employee/sales-process/${sop.id}`)}
       >
         <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200 grid place-items-center shrink-0 text-base sm:text-lg">
-          {sop.icon || "📋"}
+          {sop.icon || ""}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -57,7 +57,7 @@ function SopCard({ sop }) {
 }
 
 export default function EmployeeSalesProcess() {
-  const { sops, refreshSops } = useEmployee();
+  const { sops, refreshSops, selectedService } = useEmployee();
   const [tab, setTab] = useState("sops");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
@@ -76,6 +76,9 @@ export default function EmployeeSalesProcess() {
   const filteredSops = useMemo(() => {
     let list = sops;
     if (category !== "all") list = list.filter((s) => s.category === category);
+    if (selectedService && selectedService !== "All Services") {
+      list = list.filter((s) => s.service === selectedService);
+    }
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -86,7 +89,7 @@ export default function EmployeeSalesProcess() {
       );
     }
     return list;
-  }, [sops, search, category]);
+  }, [sops, search, category, selectedService]);
 
   const allScripts = useMemo(() => {
     const fromSops = [];

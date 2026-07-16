@@ -19,6 +19,7 @@ import {
 } from "../components/Primitives.jsx";
 import { formatIndianNumber } from "../lib/indianFormat.js";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
+import { useAdmin } from "../context/AdminContext.jsx";
 import { apiGet, apiPut, apiDelete } from "../lib/api.js";
 import { useIsMobile } from "../hooks/use-mobile.tsx";
 
@@ -718,9 +719,8 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
 
   const CATEGORY_KEY = {
     "Not Contacted Leads": "not_contacted",
-    "Unqualified Leads": "unqualified",
     "Meeting Not Scheduled": "no_meeting",
-    "Stuck at Negotiation": "stuck_negotiation",
+    "Stuck In Pipeline": "stuck_pipeline",
   };
 
   const handleCardClick = async (label) => {
@@ -742,9 +742,8 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
 
   const dynamicCards = [
     { label: "Not Contacted Leads", count: oppData.notContacted ?? 0, rgb: "245,158,11" },
-    { label: "Unqualified Leads", count: oppData.unqualified ?? 0, rgb: "56,189,248" },
     { label: "Meeting Not Scheduled", count: oppData.noMeeting ?? 0, rgb: "124,58,237" },
-    { label: "Stuck at Negotiation", count: oppData.stuckNegotiation ?? 0, rgb: "239,68,68" },
+    { label: "Stuck In Pipeline", count: oppData.stuckPipeline ?? 0, rgb: "239,68,68" },
   ];
 
   return (
@@ -753,7 +752,7 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
         title={isMobile ? "Revenue Ops" : "Revenue Opportunities"}
         subtitle={isMobile ? "Deal status counts" : "Smart distribution & deal status"}
       >
-        <div className="grid grid-cols-2 gap-2 sm:gap-3 min-w-0">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-3 min-w-0">
           {dynamicCards.map((c, i) => (
             <motion.div
               key={c.label}
@@ -811,7 +810,7 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
                     </div>
                   ) : drawerLeads.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-48 gap-2 text-gray-400">
-                      <span className="text-3xl">🎉</span>
+                      <span className="text-3xl"></span>
                       <span className="text-sm font-medium">No leads in this category</span>
                     </div>
                   ) : drawerLeads.map((lead) => {
@@ -949,6 +948,8 @@ function SalesAIInsights({ showToast, employee }) {
     <SectionCard
       title="AI Insights Center"
       subtitle="Smart actions & pipeline predictions"
+      className="self-start h-fit"
+      bodyClassName="!p-3 !pt-2"
       action={
         <button
           onClick={handleRefresh}
@@ -958,12 +959,12 @@ function SalesAIInsights({ showToast, employee }) {
         </button>
       }
     >
-      <div className="space-y-3.5">
+      <div className="space-y-2">
         {insightsList.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/20 py-8 text-center">
-            <Sparkles className="w-7 h-7 text-rose-300 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-rose-800">No active insights</p>
-            <p className="text-xs text-rose-500 mt-1">Assign leads to start tracking deal predictions.</p>
+          <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/20 py-3 text-center">
+            <Sparkles className="w-5 h-5 text-rose-300 mx-auto mb-1" />
+            <p className="text-xs font-semibold text-rose-800">No active insights</p>
+            <p className="text-[10px] text-rose-500 mt-0.5">Assign leads to start tracking deal predictions.</p>
           </div>
         ) : (
           insightsList.map((item, idx) => {
@@ -980,27 +981,27 @@ function SalesAIInsights({ showToast, employee }) {
               <motion.div
                 key={item.title}
                 whileHover={{ y: -1.5 }}
-                className={`p-4 rounded-xl border ${config.border} flex items-start gap-3 shadow-sm bg-gradient-to-r ${config.bg} text-left`}
+                className={`p-3 rounded-xl border ${config.border} flex items-start gap-2.5 shadow-sm bg-gradient-to-r ${config.bg} text-left`}
               >
-                <div className={`w-8 h-8 rounded-full ${config.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm`}>
-                  <Icon className="w-4 h-4" />
+                <div className={`w-7 h-7 rounded-full ${config.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm`}>
+                  <Icon className="w-3.5 h-3.5" />
                 </div>
-                <div className="space-y-2 flex-1 min-w-0">
+                <div className="space-y-1.5 flex-1 min-w-0">
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-bold text-gray-800 leading-snug">{item.title}</p>
-                      <span className={`text-[9px] font-black uppercase ${config.textBg} px-1.5 py-0.2 rounded-md`}>
+                      <span className={`text-[9px] font-black uppercase ${config.textBg} px-1.5 py-0.5 rounded-md`}>
                         {item.badge}
                       </span>
                     </div>
-                    <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                    <p className="text-[10px] text-gray-500 mt-0.5 leading-relaxed">
                       {item.desc}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => showToast && showToast(item.actionToast, "success")}
-                      className={`px-3.5 py-1 ${item.tone === "warn" ? "border border-rose-600 text-rose-600 hover:bg-rose-50 bg-white" : "bg-rose-700 hover:bg-rose-800 text-white"} text-[10px] font-black rounded-lg transition-all shadow-sm active:scale-95`}
+                      className={`px-3 py-1 ${item.tone === "warn" ? "border border-rose-600 text-rose-600 hover:bg-rose-50 bg-white" : "bg-rose-700 hover:bg-rose-800 text-white"} text-[10px] font-black rounded-lg transition-all shadow-sm active:scale-95`}
                     >
                       {item.actionText}
                     </button>
@@ -1011,30 +1012,30 @@ function SalesAIInsights({ showToast, employee }) {
           })
         )}
 
-        {/* Card 4: Dark Predictive Forecast Card */}
+        {/* Predictive Win Funnel — compact dark card */}
         <motion.div
           whileHover={{ y: -1.5 }}
-          className="p-4 rounded-xl bg-slate-900 text-white flex flex-col justify-between shadow-md relative overflow-hidden text-left"
+          className="p-3 rounded-xl bg-slate-900 text-white shadow-md relative overflow-hidden text-left"
         >
           <div className="absolute -right-10 -top-10 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
-          
-          <div className="flex items-start justify-between mb-2">
+
+          <div className="flex items-start justify-between mb-1.5">
             <div>
               <p className="text-[8px] uppercase tracking-wider text-slate-400 font-extrabold">Predictive Win Funnel</p>
-              <div className="flex items-baseline gap-1.5 mt-1">
-                <span className="text-xl font-black tracking-tight text-white">{funnelData.value}</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-lg font-black tracking-tight text-white">{funnelData.value}</span>
                 <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-0.5">
                   <TrendingUp className="w-2.5 h-2.5" />
                   {funnelData.comparison}
                 </span>
               </div>
             </div>
-            <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300">
-              <Star className="w-3.5 h-3.5 text-rose-400" />
+            <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300">
+              <Star className="w-3 h-3 text-rose-400" />
             </div>
           </div>
 
-          <div className="space-y-1 mt-1">
+          <div className="space-y-1">
             <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold">
               <span>Conversion Rate Prediction</span>
               <span className="text-emerald-400">{funnelData.matchText}</span>
@@ -1064,7 +1065,7 @@ export default function Sales() {
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
   
-  const [selectedService, setSelectedService] = useState("All Services");
+  const { selectedService, setSelectedService } = useAdmin();
   const [selectedEmployee, setSelectedEmployee] = useState("All Employees");
   
   const [servicesList, setServicesList] = useState([]);
@@ -1301,13 +1302,13 @@ function SalesLeadDetail({ lead, onDelete, onUpdate }) {
             <button onClick={() => { setEditData({ ...lead }); setIsEditing(true); }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
               style={{ background: "#fff5f5", border: "1px solid #fecdd3", color: "#be123c" }}>
-              ✏️ Edit
+Edit
             </button>
             {!deleteConfirm ? (
               <button onClick={() => setDeleteConfirm(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#fff5f5", border: "1px solid #fecdd3", color: "#dc2626" }}>
-                🗑️ Delete
+Delete
               </button>
             ) : (
               <div className="flex items-center gap-2">
@@ -1738,7 +1739,7 @@ function SalesLeadDetail({ lead, onDelete, onUpdate }) {
                 </div>
                 {task.date && (
                   <div className="text-[10px] text-rose-500 mt-0.5">
-                    📅 {new Date(task.date).toLocaleString()}
+ {new Date(task.date).toLocaleString()}
                   </div>
                 )}
               </div>
@@ -1798,12 +1799,12 @@ function SalesLeadDetail({ lead, onDelete, onUpdate }) {
 //   };
 
 //   const countryCodes = [
-//     { code: "+91", flag: "🇮🇳" },
-//     { code: "+1",  flag: "🇺🇸" },
-//     { code: "+44", flag: "🇬🇧" },
-//     { code: "+61", flag: "🇦🇺" },
-//     { code: "+971",flag: "🇦🇪" },
-//     { code: "+65", flag: "🇸🇬" },
+//     { code: "+91", flag: "" },
+//     { code: "+1",  flag: "" },
+//     { code: "+44", flag: "" },
+//     { code: "+61", flag: "" },
+//     { code: "+971",flag: "" },
+//     { code: "+65", flag: "" },
 //   ];
 
 //   const validateTab = (tabId) => {
@@ -1886,13 +1887,13 @@ function SalesLeadDetail({ lead, onDelete, onUpdate }) {
 //   const iconStyle = { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#f43f5e", pointerEvents: "none" };
 //   const pipelineStagesList = ["New Lead","Contacted","Qualified","Proposal Sent","Negotiation","Converted"];
 //   const warmthOptions = [
-//     { label: "🔥 Hot",  value: "Hot Lead",  style: { background: warmth === "Hot Lead" ? "#be123c" : "#fff1f2", color: warmth === "Hot Lead" ? "#fff" : "#be123c", borderColor: warmth === "Hot Lead" ? "#be123c" : "#fda4af" } },
-//     { label: "🌡 Warm", value: "Warm Lead", style: { background: warmth === "Warm Lead" ? "#ea580c" : "#fff7ed", color: warmth === "Warm Lead" ? "#fff" : "#c2410c", borderColor: warmth === "Warm Lead" ? "#ea580c" : "#fdba74" } },
-//     { label: "❄️ Cold", value: "Cold Lead", style: { background: warmth === "Cold Lead" ? "#2563eb" : "#eff6ff", color: warmth === "Cold Lead" ? "#fff" : "#1d4ed8", borderColor: warmth === "Cold Lead" ? "#2563eb" : "#93c5fd" } },
+//     { label: "Hot",  value: "Hot Lead",  style: { background: warmth === "Hot Lead" ? "#be123c" : "#fff1f2", color: warmth === "Hot Lead" ? "#fff" : "#be123c", borderColor: warmth === "Hot Lead" ? "#be123c" : "#fda4af" } },
+//     { label: "Warm", value: "Warm Lead", style: { background: warmth === "Warm Lead" ? "#ea580c" : "#fff7ed", color: warmth === "Warm Lead" ? "#fff" : "#c2410c", borderColor: warmth === "Warm Lead" ? "#ea580c" : "#fdba74" } },
+//     { label: "Cold", value: "Cold Lead", style: { background: warmth === "Cold Lead" ? "#2563eb" : "#eff6ff", color: warmth === "Cold Lead" ? "#fff" : "#1d4ed8", borderColor: warmth === "Cold Lead" ? "#2563eb" : "#93c5fd" } },
 //   ];
 
 //   const ErrMsg = ({ field }) => errors[field] ? (
-//     <div style={{ color: "#f43f5e", fontSize: 11, marginTop: 4 }}>⚠ {errors[field]}</div>
+//     <div style={{ color: "#f43f5e", fontSize: 11, marginTop: 4 }}>{errors[field]}</div>
 //   ) : null;
 
 //   return (

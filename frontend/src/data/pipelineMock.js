@@ -1,15 +1,11 @@
+import { PIPELINE_STAGE_DEFINITIONS, mapStageToId } from "../lib/pipelineStages.js";
+import { resolveLeadKanbanColumn } from "../lib/leadKanban.js";
+import { normalizeLeadForDetailPanel } from "../lib/leadSync.js";
+
 const hoursAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
 const daysAgo = (d) => new Date(Date.now() - d * 86400000).toISOString();
 
-export const PIPELINE_STAGES = [
-  { id: "new", label: "New", badgeTone: "info" },
-  { id: "contacted", label: "Contacted", badgeTone: "primary" },
-  { id: "qualified", label: "Qualified", badgeTone: "success" },
-  { id: "proposal", label: "Proposal", badgeTone: "warning" },
-  { id: "negotiation", label: "Negotiation", badgeTone: "purple" },
-  { id: "closed_won", label: "Closed Won", badgeTone: "success" },
-  { id: "not_interested", label: "Not Interested", badgeTone: "danger" },
-];
+export const PIPELINE_STAGES = PIPELINE_STAGE_DEFINITIONS;
 
 export const PRIORITY_BADGE = {
   HOT: "danger",
@@ -174,7 +170,7 @@ export const PIPELINE_LEADS = [
     tasks: [{ id: 1, text: "Prepare counter proposal", done: false }],
   }),
 
-  lead("p22", "closed_won", "Manish Tiwari", "Tiwari Infra", 420000, "HOT", 120, {
+  lead("p22", "payment_complete", "Manish Tiwari", "Tiwari Infra", 420000, "HOT", 120, {
     winProbability: 100,
     activities: [
       { id: 1, type: "won", text: "Deal closed — contract signed", at: daysAgo(5) },
@@ -182,12 +178,12 @@ export const PIPELINE_LEADS = [
     ],
     tasks: [{ id: 1, text: "Hand off to onboarding", done: true }],
   }),
-  lead("p23", "closed_won", "Pooja Agarwal", "Agarwal Healthcare", 680000, "HOT", 336, {
+  lead("p23", "payment_complete", "Pooja Agarwal", "Agarwal Healthcare", 680000, "HOT", 336, {
     winProbability: 100,
     activities: [{ id: 1, type: "won", text: "Closed won — enterprise package", at: daysAgo(14) }],
     tasks: [],
   }),
-  lead("p24", "closed_won", "Sarah Chen", "Chen Analytics", 550000, "WARM", 480, {
+  lead("p24", "payment_complete", "Sarah Chen", "Chen Analytics", 550000, "WARM", 480, {
     winProbability: 100,
     activities: [{ id: 1, type: "won", text: "Annual subscription signed", at: daysAgo(20) }],
     tasks: [{ id: 1, text: "Send welcome kit", done: true }],
@@ -222,7 +218,7 @@ export function getStageIndex(stageId) {
 
 export function patchLead(lead, patch, activityText, activityType = "note") {
   const next = { ...lead, ...patch, updatedAt: new Date().toISOString() };
-  if (patch.stage === "closed_won") next.winProbability = 100;
+  if (patch.stage === "payment_complete") next.winProbability = 100;
   if (activityText) {
     next.activities = [
       { id: Date.now(), type: activityType, text: activityText, at: new Date().toISOString() },
@@ -232,21 +228,39 @@ export function patchLead(lead, patch, activityText, activityType = "note") {
   return next;
 }
 
-export function groupLeadsByStage(leads) {
+export function groupLeadsByStage(leads, calls = []) {
   const map = Object.fromEntries(PIPELINE_STAGES.map((s) => [s.id, []]));
   leads.forEach((l) => {
-    if (map[l.stage]) map[l.stage].push(l);
+    const normalized = normalizeLeadForDetailPanel(l) || l;
+    const id = resolveLeadKanbanColumn(normalized, calls);
+    if (map[id]) map[id].push(l);
   });
   return map;
 }
 
 const FORM_STAGE_TO_PIPELINE = {
-  "New Lead": "new",
-  Contacted: "contacted",
-  Qualified: "qualified",
-  "Proposal Sent": "proposal",
-  Negotiation: "negotiation",
-  Converted: "closed_won",
+  Lead: "lead",
+  "New Lead": "lead",
+  "Not Pick": "not_pick",
+  "Conversation 2 min+": "conversation_2min",
+  Conversation: "conversation_2min",
+  "Conversation - 5 (Inko follow Up)": "conversation_2min",
+  Contacted: "conversation_2min",
+  Qualified: "conversation_2min",
+  Attempted: "conversation_2min",
+  "Meeting Booked": "meeting_booked",
+  Booked: "meeting_booked",
+  "Call Booked": "meeting_booked",
+  "Meeting Done": "meeting_done",
+  "Showed up": "meeting_done",
+  "Proposal Sent": "proposal_sent",
+  Proposal: "proposal_sent",
+  Objection: "objection",
+  Negotiation: "objection",
+  "Advance Paid": "advance_paid",
+  "Payment Complete": "payment_complete",
+  Converted: "payment_complete",
+  "Closed Won": "payment_complete",
   "Not Interested": "not_interested",
 };
 
@@ -257,7 +271,7 @@ const FORM_TEMP_TO_PRIORITY = {
 };
 
 export function leadFromForm(raw) {
-  const stage = FORM_STAGE_TO_PIPELINE[raw.pipeline_stage] || "new";
+  const stage = FORM_STAGE_TO_PIPELINE[raw.pipeline_stage] || "lead";
   const priority = FORM_TEMP_TO_PRIORITY[raw.temperature] || "WARM";
   const assigneeName =
     raw.assignee_name ||

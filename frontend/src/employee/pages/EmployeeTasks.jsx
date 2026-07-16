@@ -596,7 +596,7 @@ export default function EmployeeTasks() {
       ) : grouped.length === 0 ? (
         <GlassCard className="py-4">
           <EmpEmptyState
-            icon="✅"
+            icon=""
             title={search ? "No tasks match your search" : `No ${tab} tasks`}
             subtitle={search ? "Try a different keyword" : "Create your first task to stay on track"}
           />

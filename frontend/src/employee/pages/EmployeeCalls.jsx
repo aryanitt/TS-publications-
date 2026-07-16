@@ -452,7 +452,7 @@ export default function EmployeeCalls() {
           </div>
           {calls.length === 0 ? (
             <EmpEmptyState
-              icon="📞"
+              icon=""
               title={callsLoading ? "Loading calls…" : "No calls in this period"}
               subtitle={callsLoading ? "Fetching your call history" : "Try a different filter or time range"}
             />

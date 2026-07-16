@@ -471,7 +471,7 @@ export default function EmployeeCallAssistant() {
                 </h1>
               </div>
               <span className="font-mono text-[10px] sm:text-[11px] text-rose-700 font-extrabold bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100/70 tracking-wider tabular-nums shrink-0">
-                ⏱ {callyzerCallActive ? formatDuration(callDuration) : "—"}
+ {callyzerCallActive ? formatDuration(callDuration) : "—"}
               </span>
             </div>
 
@@ -704,7 +704,7 @@ export default function EmployeeCallAssistant() {
                       onClick={() => handleSopSelect(recentId)}
                       className="w-full text-left text-[11px] text-slate-650 hover:text-rose-700 truncate block"
                     >
-                      ⏳ {item.title}
+ {item.title}
                     </button>
                   );
                 })}

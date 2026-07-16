@@ -95,7 +95,7 @@ export default function FormsDashboard() {
       return [form, ...prev];
     });
     closeBuilder();
-    toast.success(isDraft ? "Draft saved locally (server unavailable)" : "Form saved locally (server unavailable)", { icon: "ℹ️" });
+    toast.success(isDraft ? "Draft saved locally (server unavailable)" : "Form saved locally (server unavailable)");
   };
 
   const handleSaveForm = async (payload, isDraft) => {

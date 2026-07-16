@@ -71,7 +71,7 @@ export default function EmployeeSopDetail() {
       <GlassCard className="p-3 sm:p-4 md:p-5">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200 grid place-items-center text-2xl shrink-0">
-            {sop.icon || "📋"}
+            {sop.icon || ""}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-start gap-2 mb-1">

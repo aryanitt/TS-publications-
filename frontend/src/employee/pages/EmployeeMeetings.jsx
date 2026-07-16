@@ -502,7 +502,7 @@ export default function EmployeeMeetings() {
           {tab === "upcoming" ? (
             filteredUpcoming.length === 0 ? (
               <GlassCard className={`py-10 flex items-center justify-center ${PANEL_HEIGHT}`}>
-                <EmpEmptyState icon="📅" title="No upcoming meetings" subtitle="Book a meeting or clear your search" />
+                <EmpEmptyState icon="" title="No upcoming meetings" subtitle="Book a meeting or clear your search" />
               </GlassCard>
             ) : (
               <GlassCard className={`p-0 overflow-hidden flex flex-col ${PANEL_HEIGHT}`}>
@@ -529,7 +529,7 @@ export default function EmployeeMeetings() {
               </div>
               {filteredHistory.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <EmpEmptyState icon="📋" title="No history found" subtitle="Try a different search" />
+                  <EmpEmptyState icon="" title="No history found" subtitle="Try a different search" />
                 </div>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-thin divide-y divide-rose-50">

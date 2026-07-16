@@ -17,7 +17,15 @@ const INDIAN_STATES = [
   "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
 ].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
 
-export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "New Lead" }) {
+const CANONICAL_SERVICES = [
+  "AI Automation Suite",
+  "CRM Setup & Onboarding",
+  "Lead Gen Engine",
+  "Custom Software Dev",
+  "Strategic Consulting",
+];
+
+export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Lead" }) {
     const [activeTab, setActiveTab] = useState("basic");
     const [warmth, setWarmth] = useState("Hot Lead");
     const [stage, setStage] = useState(defaultStage);
@@ -32,7 +40,7 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Ne
       source: "", keyword: "", ad_content: "", campaign_notes: "",
       win_probability: 50, purchased: "", expected_close_date: "",
       interactions: 0, next_followup_date: "", mom: "", call_summary: "", notes: "",
-      expected_revenue: "",
+      expected_revenue: "", service: "AI Automation Suite",
     });
   
     const tabs = [
@@ -53,12 +61,12 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Ne
     };
   
     const countryCodes = [
-      { code: "+91", flag: "🇮🇳" },
-      { code: "+1",  flag: "🇺🇸" },
-      { code: "+44", flag: "🇬🇧" },
-      { code: "+61", flag: "🇦🇺" },
-      { code: "+971",flag: "🇦🇪" },
-      { code: "+65", flag: "🇸🇬" },
+      { code: "+91", flag: "" },
+      { code: "+1",  flag: "" },
+      { code: "+44", flag: "" },
+      { code: "+61", flag: "" },
+      { code: "+971",flag: "" },
+      { code: "+65", flag: "" },
     ];
 
     const formatIndianCurrency = (numStr) => {
@@ -193,15 +201,26 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Ne
   
     const iconFieldWrap = { position: "relative" };
     const iconStyle = { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#f43f5e", pointerEvents: "none" };
-    const pipelineStagesList = pipelineStages || ["New Lead","Contacted","Qualified","Proposal Sent","Negotiation","Converted"];
+    const pipelineStagesList = pipelineStages || [
+      "Lead",
+      "Not Pick",
+      "Conversation 2 min+",
+      "Meeting Booked",
+      "Meeting Done",
+      "Proposal Sent",
+      "Objection",
+      "Advance Paid",
+      "Payment Complete",
+      "Not Interested",
+    ];
     const warmthOptions = [
-      { label: "🔥 Hot",  value: "Hot Lead",  style: { background: warmth === "Hot Lead" ? "#be123c" : "#fff1f2", color: warmth === "Hot Lead" ? "#fff" : "#be123c", borderColor: warmth === "Hot Lead" ? "#be123c" : "#fda4af" } },
-      { label: "🌡 Warm", value: "Warm Lead", style: { background: warmth === "Warm Lead" ? "#ea580c" : "#fff7ed", color: warmth === "Warm Lead" ? "#fff" : "#c2410c", borderColor: warmth === "Warm Lead" ? "#ea580c" : "#fdba74" } },
-      { label: "❄️ Cold", value: "Cold Lead", style: { background: warmth === "Cold Lead" ? "#2563eb" : "#eff6ff", color: warmth === "Cold Lead" ? "#fff" : "#1d4ed8", borderColor: warmth === "Cold Lead" ? "#2563eb" : "#93c5fd" } },
+      { label: "Hot",  value: "Hot Lead",  style: { background: warmth === "Hot Lead" ? "#be123c" : "#fff1f2", color: warmth === "Hot Lead" ? "#fff" : "#be123c", borderColor: warmth === "Hot Lead" ? "#be123c" : "#fda4af" } },
+      { label: "Warm", value: "Warm Lead", style: { background: warmth === "Warm Lead" ? "#ea580c" : "#fff7ed", color: warmth === "Warm Lead" ? "#fff" : "#c2410c", borderColor: warmth === "Warm Lead" ? "#ea580c" : "#fdba74" } },
+      { label: "Cold", value: "Cold Lead", style: { background: warmth === "Cold Lead" ? "#2563eb" : "#eff6ff", color: warmth === "Cold Lead" ? "#fff" : "#1d4ed8", borderColor: warmth === "Cold Lead" ? "#2563eb" : "#93c5fd" } },
     ];
   
     const ErrMsg = ({ field }) => errors[field] ? (
-      <div style={{ color: "#f43f5e", fontSize: 11, marginTop: 4 }}>⚠ {errors[field]}</div>
+      <div style={{ color: "#f43f5e", fontSize: 11, marginTop: 4 }}>{errors[field]}</div>
     ) : null;
   
     return (
@@ -542,6 +561,19 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Ne
   
                 <FormField label="Purchased">
                   <input className="al-input" placeholder="Product / plan purchased" value={formData.purchased} onChange={e => setField("purchased", e.target.value)} />
+                </FormField>
+
+                <FormField label="Service">
+                  <select
+                    className="al-input"
+                    value={formData.service}
+                    onChange={e => setField("service", e.target.value)}
+                    style={{ appearance: "auto" }}
+                  >
+                    {CANONICAL_SERVICES.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </FormField>
   
                 <FormField label="Expected Close Date">

@@ -20,6 +20,7 @@ import {
   SectionHeader, priorityTone, stageTone
 } from "../components/Primitives.jsx";
 import { useDateRange } from "../context/DateRangeContext.jsx";
+import { useAdmin } from "../context/AdminContext.jsx";
 import { apiGet, readCachedJson, readStaleCachedJson } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
 import { formatINR } from "../lib/indianFormat.js";
@@ -1779,7 +1780,7 @@ const CustomTooltip = ({ active, payload, label }) => {
         <div className={`mt-3 text-[10px] font-bold text-center px-2 py-1 rounded-lg ${
           isPositive ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-rose-50/50 text-rose-700 border border-rose-100"
         }`}>
-          {isPositive ? "🎯 TARGET EXCEEDED" : "⚠️ UNDER TARGET"}
+          {isPositive ? "TARGET EXCEEDED" : "UNDER TARGET"}
         </div>
       </div>
     );
@@ -2007,7 +2008,7 @@ function RevenueTrajectory({ data }) {
 export default function Dashboard() {
   const [lead,            setLead]           = useState(null);
   const { preset } = useDateRange();
-  const [selectedService, setSelectedService] = useState("All Services");
+  const { selectedService, setSelectedService } = useAdmin();
   const initialDash = hydrateDashboardCache();
   const [apiFilterData, setApiFilterData] = useState(initialDash?.filterData ?? null);
   const [aiInsights, setAiInsights] = useState(initialDash?.aiInsights ?? []);

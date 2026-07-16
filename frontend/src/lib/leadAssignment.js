@@ -65,8 +65,13 @@ export function normalizeSource(raw = "") {
 }
 
 export function isConverted(lead) {
-  const stage = String(lead.pipeline_stage || lead.status || "").toLowerCase();
-  return stage.includes("won") || stage.includes("convert") || stage.includes("closed won");
+  const stage = String(lead.pipeline_stage || lead.pipelineStage || lead.stage || lead.status || "").toLowerCase();
+  return (
+    stage.includes("payment complete")
+    || stage.includes("won")
+    || stage.includes("convert")
+    || stage.includes("closed won")
+  );
 }
 
 export function isActiveLead(lead) {

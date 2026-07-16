@@ -18,6 +18,7 @@ import {
 } from "../data/pipelineMock.js";
 import { apiGet, apiPatch, invalidateCache } from "../lib/api.js";
 import { getAdminCrmHeaders } from "../lib/crmContext.js";
+import { useAdmin } from "../context/AdminContext.jsx";
 import { apiLeadToPipeline, fetchAllLeads, adminPipelineIdToDbStage } from "../lib/leadSync.js";
 import { getAssignmentState, getLeadEmployeeName } from "../lib/leadAssignment.js";
 import useIsMobile from "../lib/useIsMobile.js";
@@ -161,15 +162,23 @@ export default function Pipeline() {
     }
   };
 
+  const { selectedService } = useAdmin();
+
   const filtered = useMemo(() => {
+    let list = leads || [];
     const q = search.trim().toLowerCase();
-    if (!q) return leads || [];
-    return (leads || []).filter(
-      (l) =>
-        (l?.name || "").toLowerCase().includes(q) ||
-        (l?.company || "").toLowerCase().includes(q),
-    );
-  }, [leads, search]);
+    if (q) {
+      list = list.filter(
+        (l) =>
+          (l?.name || "").toLowerCase().includes(q) ||
+          (l?.company || "").toLowerCase().includes(q),
+      );
+    }
+    if (selectedService && selectedService !== "All Services") {
+      list = list.filter((l) => l.service === selectedService || l.requirements === selectedService);
+    }
+    return list;
+  }, [leads, search, selectedService]);
 
   const grouped = useMemo(() => groupLeadsByStage(filtered), [filtered]);
   const summary = useMemo(() => getPipelineSummary(filtered), [filtered]);
@@ -203,7 +212,7 @@ export default function Pipeline() {
       lead,
       { stage: stageId },
       `Moved to ${target.label}`,
-      stageId === "closed_won" ? "won" : "note",
+      stageId === "payment_complete" ? "won" : "note",
     );
     applyLeadUpdate(updated);
     const dbId = lead._dbId || leadId;
