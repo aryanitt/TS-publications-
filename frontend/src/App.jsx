@@ -19,7 +19,7 @@ const Incentives = lazy(() => import("./pages/Incentives.jsx"));
 const Settings = lazy(() => import("./pages/Settings.jsx"));
 const Admin = lazy(() => import("./pages/Admin.jsx"));
 const Leads = lazy(() => import("./pages/Leads.jsx"));
-const Forms = lazy(() => import("./pages/Forms.jsx"));
+const Forms = lazy(() => import("./pages/Sources.jsx"));
 const Services = lazy(() => import("./pages/Services.jsx"));
 const Pipeline = lazy(() => import("./pages/Pipeline.jsx"));
 
@@ -34,6 +34,7 @@ const EmployeeSopDetail = lazy(() => import("./employee/pages/EmployeeSopDetail.
 const EmployeeCallAssistant = lazy(() => import("./employee/pages/EmployeeCallAssistant.jsx"));
 const EmployeeAssets = lazy(() => import("./employee/pages/EmployeeAssets.jsx"));
 const EmployeeMeetings = lazy(() => import("./employee/pages/EmployeeMeetings.jsx"));
+const EmployeeWhatsAppScripts = lazy(() => import("./employee/pages/EmployeeWhatsAppScripts.jsx"));
 const EmployeeProfile = lazy(() => import("./employee/pages/EmployeeProfile.jsx"));
 const EmployeePipeline = lazy(() => import("./employee/pages/EmployeePipeline.jsx"));
 
@@ -94,7 +95,8 @@ export default function App() {
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/leads" element={<Leads />} />
                 <Route path="/pipeline" element={<Pipeline />} />
-                <Route path="/forms/*" element={<Forms />} />
+                <Route path="/sources/*" element={<Forms />} />
+                <Route path="/forms/*" element={<Navigate to="/sources" replace />} />
                 <Route path="/services/*" element={<Services />} />
               </Route>
             </Route>
@@ -104,6 +106,7 @@ export default function App() {
                 <Route index element={<EmployeeDashboard />} />
                 <Route path="tasks" element={<EmployeeTasks />} />
                 <Route path="follow-ups" element={<EmployeeFollowUps />} />
+                <Route path="whatsapp-scripts" element={<EmployeeWhatsAppScripts />} />
                 <Route path="calls" element={<EmployeeCalls />} />
                 <Route path="call-detail" element={<EmployeeCallDetail />} />
                 <Route path="leads" element={<EmployeeLeads />} />

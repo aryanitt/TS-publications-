@@ -53,7 +53,9 @@ export function getDateBounds(preset, fromDate = "", toDate = "") {
   }
   if (preset === "week") {
     const s = startOfDay(now);
-    s.setDate(s.getDate() - s.getDay());
+    const day = s.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    s.setDate(s.getDate() + diff);
     return { start: s.toISOString().slice(0, 10), end: endOfDay(now).toISOString().slice(0, 10) };
   }
   const s = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));

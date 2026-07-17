@@ -8,6 +8,7 @@ import {
   mapStageToId,
   normalizeStageLabel,
 } from "./pipelineStages.js";
+import { formatCallDisplayDate } from "./callDisplay.js";
 
 /** Canonical pipeline_stage values written to DB (employee kanban labels). */
 export const CANONICAL_STAGE_LABELS = EMP_KANBAN_STAGES.map((s) => s.label);
@@ -57,7 +58,7 @@ export function temperatureToApi(status) {
     converted: "Payment Complete",
     ni: "Not Interested",
   };
-  return map[status] || "Warm Lead";
+  return map[status] || "Cold Lead";
 }
 
 export function workflowStatusFromTemperature(status) {
@@ -66,17 +67,7 @@ export function workflowStatusFromTemperature(status) {
 
 export function formatRelativeTime(iso) {
   if (!iso) return "—";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
-  const diffMs = Date.now() - then;
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return formatCallDisplayDate(iso);
 }
 
 export function unwrapApiData(res) {
@@ -202,6 +193,8 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
     updatedAt: lead.updatedAt || lead.updated_at,
     assignmentStatus: lead.assignmentStatus || lead.assignment_status,
     assignedAt: lead.assignedAt || lead.assigned_at,
+    assignedBy: lead.assignedBy || lead.assigned_by,
+    assignmentMethod: lead.assignmentMethod || lead.assignment_method,
     acceptedAt: lead.acceptedAt || lead.accepted_at,
     _api: true,
   };
@@ -235,6 +228,7 @@ export function apiLeadToAdmin(lead) {
     created_at: lead.createdAt || lead.created_at,
     next_followup_date: lead.nextFollowUpAt || lead.next_follow_up_at,
     requirements: lead.requirements,
+    service: lead.requirements || lead.service || lead.insights || "",
     assignedTo,
     assignee_name: employeeName,
     employeeName,
@@ -354,16 +348,31 @@ export function apiLeadToPipeline(lead) {
     id: lead.id,
     _dbId: lead.id,
     stage,
+    pipelineStage: stageRaw,
     name: lead.leadName || lead.lead_name || "Lead",
     company: lead.companyName || lead.company_name || "—",
     value: Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0),
     priority,
     status: lead.status || lead.employeeStatus || "",
+    assignmentStatus: lead.assignmentStatus || lead.assignment_status || "",
+    assignedAt: lead.assignedAt || lead.assigned_at || null,
+    assignedBy: lead.assignedBy || lead.assigned_by || null,
+    assignmentMethod: lead.assignmentMethod || lead.assignment_method || "",
+    assigneeId: (() => {
+      const raw = lead.assignedTo ?? lead.assigned_to ?? lead.assigneeId ?? lead.assignee_id;
+      if (raw == null) return null;
+      if (typeof raw === "object") return raw.id ?? raw._id ?? null;
+      return raw;
+    })(),
+    acceptedAt: lead.acceptedAt || lead.accepted_at || null,
+    createdAt: lead.createdAt || lead.created_at || null,
     updatedAt: lead.updatedAt || lead.updated_at || lead.createdAt || new Date().toISOString(),
     phone: lead.phone || "",
     email: lead.email || "",
     city: lead.city || "",
     source: lead.source || "Website",
+    service: lead.requirements || lead.insights || lead.sourceMeta?.service || "",
+    requirements: lead.requirements || lead.insights || "",
     owner,
     assignee: owner,
     employeeName: owner,

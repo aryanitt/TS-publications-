@@ -1,8 +1,16 @@
-import { isConversationCall, isMissedCall, phonesMatchLoose, parseCallDurationSeconds } from "./callMetrics.js";
+import {
+  isConversationCall,
+  isMissedCall,
+  isNotPickupByClientCall,
+  isOutboundCall,
+  phonesMatchLoose,
+  parseCallDurationSeconds,
+} from "./callMetrics.js";
 import { mapStageToId, PIPELINE_STAGE_DEFINITIONS } from "./pipelineStages.js";
 import { isDateKeyInPeriod, localDateKey } from "./periodFilter.js";
+import { formatCallDisplayDate } from "./callDisplay.js";
 
-/** Stages set manually / downstream — not auto-routed from call activity. */
+/** Stages set manually by rep — not auto-routed from Callyzer calls. */
 export const ADVANCED_KANBAN_STAGES = new Set([
   "meeting_booked",
   "meeting_done",
@@ -13,88 +21,252 @@ export const ADVANCED_KANBAN_STAGES = new Set([
   "not_interested",
 ]);
 
-const CALL_COLUMN_PRIORITY = {
-  conversation_2min: 3,
-  not_pick: 2,
-  lead: 1,
-};
+export function resolveLeadAssigneeId(lead) {
+  if (!lead) return null;
+  const raw = lead.assigneeId ?? lead.assigned_to ?? lead.assignedTo;
+  if (raw == null) return null;
+  if (typeof raw === "object") return raw.id ?? raw._id ?? null;
+  return raw;
+}
 
 export function isEmployeeNewAssignedLead(lead) {
   if (!lead) return false;
   if (lead.acceptedAt || lead.accepted_at) return false;
   const assignStatus = String(lead.assignmentStatus || lead.assignment_status || "").toLowerCase();
   if (assignStatus === "accepted" || assignStatus === "in_progress") return false;
-  const stage = String(lead.stage || lead.pipelineStage || lead.pipeline_stage || "").toLowerCase().trim();
-  const inNewLeadStage = stage === "new lead" || stage === "new" || stage === "lead";
-  if (!inNewLeadStage) return false;
+  if (!(assignStatus === "assigned" || assignStatus === "pending" || assignStatus === "unassigned")) {
+    if (!(lead.assignedAt || lead.assigned_at) || !resolveLeadAssigneeId(lead)) return false;
+  }
+  const stageId = mapStageToId(lead.pipelineStage || lead.stage || lead.pipeline_stage, lead.status);
+  if (ADVANCED_KANBAN_STAGES.has(stageId)) return false;
+  if (stageId === "meeting_booked" || stageId === "meeting_done") return false;
   return assignStatus === "assigned" || assignStatus === "pending" || assignStatus === "unassigned";
 }
 
-export function isLeadCreatedInPeriod(lead, period = "month", now = new Date()) {
-  const raw = lead?.createdAt || lead?.created_at;
+export function isNewPipelineLead(lead) {
+  if (!lead) return false;
+  if (isEmployeeNewAssignedLead(lead)) return true;
+  const st = String(lead.status || "").toLowerCase();
+  if (st === "new" || st.includes("new lead")) return true;
+  return mapStageToId(lead.pipelineStage || lead.stage, lead.status) === "lead";
+}
+
+export function isLeadAssignedInPeriod(lead, period = "month", now = new Date(), options = {}) {
+  const raw = options.assignedOnly
+    ? (lead?.assignedAt || lead?.assigned_at)
+    : (lead?.assignedAt || lead?.assigned_at || lead?.createdAt || lead?.created_at);
   if (!raw) return false;
   const key = localDateKey(new Date(raw));
   return isDateKeyInPeriod(key, period, now);
 }
 
-export function isLeadActiveInPeriod(lead, period = "month", now = new Date()) {
-  if (!lead) return false;
-  const p = String(period || "month").toLowerCase();
-  if (p === "month" || p === "all") return true;
-  if (isEmployeeNewAssignedLead(lead)) return true;
-  if (isLeadCreatedInPeriod(lead, period, now)) return true;
-  return false;
+function leadContactOptions(lead, options = {}) {
+  const since = options.sinceAssignment
+    ? (lead?.assignedAt || lead?.assigned_at)
+    : (options.since ?? null);
+  return {
+    outboundOnly: options.outboundOnly ?? true,
+    scopeByAssignee: options.scopeByAssignee ?? false,
+    since,
+  };
 }
 
-export function resolveLeadForCall(call, leads = []) {
+function callMatchesSince(call, since) {
+  if (!since) return true;
+  const sinceMs = new Date(since).getTime();
+  if (Number.isNaN(sinceMs)) return true;
+  const raw = call.callAt || call.startedAt || call.createdAt || call.date;
+  if (!raw) return false;
+  return new Date(raw).getTime() >= sinceMs;
+}
+
+/** Admin panel assignment (manual, bulk, round-robin) — not employee self-added. */
+export function isAdminPanelAssignedLead(lead, employeeId = null) {
+  if (!isEmployeeNewAssignedLead(lead)) return false;
+  const method = String(lead.assignmentMethod || lead.assignment_method || "").toLowerCase();
+  if (["bulk", "round_robin", "round-robin", "auto", "automatic"].includes(method)) return true;
+  const assignStatus = String(lead.assignmentStatus || lead.assignment_status || "").toLowerCase();
+  if (assignStatus !== "assigned" && assignStatus !== "pending") return false;
+  const assignedBy = lead.assignedBy ?? lead.assigned_by;
+  if (assignedBy != null && employeeId != null && String(assignedBy) === String(employeeId)) {
+    return false;
+  }
+  if (lead.assignedAt || lead.assigned_at) return true;
+  return assignStatus === "assigned" || assignStatus === "pending";
+}
+
+/** Today: fresh admin assignment, no outbound dial yet. */
+export function isTodayUncontactedAdminLead(lead, periodCalls = [], employeeId = null, now = new Date()) {
+  if (!isAdminPanelAssignedLead(lead, employeeId)) return false;
+  if (leadHasOutboundCalls(lead, periodCalls, {
+    outboundOnly: true,
+    scopeByAssignee: true,
+    sinceAssignment: true,
+  })) return false;
+  return isLeadAssignedInPeriod(lead, "today", now, { assignedOnly: true });
+}
+
+/** Before today: still uncontacted — surfaces in overdue due section. */
+export function isStaleUncontactedAdminLead(lead, periodCalls = [], employeeId = null, now = new Date()) {
+  if (!isAdminPanelAssignedLead(lead, employeeId)) return false;
+  if (leadHasOutboundCalls(lead, periodCalls, {
+    outboundOnly: true,
+    scopeByAssignee: true,
+    sinceAssignment: true,
+  })) return false;
+  return !isLeadAssignedInPeriod(lead, "today", now, { assignedOnly: true });
+}
+
+function phoneLast10(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+function buildLeadLookupIndex(leads = []) {
+  const byId = new Map();
+  const byPhone = new Map();
+  for (const lead of leads) {
+    if (!lead) continue;
+    byId.set(String(lead.id), lead);
+    const key = phoneLast10(lead.phone || lead.clientPhone);
+    if (key) byPhone.set(key, lead);
+  }
+  return { byId, byPhone };
+}
+
+function resolveLeadForCallFromIndex(call, index, leads = []) {
   if (!call) return null;
-  const list = Array.isArray(leads) ? leads : [];
   if (call.leadId != null) {
-    const byId = list.find((l) => String(l.id) === String(call.leadId));
+    const byId = index.byId.get(String(call.leadId));
     if (byId) return byId;
   }
   const callPhone = call.phone || call.clientPhone;
   if (callPhone) {
-    const byPhone = list.find((l) => phonesMatchLoose(l.phone || l.clientPhone, callPhone));
+    const byPhone = index.byPhone.get(phoneLast10(callPhone));
     if (byPhone) return byPhone;
   }
-  if (call.name) {
-    const byName = list.find((l) => String(l.name || "").toLowerCase() === String(call.name).toLowerCase());
+  const callName = call.name || call.clientName;
+  if (callName && callName !== "Unknown Lead") {
+    const lower = String(callName).toLowerCase();
+    const list = Array.isArray(leads) ? leads : [];
+    const byName = list.find((l) => String(l.name || l.leadName || "").toLowerCase() === lower);
     if (byName) return byName;
   }
   return null;
 }
 
-export function getCallsForLead(lead, calls = []) {
+/** Build O(1) lead/call lookups for kanban grouping (684 leads × 200 calls). */
+export function buildPipelineKanbanIndex(allLeads = [], periodCalls = []) {
+  const leadIndex = buildLeadLookupIndex(allLeads);
+  const callsByLeadId = new Map();
+  const outboundLeadIds = new Set();
+  const callActiveIds = new Set();
+
+  for (const call of periodCalls) {
+    const lead = resolveLeadForCallFromIndex(call, leadIndex, allLeads);
+    if (!lead?.id) continue;
+    const id = String(lead.id);
+    callActiveIds.add(id);
+    if (!callsByLeadId.has(id)) callsByLeadId.set(id, []);
+    callsByLeadId.get(id).push(call);
+    if (isOutboundCall(call)) outboundLeadIds.add(id);
+  }
+
+  return { leadIndex, callsByLeadId, outboundLeadIds, callActiveIds };
+}
+
+export function resolveLeadForCall(call, leads = []) {
+  if (!call) return null;
+  const list = Array.isArray(leads) ? leads : [];
+  const index = buildLeadLookupIndex(list);
+  return resolveLeadForCallFromIndex(call, index, list);
+}
+
+export function getCallsForLead(lead, calls = [], options = {}) {
   if (!lead || !Array.isArray(calls)) return [];
-  return calls.filter((c) => {
+  const { scopeByAssignee = false, since = null } = options;
+  let matched = calls.filter((c) => {
     if (String(c.leadId) === String(lead.id)) return true;
     const leadPhone = lead.phone || lead.clientPhone;
     const callPhone = c.phone || c.clientPhone;
     if (leadPhone && callPhone && phonesMatchLoose(leadPhone, callPhone)) return true;
     return false;
   });
+  if (scopeByAssignee) {
+    const assigneeId = resolveLeadAssigneeId(lead);
+    if (assigneeId != null) {
+      matched = matched.filter((c) => String(c.employeeId) === String(assigneeId));
+    }
+  }
+  if (since) {
+    matched = matched.filter((c) => callMatchesSince(c, since));
+  }
+  return matched;
+}
+
+export function getLeadOutboundCalls(lead, periodCalls = [], options = {}) {
+  const opts = leadContactOptions(lead, options);
+  const leadCalls = getCallsForLead(lead, periodCalls, opts);
+  if (!opts.outboundOnly) return leadCalls;
+  return leadCalls.filter(isOutboundCall);
+}
+
+export function leadHasOutboundCalls(lead, periodCalls = [], options = {}) {
+  return getLeadOutboundCalls(lead, periodCalls, options).length > 0;
+}
+
+/** New assigned lead with no outbound dial attempts in the period. */
+export function isUncontactedNewLead(lead, periodCalls = [], options = {}) {
+  if (!lead) return false;
+  const contactOpts = {
+    outboundOnly: options.outboundOnly ?? true,
+    scopeByAssignee: options.scopeByAssignee ?? false,
+    sinceAssignment: options.sinceAssignment ?? false,
+  };
+  if (leadHasOutboundCalls(lead, periodCalls, contactOpts)) return false;
+  return isEmployeeNewAssignedLead(lead);
+}
+
+function resolveEarlyFunnelColumn(lead, periodCalls = [], options = {}) {
+  const contactOpts = {
+    outboundOnly: options.outboundOnly ?? true,
+    scopeByAssignee: options.scopeByAssignee ?? false,
+  };
+  const leadCalls = getLeadOutboundCalls(lead, periodCalls, contactOpts);
+  const opts = { outboundOnly: contactOpts.outboundOnly };
+
+  if (leadHasConversation2MinPlus(leadCalls, opts)) return "conversation_2min";
+  if (leadHasNotPickCall(leadCalls, opts)) return "not_pick";
+  if (isUncontactedNewLead(lead, periodCalls, {
+    ...contactOpts,
+    sinceAssignment: options.sinceAssignment ?? false,
+  })) return "lead";
+  return null;
 }
 
 export function callKanbanColumn(call) {
+  if (!isOutboundCall(call)) return null;
   const sec = Number.isFinite(call?.durationSec)
     ? call.durationSec
     : parseCallDurationSeconds(call?.duration);
   if (isConversationCall(sec)) return "conversation_2min";
-  if (isMissedCall(call)) return "not_pick";
-  if (sec > 0) return "lead";
-  return "not_pick";
+  if (isNotPickupByClientCall(call)) return "not_pick";
+  return null;
 }
 
-export function leadHasConversation2MinPlus(calls = []) {
+export function leadHasConversation2MinPlus(calls = [], { outboundOnly = false } = {}) {
   return calls.some((c) => {
+    if (outboundOnly && !isOutboundCall(c)) return false;
     const sec = Number.isFinite(c.durationSec) ? c.durationSec : parseCallDurationSeconds(c.duration);
     return isConversationCall(sec);
   });
 }
 
-export function leadHasNotPickCall(calls = []) {
-  return calls.some((c) => isMissedCall(c));
+export function leadHasNotPickCall(calls = [], { outboundOnly = false } = {}) {
+  return calls.some((c) => {
+    if (outboundOnly && !isOutboundCall(c)) return false;
+    return isNotPickupByClientCall(c);
+  });
 }
 
 export function filterMeetingsForPeriod(meetings = [], period = "month", now = new Date()) {
@@ -109,48 +281,56 @@ export function filterMeetingsForPeriod(meetings = [], period = "month", now = n
 }
 
 export function resolveLeadKanbanColumn(lead, calls = [], options = {}) {
-  const { callScopedOnly = false } = options;
   if (!lead) return "lead";
+  if (lead._fromCall && lead._callCol) return lead._callCol;
 
-  const rawStage = lead.pipelineStage || lead.stage || "";
-  const dbStageId = mapStageToId(rawStage, lead.status);
+  const dbStageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
   if (ADVANCED_KANBAN_STAGES.has(dbStageId)) return dbStageId;
+  if (dbStageId === "meeting_booked" || dbStageId === "meeting_done") return dbStageId;
 
-  const leadCalls = getCallsForLead(lead, calls);
-
-  if (leadHasConversation2MinPlus(leadCalls)) return "conversation_2min";
-  if (leadHasNotPickCall(leadCalls)) return "not_pick";
-
-  if (!callScopedOnly) {
-    const s = String(rawStage || "").trim().toLowerCase();
-    if (s === "not pick" || s === "not_pick") return "not_pick";
-    if (
-      s === "conversation_2min"
-      || s.includes("conversation 2 min")
-      || s === "conversation 2 min+"
-    ) {
-      return "conversation_2min";
-    }
-  }
-
-  return "lead";
+  return resolveEarlyFunnelColumn(lead, calls, {
+    outboundOnly: true,
+    scopeByAssignee: options.scopeByAssignee ?? false,
+  }) || "lead";
 }
 
-export function filterPipelineLeadsForPeriod(leads = [], periodCalls = [], period = "month", meetings = []) {
+/** Only leads visible in pipeline: Callyzer call activity, meetings, or uncontacted new assignment. */
+export function filterPipelineLeadsForPeriod(leads = [], periodCalls = [], period = "month", meetings = [], kanbanIndex = null, options = {}) {
+  const { adminScope = false, includeUncontactedAssignments = true, employeeId = null, scopeCallsByAssignee = false } = options;
   const list = Array.isArray(leads) ? leads : [];
-  const p = String(period || "month").toLowerCase();
-  if (p === "month" || p === "all") return list;
+  if (adminScope) return list;
 
   const periodMeetings = filterMeetingsForPeriod(meetings, period);
   const meetingLeadIds = new Set(
     periodMeetings.map((m) => String(m.leadId)).filter(Boolean),
   );
 
+  const index = kanbanIndex || buildPipelineKanbanIndex(list, periodCalls);
+  const { callActiveIds, outboundLeadIds } = index;
+
   return list.filter((lead) => {
     const id = String(lead.id);
     if (meetingLeadIds.has(id)) return true;
-    if (isLeadActiveInPeriod(lead, period)) return true;
-    return getCallsForLead(lead, periodCalls).length > 0;
+    if (callActiveIds.has(id)) return true;
+    if (includeUncontactedAssignments) {
+      const periodKey = String(period).toLowerCase();
+      if (isAdminPanelAssignedLead(lead, employeeId)) {
+        const contacted = leadHasOutboundCalls(lead, periodCalls, {
+          outboundOnly: true,
+          scopeByAssignee: scopeCallsByAssignee,
+          sinceAssignment: true,
+        });
+        if (!contacted) {
+          if (periodKey === "today" || periodKey === "week" || periodKey === "month") {
+            if (isLeadAssignedInPeriod(lead, periodKey, undefined, { assignedOnly: true })) return true;
+          } else {
+            return true;
+          }
+        }
+      }
+    }
+    if (adminScope && isNewPipelineLead(lead) && !outboundLeadIds.has(id)) return true;
+    return false;
   });
 }
 
@@ -213,38 +393,28 @@ function placeMeetingsOnKanban(map, placed, allLeads, meetings, period, showLead
   return periodMeetings;
 }
 
-function placeNewLeadsOnKanban(map, placed, leads, showLead) {
-  for (const lead of leads) {
-    const id = String(lead.id);
-    if (placed.has(id)) continue;
-    if (!isEmployeeNewAssignedLead(lead)) continue;
-    if (!showLead(lead) || !map.lead) continue;
-    map.lead.push(lead);
-    placed.add(id);
-  }
-}
-
-export function leadFromOrphanCall(call) {
+export function leadFromOrphanCall(call, col = "lead") {
   const phone = call.phone || call.clientPhone || "";
   const name = call.name || call.clientName || (phone ? phone.slice(-10) : "Unknown");
   return {
     id: `call-${call.id}`,
     name,
-    company: call.company || "—",
+    company: call.company || call.clientCompany || "Callyzer Call",
     phone,
-    stage: "Lead",
-    status: "new",
+    stage: col === "conversation_2min" ? "Conversation" : col === "not_pick" ? "Not Pick" : "Lead",
+    status: col === "conversation_2min" ? "contacted" : col === "not_pick" ? "notpick" : "new",
     budget: "—",
-    last: call.date || "Today",
-    source: call.source || "Call",
+    last: formatCallDisplayDate(call.callAt || call.startedAt || call.date),
+    source: "Callyzer",
     _fromCall: true,
     _callId: call.id,
+    _callCol: col,
   };
 }
 
 /**
- * Build kanban from Callyzer period calls (already server-filtered) + meetings.
- * Call columns match dashboard/Callyzer call counts; cards show unique leads per column.
+ * Build kanban from Callyzer period calls + meetings.
+ * Lead-centric: each lead's best early-funnel column from all their outbound calls in the period.
  */
 export function groupKanbanSyncedWithCallyzer(
   allLeads = [],
@@ -253,15 +423,23 @@ export function groupKanbanSyncedWithCallyzer(
   options = {},
 ) {
   const {
-    callScopedOnly = false,
     period = "month",
-    visibleLeads = allLeads,
+    visibleLeads = null,
   } = options;
   const periodKey = String(period).toLowerCase();
-  const isMonthView = periodKey === "month" || periodKey === "all";
   const map = Object.fromEntries(PIPELINE_STAGE_DEFINITIONS.map((s) => [s.id, []]));
   const placed = new Set();
-  const visibleIds = new Set((visibleLeads || []).map((l) => String(l.id)));
+  const kanbanIndex = buildPipelineKanbanIndex(allLeads, periodCalls);
+  const { leadIndex, outboundLeadIds } = kanbanIndex;
+  const scopeCallsByAssignee = options.scopeCallsByAssignee ?? false;
+
+  const getOutboundCalls = (lead) => getLeadOutboundCalls(lead, periodCalls, {
+    outboundOnly: true,
+    scopeByAssignee: scopeCallsByAssignee,
+  });
+
+  const scopedVisible = visibleLeads ?? filterPipelineLeadsForPeriod(allLeads, periodCalls, periodKey, meetings, kanbanIndex, options);
+  const visibleIds = new Set(scopedVisible.map((l) => String(l.id)));
 
   const showLead = (lead) => {
     if (!lead) return false;
@@ -277,78 +455,63 @@ export function groupKanbanSyncedWithCallyzer(
     placed.add(id);
   };
 
-  if (isMonthView || !callScopedOnly) {
-    if (isMonthView) {
-      placeMeetingsOnKanban(map, placed, allLeads, meetings, periodKey, (lead) => {
-        if (!lead) return false;
-        if (lead._fromMeeting) return true;
-        return visibleIds.has(String(lead.id));
-      });
-    }
+  placeMeetingsOnKanban(map, placed, allLeads, meetings, periodKey, showLead);
 
-    // Month / full pipeline: every lead by CRM stage, with month call activity for early columns.
-    for (let i = 0; i < visibleLeads.length; i += 1) {
-      const lead = visibleLeads[i];
-      const id = lead?.id != null ? String(lead.id) : `lead-row-${i}`;
-      if (placed.has(id)) continue;
+  // Lead-centric: best column per lead from assignee-scoped outbound calls in the period.
+  const leadsToEvaluate = new Set();
+  for (const lead of scopedVisible) {
+    if (getOutboundCalls(lead).length > 0) leadsToEvaluate.add(String(lead.id));
+  }
+  for (const leadId of outboundLeadIds) leadsToEvaluate.add(leadId);
 
-      const dbStageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
-      const leadCalls = getCallsForLead(lead, periodCalls);
-
-      let col = "lead";
-      if (ADVANCED_KANBAN_STAGES.has(dbStageId) && dbStageId !== "meeting_booked" && dbStageId !== "meeting_done") {
-        col = dbStageId;
-      } else if (leadHasConversation2MinPlus(leadCalls)) {
-        col = "conversation_2min";
-      } else if (leadHasNotPickCall(leadCalls)) {
-        col = "not_pick";
-      } else if (dbStageId === "meeting_booked" || dbStageId === "meeting_done") {
-        col = dbStageId;
-      } else {
-        col = resolveLeadKanbanColumn(lead, [], { callScopedOnly: false });
-      }
-
-      if (map[col]) {
-        map[col].push(lead);
-        placed.add(id);
-      }
-    }
-
-    return map;
+  for (const leadId of leadsToEvaluate) {
+    const lead = leadIndex.byId.get(leadId);
+    if (!lead || !showLead(lead)) continue;
+    const leadCalls = getOutboundCalls(lead);
+    const opts = { outboundOnly: true };
+    let col = null;
+    if (leadHasConversation2MinPlus(leadCalls, opts)) col = "conversation_2min";
+    else if (leadHasNotPickCall(leadCalls, opts)) col = "not_pick";
+    if (col && col !== "lead") pushLead(col, lead);
   }
 
-  const periodMeetings = placeMeetingsOnKanban(map, placed, allLeads, meetings, period, showLead);
-
-  const leadColumn = new Map();
+  // Orphan outbound calls with no CRM lead match — still show from Callyzer.
   for (const call of periodCalls) {
-    let lead = resolveLeadForCall(call, allLeads);
-    if (!lead) continue;
-    const id = String(lead.id);
-    if (placed.has(id)) continue;
-
+    if (!isOutboundCall(call)) continue;
     const col = callKanbanColumn(call);
-    const prev = leadColumn.get(id);
-    if (!prev || CALL_COLUMN_PRIORITY[col] > CALL_COLUMN_PRIORITY[prev]) {
-      leadColumn.set(id, col);
-    }
+    if (!col) continue;
+    if (resolveLeadForCallFromIndex(call, leadIndex, allLeads)) continue;
+    pushLead(col, leadFromOrphanCall(call, col));
   }
 
-  for (const [id, col] of leadColumn) {
-    const lead = allLeads.find((l) => String(l.id) === id);
-    if (lead && showLead(lead)) pushLead(col, lead);
-  }
-
-  for (const lead of visibleLeads) {
+  for (const lead of scopedVisible) {
     const id = String(lead.id);
     if (placed.has(id)) continue;
     const dbStageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
     if (!ADVANCED_KANBAN_STAGES.has(dbStageId)) continue;
     if (dbStageId === "meeting_booked" || dbStageId === "meeting_done") continue;
-    if (getCallsForLead(lead, periodCalls).length === 0) continue;
+    if (getOutboundCalls(lead).length === 0) continue;
     pushLead(dbStageId, lead);
   }
 
-  placeNewLeadsOnKanban(map, placed, visibleLeads, showLead);
+  for (const lead of scopedVisible) {
+    const id = String(lead.id);
+    if (placed.has(id)) continue;
+    const allowUncontacted = options.includeUncontactedAssignments !== false;
+    const periodKey = String(period).toLowerCase();
+    const uncontactedNew = isAdminPanelAssignedLead(lead, options.employeeId)
+      && !leadHasOutboundCalls(lead, periodCalls, {
+        outboundOnly: true,
+        scopeByAssignee: scopeCallsByAssignee,
+        sinceAssignment: true,
+      });
+    const inAssignPeriod = !["today", "week", "month"].includes(periodKey)
+      || isLeadAssignedInPeriod(lead, periodKey, undefined, { assignedOnly: true });
+    if (!allowUncontacted || !uncontactedNew || !inAssignPeriod) {
+      if (!(options.adminScope && isNewPipelineLead(lead) && !outboundLeadIds.has(id))) continue;
+    }
+    pushLead("lead", lead);
+  }
 
   return map;
 }
@@ -356,13 +519,22 @@ export function groupKanbanSyncedWithCallyzer(
 export function groupEmpLeadsKanban(leads, calls = [], options = {}) {
   const meetings = options.meetings || [];
   const period = String(options.period || "month").toLowerCase();
-  const callScopedOnly = options.callScopedOnly ?? (period !== "month" && period !== "all");
+  const searchFiltered = options.searchFiltered ?? null;
+
+  const scoped = filterPipelineLeadsForPeriod(leads, calls, period, meetings, null, options);
+  let visibleLeads = scoped;
+  if (Array.isArray(searchFiltered)) {
+    const scopedIds = new Set(scoped.map((l) => String(l.id)));
+    visibleLeads = searchFiltered.filter((l) => scopedIds.has(String(l.id)));
+  } else if (options.visibleLeads) {
+    const scopedIds = new Set(scoped.map((l) => String(l.id)));
+    visibleLeads = options.visibleLeads.filter((l) => scopedIds.has(String(l.id)));
+  }
 
   return groupKanbanSyncedWithCallyzer(leads, calls, meetings, {
     ...options,
     period,
-    callScopedOnly,
-    visibleLeads: options.visibleLeads || leads,
+    visibleLeads,
   });
 }
 
@@ -370,17 +542,23 @@ export function countPipelineCallMetrics(periodCalls = []) {
   const list = Array.isArray(periodCalls) ? periodCalls : [];
   let conversations = 0;
   let missed = 0;
+  let notPickupByClient = 0;
   let connected = 0;
   const conversationLeadIds = new Set();
   const missedLeadIds = new Set();
+  const notPickupLeadIds = new Set();
 
   for (const call of list) {
     const sec = Number.isFinite(call.durationSec)
       ? call.durationSec
       : parseCallDurationSeconds(call.duration);
-    if (isConversationCall(sec)) {
+    const outbound = isOutboundCall(call);
+    if (isConversationCall(sec) && outbound) {
       conversations += 1;
       if (call.leadId != null) conversationLeadIds.add(String(call.leadId));
+    } else if (isNotPickupByClientCall(call)) {
+      notPickupByClient += 1;
+      if (call.leadId != null) notPickupLeadIds.add(String(call.leadId));
     } else if (isMissedCall(call)) {
       missed += 1;
       if (call.leadId != null) missedLeadIds.add(String(call.leadId));
@@ -393,31 +571,39 @@ export function countPipelineCallMetrics(periodCalls = []) {
     totalCalls: list.length,
     conversations,
     missed,
+    notPickupByClient,
     connected,
     conversationLeads: conversationLeadIds.size,
     missedLeads: missedLeadIds.size,
+    notPickupLeads: notPickupLeadIds.size,
   };
 }
 
-/** Stage pill counts — Today/Week use Callyzer call counts; Month uses column card counts. */
 export function getPipelineStageDisplayCounts(
   grouped,
-  { callyzerStats, callMetrics, periodMeetings = [], callScopedOnly = false } = {},
+  { callyzerStats, callMetrics, periodMeetings = [] } = {},
 ) {
   const counts = {};
   for (const stage of PIPELINE_STAGE_DEFINITIONS) {
     counts[stage.id] = grouped[stage.id]?.length ?? 0;
   }
 
-  if (!callScopedOnly) {
-    return counts;
-  }
+  // Kanban pills/columns = unique lead cards (never Callyzer call totals).
+  counts.conversation_2min = grouped.conversation_2min?.length ?? 0;
+  counts.not_pick = grouped.not_pick?.length ?? 0;
 
-  counts.conversation_2min = callyzerStats?.conversations5MinPlus ?? callMetrics?.conversations ?? counts.conversation_2min;
-  counts.not_pick = callyzerStats?.missedCalls ?? callMetrics?.missed ?? counts.not_pick;
   const booked = periodMeetings.filter((m) => resolveMeetingKanbanColumn(m) === "meeting_booked");
   const done = periodMeetings.filter((m) => resolveMeetingKanbanColumn(m) === "meeting_done");
   counts.meeting_booked = booked.length;
   counts.meeting_done = done.length;
+
   return counts;
+}
+
+export function isCallSyncedPipelineStage(stageId) {
+  return stageId === "conversation_2min" || stageId === "not_pick";
+}
+
+export function getPipelineStagePillCount(stageId, { grouped }) {
+  return grouped[stageId]?.length ?? 0;
 }

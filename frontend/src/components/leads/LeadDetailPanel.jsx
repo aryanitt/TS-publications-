@@ -1,7 +1,7 @@
 import toast from "react-hot-toast";
 import {
   Phone, MessageCircle, Mail, Sparkles, Clock,
-  Users, RefreshCw, Shuffle, ChevronDown,
+  Users, RefreshCw, Shuffle, ChevronDown, Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -13,7 +13,9 @@ import {
 } from "../../data/employeeMock.js";
 import { LeadStatusBadge, AvatarCircle, FormTextarea, BtnPrimary } from "../../employee/components/EmpUI.jsx";
 import CashCollectedPanel from "../CashCollectedPanel.jsx";
-import { CANONICAL_STAGE_LABELS, buildDetailDraft } from "../../lib/leadSync.js";
+import { CANONICAL_STAGE_LABELS, buildDetailDraft, unwrapApiList } from "../../lib/leadSync.js";
+import { callFromApiLite } from "../../lib/callFromApiLite.js";
+import { formatCallDisplayDate, formatCallDuration, isCallConnected } from "../../lib/callDisplay.js";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getCrmHeaders, getAdminCrmHeaders } from "../../lib/crmContext.js";
 
@@ -35,6 +37,20 @@ const CANONICAL_SERVICES = [
 const fieldCardClass = "rounded-xl border border-rose-100 bg-[#fffbfb] p-3 shadow-[0_1px_2px_rgba(244,63,94,0.01)]";
 const labelClass = "text-[9px] font-bold uppercase tracking-wider text-slate-400";
 const inputClass = "w-full mt-1.5 text-xs font-bold text-slate-800 bg-white border border-rose-100 rounded-lg px-2 py-1.5 outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-100";
+
+function formatCallDate(value) {
+  return formatCallDisplayDate(value);
+}
+
+function normalizeCallForDisplay(call, liveLead) {
+  const mapped = call?.type ? call : callFromApiLite(call, [liveLead]);
+  return {
+    ...mapped,
+    duration: isCallConnected(mapped) ? (mapped.duration || formatCallDuration(mapped.durationSec)) : "—",
+    date: formatCallDate(mapped.callAt || mapped.startedAt || mapped.date),
+    note: mapped.note || mapped.notes || mapped.aiSummary || mapped.ai_summary || "",
+  };
+}
 
 function DetailField({ label, value, onChange, readOnly = false, type = "text", options }) {
   return (
@@ -63,6 +79,7 @@ function DetailField({ label, value, onChange, readOnly = false, type = "text", 
 export default function LeadDetailPanel({
   liveLead,
   variant = "employee",
+  readOnly: readOnlyProp,
   showReassignment = variant === "employee",
   onSave,
   onClose,
@@ -78,12 +95,15 @@ export default function LeadDetailPanel({
   onTemperatureChange,
 }) {
   const navigate = useNavigate();
+  const readOnly = readOnlyProp ?? variant === "admin";
   const [draft, setDraft] = useState(() => buildDetailDraft(liveLead));
   const [saving, setSaving] = useState(false);
   const [notesList, setNotesList] = useState([]);
   const [newNote, setNewNote] = useState("");
   const [noteLoading, setNoteLoading] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
+  const [fetchedCalls, setFetchedCalls] = useState([]);
+  const [callsLoading, setCallsLoading] = useState(false);
 
   useEffect(() => {
     setDraft(buildDetailDraft(liveLead));
@@ -91,22 +111,59 @@ export default function LeadDetailPanel({
 
   const crmHeaders = variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders();
 
+  useEffect(() => {
+    if (!readOnly || !liveLead?.id) return undefined;
+    if (calls?.length) {
+      setFetchedCalls([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const leadDbId = liveLead._dbId || liveLead.id;
+    (async () => {
+      setCallsLoading(true);
+      try {
+        const res = await apiGet(`/api/v1/leads/${leadDbId}/calls?limit=200`, {
+          headers: crmHeaders,
+          cacheTtl: 30_000,
+        });
+        if (cancelled) return;
+        const items = unwrapApiList(res) || [];
+        setFetchedCalls(items.map((c) => callFromApiLite(c, [liveLead])));
+      } catch {
+        if (!cancelled) setFetchedCalls([]);
+      } finally {
+        if (!cancelled) setCallsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [readOnly, liveLead, calls?.length, crmHeaders]);
+
+  const resolvedCalls = useMemo(
+    () => (calls?.length ? calls : fetchedCalls),
+    [calls, fetchedCalls],
+  );
+
   const leadCalls = useMemo(() => {
-    return calls.filter((c) => {
-      if (String(c.leadId) === String(liveLead.id)) return true;
+    const matched = resolvedCalls.filter((c) => {
+      if (String(c.leadId) === String(liveLead.id) || String(c.leadId) === String(liveLead._dbId)) return true;
       if (liveLead.phone && c.phone && phonesMatchLoose(c.phone, liveLead.phone)) return true;
+      if (liveLead.phone && c.clientPhone && phonesMatchLoose(c.clientPhone, liveLead.phone)) return true;
       return false;
     });
-  }, [calls, liveLead.id, liveLead.phone]);
+    return matched
+      .map((c) => normalizeCallForDisplay(c, liveLead))
+      .sort((a, b) => new Date(b.callAt || b.date || 0) - new Date(a.callAt || a.date || 0));
+  }, [resolvedCalls, liveLead]);
 
   const leadActivities = activities[liveLead.id] || [];
   const currentAssignee = liveLead.assignee || employee?.name || "—";
   const isTemperatureStatus = ["hot", "warm", "cold"].includes(liveLead.status);
 
   const isDirty = useMemo(() => {
+    if (readOnly) return false;
     const base = buildDetailDraft(liveLead);
     return Object.keys(base).some((key) => String(draft[key] ?? "") !== String(base[key] ?? ""));
-  }, [draft, liveLead]);
+  }, [draft, liveLead, readOnly]);
 
   const fetchNotes = async () => {
     try {
@@ -256,7 +313,7 @@ export default function LeadDetailPanel({
                   label={LEAD_STATUS_LABELS[liveLead.status] || liveLead.stage || "Lead"}
                 />
               )}
-              {(updateLeadTemperature || onTemperatureChange) && (
+              {(updateLeadTemperature || onTemperatureChange) && !readOnly && (
                 <div
                   className="inline-flex gap-0.5 p-0.5 rounded-lg bg-white/90 border border-rose-100 shrink-0"
                   role="group"
@@ -288,6 +345,9 @@ export default function LeadDetailPanel({
                   })}
                 </div>
               )}
+              {readOnly && isTemperatureStatus && (
+                <LeadStatusBadge status={liveLead.status} label={LEAD_STATUS_LABELS[liveLead.status]} />
+              )}
               <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-rose-50 border border-rose-100 text-[10px] font-bold text-rose-800">
  {currentAssignee}
               </span>
@@ -297,20 +357,22 @@ export default function LeadDetailPanel({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <DetailField label="Phone" value={draft.phone} onChange={patchDraft("phone")} />
-        <DetailField label="Email" value={draft.email} onChange={patchDraft("email")} />
+        <DetailField label="Phone" value={draft.phone} onChange={patchDraft("phone")} readOnly={readOnly} />
+        <DetailField label="Email" value={draft.email} onChange={patchDraft("email")} readOnly={readOnly} />
         <DetailField
           label="Stage"
           value={draft.stage}
           onChange={patchDraft("stage")}
           options={CANONICAL_STAGE_LABELS}
+          readOnly={readOnly}
         />
-        <DetailField label="Source" value={draft.source} onChange={patchDraft("source")} />
+        <DetailField label="Source" value={draft.source} onChange={patchDraft("source")} readOnly={readOnly} />
         <DetailField
           label="Budget (₹)"
           value={draft.expectedRevenue}
           onChange={patchDraft("expectedRevenue")}
           type="number"
+          readOnly={readOnly}
         />
         <DetailField label="Last Contact" value={liveLead.last} readOnly />
         <DetailField label="Owner/Assignee" value={currentAssignee} readOnly />
@@ -319,12 +381,13 @@ export default function LeadDetailPanel({
           value={draft.service || "—"}
           onChange={patchDraft("service")}
           options={CANONICAL_SERVICES}
+          readOnly={readOnly}
         />
-        <DetailField label="City" value={draft.city} onChange={patchDraft("city")} />
-        <DetailField label="Company" value={draft.company} onChange={patchDraft("company")} />
+        <DetailField label="City" value={draft.city} onChange={patchDraft("city")} readOnly={readOnly} />
+        <DetailField label="Company" value={draft.company} onChange={patchDraft("company")} readOnly={readOnly} />
       </div>
 
-      {isDirty && (
+      {isDirty && !readOnly && (
         <div className="flex justify-end">
           <BtnPrimary type="button" onClick={handleSave} disabled={saving} className="!py-2 !px-4">
             {saving ? "Saving…" : "Save Changes"}
@@ -398,7 +461,37 @@ export default function LeadDetailPanel({
       )}
 
       {variant === "employee" && (
-        <div className="flex gap-2.5">
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!liveLead?.phone) {
+                toast.error("Phone number not found for this lead");
+                return;
+              }
+              window.location.href = `tel:${liveLead.phone}`;
+            }}
+            className="flex-1 h-10 rounded-xl border border-rose-250 bg-white text-rose-800 hover:bg-rose-50/50 text-xs font-bold transition flex items-center justify-center gap-1.5"
+          >
+            <Phone className="w-4 h-4 text-rose-600" /> Call
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              if (!liveLead?.phone) {
+                toast.error("Phone number not found for this lead");
+                return;
+              }
+              const cleanPhone = liveLead.phone.replace(/\D/g, "");
+              const formatted = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+              window.open(`https://wa.me/${formatted}`, "_blank", "noopener,noreferrer");
+            }}
+            className="flex-1 h-10 rounded-xl border border-emerald-250 bg-emerald-50/10 text-emerald-800 hover:bg-emerald-50/30 text-xs font-bold transition flex items-center justify-center gap-1.5"
+          >
+            <MessageCircle className="w-4 h-4 text-emerald-600" /> WhatsApp
+          </button>
+
           <button
             type="button"
             onClick={async () => {
@@ -409,21 +502,7 @@ export default function LeadDetailPanel({
             }}
             className="flex-1 h-10 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition shadow-[0_4px_12px_rgba(220,38,38,0.2)] flex items-center justify-center gap-1.5"
           >
-            <Phone className="w-4 h-4 fill-white" /> Call
-          </button>
-          <button
-            type="button"
-            onClick={() => toast.success(`WhatsApp chat opened for ${liveLead.name}`)}
-            className="flex-1 h-10 rounded-xl bg-white border border-rose-200 hover:bg-rose-50/30 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5"
-          >
-            <MessageCircle className="w-4 h-4 text-rose-500" /> WhatsApp
-          </button>
-          <button
-            type="button"
-            onClick={() => toast.success(`Email draft created for ${liveLead.name}`)}
-            className="flex-1 h-10 rounded-xl bg-white border border-rose-200 hover:bg-rose-50/30 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5"
-          >
-            <Mail className="w-4 h-4 text-rose-500" /> Email
+            <Zap className="w-4 h-4 fill-white" /> Live Call
           </button>
         </div>
       )}
@@ -432,6 +511,7 @@ export default function LeadDetailPanel({
         <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
 Lead Notes & Comments
         </label>
+        {!readOnly && (
         <form onSubmit={handleAddNote} className="space-y-2">
           <FormTextarea
             rows={2}
@@ -447,6 +527,7 @@ Lead Notes & Comments
             </BtnPrimary>
           </div>
         </form>
+        )}
         {noteLoading ? (
           <div className="text-center py-2 text-[11px] text-slate-450">Loading notes...</div>
         ) : notesList.length === 0 ? (
@@ -469,55 +550,73 @@ Lead Notes & Comments
         )}
       </div>
 
+      <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4.5 space-y-3 shadow-sm">
+        <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
+          <Clock className="w-3.5 h-3.5 text-rose-505" /> Recorded Call Logs & MoM
+        </h4>
+        {callsLoading ? (
+          <p className="text-[11px] text-slate-450 italic pl-1 py-1">Loading call logs…</p>
+        ) : leadCalls.length === 0 ? (
+          <p className="text-[11px] text-slate-450 italic pl-1 py-1">No call logs registered for this lead.</p>
+        ) : (
+          <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
+            {leadCalls.map((c) => {
+              const isIncoming = c.type === "in";
+              const isMissed = c.type === "miss";
+              const cardClass = "w-full text-left flex items-start justify-between gap-2.5 p-3 rounded-xl border border-rose-100 bg-white";
+              const inner = (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                        isIncoming ? "bg-emerald-50 text-emerald-700" : isMissed ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"
+                      }`}>
+                        {isIncoming ? "Inbound" : isMissed ? "Missed" : "Outbound"}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-semibold">{c.date}</span>
+                    </div>
+                    <p className="text-xs font-bold text-slate-800 truncate mt-2">{c.outcome}</p>
+                    {c.note && (
+                      <p className="text-[10px] text-slate-600 mt-1.5 leading-relaxed whitespace-pre-line">{c.note}</p>
+                    )}
+                    {!readOnly && c.note && (
+                      <p className="text-[9.5px] text-rose-800 font-bold mt-1.5 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-rose-600 animate-pulse" /> View AI MoM & SOP Checklist
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-[10.5px] font-black text-slate-750 shrink-0 bg-white border border-rose-100 px-1.5 py-0.5 rounded tabular-nums">
+                    {c.duration}
+                  </span>
+                </>
+              );
+              if (readOnly) {
+                return (
+                  <div key={c.id} className={cardClass}>
+                    {inner}
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    onClose?.();
+                    navigate(`/employee/call-detail?id=${c.id}`);
+                  }}
+                  className={`${cardClass} hover:bg-rose-50/50 transition-all`}
+                >
+                  {inner}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {variant === "employee" && (
         <>
-          <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4.5 space-y-3 shadow-sm">
-            <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
-              <Clock className="w-3.5 h-3.5 text-rose-505" /> Recorded Call Logs & MoM
-            </h4>
-            {leadCalls.length === 0 ? (
-              <p className="text-[11px] text-slate-450 italic pl-1 py-1">No call logs registered for this lead.</p>
-            ) : (
-              <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
-                {leadCalls.map((c) => {
-                  const isIncoming = c.type === "in";
-                  const isMissed = c.type === "miss";
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => {
-                        onClose?.();
-                        navigate(`/employee/call-detail?id=${c.id}`);
-                      }}
-                      className="w-full text-left flex items-start justify-between gap-2.5 p-3 rounded-xl border border-rose-100 bg-white hover:bg-rose-50/50 transition-all"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                            isIncoming ? "bg-emerald-50 text-emerald-700" : isMissed ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"
-                          }`}>
-                            {isIncoming ? "Inbound" : isMissed ? "Missed" : "Outbound"}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-semibold">{c.date}</span>
-                        </div>
-                        <p className="text-xs font-bold text-slate-800 truncate mt-2">{c.outcome}</p>
-                        {c.note && (
-                          <p className="text-[9.5px] text-rose-800 font-bold mt-1.5 flex items-center gap-1">
-                            <Sparkles className="w-3.5 h-3.5 text-rose-600 animate-pulse" /> View AI MoM & SOP Checklist
-                          </p>
-                        )}
-                      </div>
-                      <span className="text-[10.5px] font-black text-slate-750 shrink-0 bg-white border border-rose-100 px-1.5 py-0.5 rounded tabular-nums">
-                        {c.duration}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4.5 space-y-3 shadow-sm">
             <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
               <Clock className="w-3.5 h-3.5 text-rose-505" /> Activity History

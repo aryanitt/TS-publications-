@@ -6,8 +6,15 @@ import {
   BookOpen, AlignLeft, X, CheckCircle2,
 } from "lucide-react";
 import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.jsx";
-import { EMP_ASSETS } from "../../data/employeeMock.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
+import { apiGet, apiPostForm, apiPost, invalidateCache } from "../../lib/api.js";
+import { getCrmHeaders } from "../../lib/crmContext.js";
+import { unwrapApiData } from "../../lib/leadSync.js";
+import {
+  mapTeamAssetFromApi,
+  formatFileSize,
+  assetDownloadUrl,
+} from "../../lib/teamAssets.js";
 import {
   BtnPrimary, BtnSecondary, EmpEmptyState, EmpModal,
 } from "../components/EmpUI.jsx";
@@ -62,28 +69,15 @@ function Field({ label, children, className = "" }) {
   );
 }
 
-function formatFileSize(bytes) {
-  if (!bytes) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function tagFromFile(file) {
-  const ext = file.name.split(".").pop()?.toLowerCase() || "";
-  if (ext === "pdf") return "PDF";
-  if (["xlsx", "xls", "csv"].includes(ext)) return "Excel";
-  if (["docx", "doc"].includes(ext)) return "DOCX";
-  if (["pptx", "ppt"].includes(ext)) return "PPT";
-  return ext ? ext.toUpperCase() : "FILE";
+function formatFileSizeLocal(bytes) {
+  return formatFileSize(bytes);
 }
 
 function assetShareUrl(asset) {
-  const slug = asset.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  return `https://portal.example.com/assets/${asset.id}/${slug}`;
+  return asset?.downloadUrl || assetDownloadUrl(asset?.url) || "";
 }
 
-function AddAssetDrawer({ open, form, setForm, onClose, onSubmit }) {
+function AddAssetDrawer({ open, form, setForm, onClose, onSubmit, saving = false }) {
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -102,7 +96,7 @@ function AddAssetDrawer({ open, form, setForm, onClose, onSubmit }) {
   return (
     <Drawer open={open} onClose={onClose} title="Add Asset" width="drawer-panel">
       <p className="text-xs text-slate-500 mb-4 pb-3 border-b border-slate-100">
-        Upload a file or create a text note for your team
+        Upload a file or text note — visible to all employees
       </p>
 
       <div className={`${SEGMENT_WRAP} mb-5 w-full`}>
@@ -171,7 +165,7 @@ function AddAssetDrawer({ open, form, setForm, onClose, onSubmit }) {
                 <div>
                   <FileText className="w-8 h-8 text-slate-500 mx-auto mb-2" />
                   <p className="text-sm font-bold text-slate-800 truncate">{form.file.name}</p>
-                  <p className="text-xs text-slate-500 mt-1">{formatFileSize(form.file.size)}</p>
+                  <p className="text-xs text-slate-500 mt-1">{formatFileSizeLocal(form.file.size)}</p>
                   <p className="text-[10px] text-slate-400 mt-2">Click to replace file</p>
                 </div>
               ) : (
@@ -197,8 +191,8 @@ function AddAssetDrawer({ open, form, setForm, onClose, onSubmit }) {
       </div>
 
       <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-4 mt-6 bg-white border-t border-slate-100 flex flex-wrap gap-2">
-        <BtnPrimary onClick={onSubmit} className="flex-1 sm:flex-initial">
-          <CheckCircle2 className="w-4 h-4" /> Save Asset
+        <BtnPrimary onClick={onSubmit} className="flex-1 sm:flex-initial" disabled={saving}>
+          <CheckCircle2 className="w-4 h-4" /> {saving ? "Saving…" : "Save Asset"}
         </BtnPrimary>
         <BtnSecondary onClick={onClose} className="sm:ml-auto">
           <X className="w-4 h-4" /> Cancel
@@ -220,6 +214,9 @@ function AssetCard({ asset, onDownload, onShare }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold text-slate-900 leading-snug">{asset.name}</p>
           <p className="text-[11px] text-slate-500 mt-1">{asset.size} · {asset.date}</p>
+          {asset.uploadedBy && (
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">By {asset.uploadedBy}</p>
+          )}
           <div className="mt-2">
             <Badge tone={TAG_TONE[asset.tag] || "muted"}>{asset.tag}</Badge>
           </div>
@@ -247,12 +244,35 @@ function AssetCard({ asset, onDownload, onShare }) {
 }
 
 export default function EmployeeAssets() {
-  const [assets, setAssets] = useState(EMP_ASSETS);
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [cat, setCat] = useState("all");
   const [search, setSearch] = useState("");
   const [shareAsset, setShareAsset] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+
+  const loadAssets = async () => {
+    setLoading(true);
+    try {
+      const res = await apiGet("/api/v1/assets", {
+        headers: getCrmHeaders(),
+        skipCache: true,
+        cacheTtl: 0,
+      });
+      const rows = unwrapApiData(res);
+      setAssets(Array.isArray(rows) ? rows.map(mapTeamAssetFromApi).filter(Boolean) : []);
+    } catch {
+      setAssets([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAssets();
+  }, []);
 
   const items = useMemo(() => {
     let list = cat === "all" ? assets : assets.filter((a) => a.cat === cat);
@@ -275,68 +295,87 @@ export default function EmployeeAssets() {
     recent: assets.filter((a) => a.date === "Today" || a.date === "Yesterday").length,
   }), [assets]);
 
-  const shareUrl = shareAsset ? assetShareUrl(shareAsset) : "";
+  const shareUrl = shareAsset ? (shareAsset.downloadUrl || assetShareUrl(shareAsset)) : "";
 
-  const handleDownload = (asset) => {
-    if (asset.content) {
-      const blob = new Blob([asset.content], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${asset.name}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`Downloaded ${asset.name}`);
+  const handleDownload = async (asset) => {
+    const href = asset.downloadUrl || assetDownloadUrl(asset.url);
+    if (!href) {
+      toast.error("Download link not available");
       return;
     }
-    toast.success(`Downloading ${asset.name}`);
+    try {
+      if (asset.tag === "TEXT" || asset.mime?.includes("text")) {
+        const res = await fetch(href, { headers: getCrmHeaders() });
+        const text = await res.text();
+        const blob = new Blob([text], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${asset.name}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const a = document.createElement("a");
+        a.href = href;
+        a.download = asset.name;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.click();
+      }
+      toast.success(`Downloaded ${asset.name}`);
+    } catch {
+      toast.error("Could not download asset");
+    }
   };
 
   const handleShare = (asset) => {
     setShareAsset(asset);
   };
 
-  const handleCreateAsset = () => {
+  const handleCreateAsset = async () => {
     if (!form.name.trim()) {
       toast.error("Asset name is required");
       return;
     }
-
-    if (form.mode === "upload") {
-      if (!form.file) {
-        toast.error("Please select a file to upload");
-        return;
-      }
-      const newAsset = {
-        id: Date.now(),
-        name: form.name.trim(),
-        cat: form.cat,
-        icon: "",
-        size: formatFileSize(form.file.size),
-        date: "Today",
-        tag: tagFromFile(form.file),
-      };
-      setAssets((prev) => [newAsset, ...prev]);
-    } else {
-      if (!form.text.trim()) {
-        toast.error("Please add some text content");
-        return;
-      }
-      const newAsset = {
-        id: Date.now(),
-        name: form.name.trim(),
-        cat: form.cat,
-        icon: "",
-        size: formatFileSize(new Blob([form.text]).size),
-        date: "Today",
-        tag: "TEXT",
-        content: form.text.trim(),
-      };
-      setAssets((prev) => [newAsset, ...prev]);
+    if (form.mode === "upload" && !form.file) {
+      toast.error("Please select a file to upload");
+      return;
+    }
+    if (form.mode === "text" && !form.text.trim()) {
+      toast.error("Please add some text content");
+      return;
     }
 
-    setDrawerOpen(false);
-    toast.success("Asset added successfully");
+    setSaving(true);
+    try {
+      const headers = getCrmHeaders();
+
+      if (form.mode === "upload") {
+        const fd = new FormData();
+        fd.append("file", form.file);
+        fd.append("name", form.name.trim());
+        fd.append("category", form.cat);
+        const res = await apiPostForm("/api/v1/assets", fd, { headers });
+        const saved = mapTeamAssetFromApi(unwrapApiData(res));
+        if (saved) setAssets((prev) => [saved, ...prev]);
+      } else {
+        const res = await apiPost("/api/v1/assets", {
+          name: form.name.trim(),
+          category: form.cat,
+          content: form.text.trim(),
+        }, { headers });
+        const saved = mapTeamAssetFromApi(unwrapApiData(res));
+        if (saved) setAssets((prev) => [saved, ...prev]);
+      }
+
+      invalidateCache("/api/v1/assets");
+      setDrawerOpen(false);
+      toast.success("Asset shared with all employees");
+    } catch (err) {
+      toast.error(err?.message || "Failed to save asset");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const copyShareLink = () => {
@@ -415,12 +454,16 @@ export default function EmployeeAssets() {
         </div>
       </GlassCard>
 
-      {items.length === 0 ? (
+      {loading ? (
+        <GlassCard className="p-10 text-center">
+          <p className="text-sm text-slate-400">Loading team assets…</p>
+        </GlassCard>
+      ) : items.length === 0 ? (
         <GlassCard>
           <EmpEmptyState
             icon=""
             title="No assets found"
-            subtitle={search ? "Try a different search or category" : "No assets in this category"}
+            subtitle={search ? "Try a different search or category" : "Upload an asset to share with everyone"}
           />
         </GlassCard>
       ) : (
@@ -437,6 +480,7 @@ export default function EmployeeAssets() {
         setForm={setForm}
         onClose={() => setDrawerOpen(false)}
         onSubmit={handleCreateAsset}
+        saving={saving}
       />
 
       <EmpModal

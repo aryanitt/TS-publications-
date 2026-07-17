@@ -39,7 +39,41 @@ export function phonesMatchLoose(a, b) {
   return da.slice(-10) === db.slice(-10);
 }
 
+function isClientNoPickOutcome(outcome) {
+  return /not connected|not pick|rejected|no answer|busy|unanswered|not answered/.test(
+    String(outcome || "").toLowerCase(),
+  );
+}
+
+export function isOutboundCall(call = {}) {
+  const durationSec = Number.isFinite(call.durationSec)
+    ? call.durationSec
+    : parseCallDurationSeconds(call.duration);
+  // Client no-pick dials are outbound even if DB direction was mis-tagged inbound.
+  if (durationSec < CALL_CONVERSATION_MIN_SEC && isClientNoPickOutcome(call.outcome)) {
+    return true;
+  }
+  const direction = String(call.direction || "").toLowerCase();
+  if (direction === "inbound" || direction === "in" || direction === "incoming") return false;
+  if (direction === "outbound" || direction === "out" || direction === "outgoing") return true;
+  const type = String(call.type || "").toLowerCase();
+  if (type === "in" || type === "inbound" || type === "incoming") return false;
+  return type === "out" || type === "outbound" || type === "outgoing" || type === "miss";
+}
+
+/** Matches Callyzer/DB: outbound dial where client did not pick up. */
+export function isNotPickupByClientCall(call = {}) {
+  const durationSec = Number.isFinite(call.durationSec)
+    ? call.durationSec
+    : parseCallDurationSeconds(call.duration);
+  if (durationSec >= CALL_CONVERSATION_MIN_SEC) return false;
+  if (!isOutboundCall(call)) return false;
+  if (durationSec <= 0) return true;
+  return isClientNoPickOutcome(call.outcome);
+}
+
 export function isMissedCall(call = {}) {
+  if (isNotPickupByClientCall(call)) return true;
   if (call.type === "miss") return true;
   const outcome = String(call.outcome || "").toLowerCase();
   if (/not connected|not pick|missed|rejected|no answer|busy|unanswered|not answered/.test(outcome)) {
@@ -50,4 +84,23 @@ export function isMissedCall(call = {}) {
     : parseCallDurationSeconds(call.duration);
   if (durationSec >= CALL_CONVERSATION_MIN_SEC) return false;
   return durationSec <= 0;
+}
+
+/** Deduplicate period calls (Month views can get DB + Callyzer duplicates). */
+export function dedupePeriodCalls(calls = []) {
+  const list = Array.isArray(calls) ? calls : [];
+  const seen = new Set();
+  const out = [];
+  for (const call of list) {
+    const key = String(
+      call?.callyzerCallId
+      || call?.callyzer_call_id
+      || call?.id
+      || `${call?.phone || call?.clientPhone || ""}:${call?.callAt || call?.startedAt || call?.date || ""}:${call?.durationSec ?? ""}`,
+    );
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(call);
+  }
+  return out;
 }

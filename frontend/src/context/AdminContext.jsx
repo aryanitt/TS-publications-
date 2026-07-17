@@ -42,6 +42,7 @@ export const DEFAULT_ADMIN = {
 
 function loadProfile() {
   try {
+    if (typeof localStorage === "undefined") return { ...DEFAULT_ADMIN };
     const raw = localStorage.getItem(STORAGE_KEY);
     const stored = raw ? { ...DEFAULT_ADMIN, ...JSON.parse(raw) } : { ...DEFAULT_ADMIN };
     const authUser = getStoredAuthUser();

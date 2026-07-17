@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CheckSquare, MessageSquare, Phone, Users, FileText,
-  Download, Calendar, LogOut,
+  Download, Calendar, LogOut, MessagesSquare,
 } from "lucide-react";
 import { SidebarContext } from "../../context/SidebarContext.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -25,6 +25,7 @@ const NAV = [
   { to: "/employee", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/employee/tasks", label: "My Tasks", icon: CheckSquare },
   { to: "/employee/follow-ups", label: "Follow-Up", icon: MessageSquare },
+  { to: "/employee/whatsapp-scripts", label: "WhatsApp Scripts", icon: MessagesSquare },
   { to: "/employee/calls", label: "Call Reporting", icon: Phone },
   { to: "/employee/leads", label: "Leads", icon: Users },
   { to: "/employee/sales-process", label: "Sales Process", icon: FileText },

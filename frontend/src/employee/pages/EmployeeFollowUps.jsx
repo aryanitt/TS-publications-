@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
-  AlertCircle, CalendarClock, CheckCircle2, Clock, List, Mail, MessageCircle, Phone, Plus, Search, Video,
+  AlertCircle, CalendarClock, CheckCircle2, Clock, List, Mail, MessageCircle, Phone, Plus, Search, UserPlus, Video, Zap,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { EMP_APP_TODAY, isFollowUpCompleted } from "../../data/employeeMock.js";
+import { EMP_APP_TODAY, isFollowUpCompleted, isTodayUncontactedAdminLead, isStaleUncontactedAdminLead } from "../../data/employeeMock.js";
+import { dedupePeriodCalls } from "../../lib/callMetrics.js";
 import { formatIndianPhone } from "../../lib/indianFormat.js";
+import { formatRelativeTime } from "../../lib/leadSync.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   EmpEmptyState, EmpModal, BtnPrimary, BtnSecondary, BtnGhost,
   FormLabel, FormInput, FormSelect, FormGroup, FormRow, AvatarCircle,
 } from "../components/EmpUI.jsx";
 import { TimeOfDaySelects } from "../components/TimeOfDaySelects.jsx";
+import WhatsAppScriptPicker from "../components/WhatsAppScriptPicker.jsx";
 
 const URGENCY = {
   overdue: {
@@ -49,6 +52,7 @@ const URGENCY = {
 
 const FILTERS = [
   { id: "all", label: "All", short: "All", icon: List },
+  { id: "new", label: "New Leads", short: "New", icon: UserPlus },
   { id: "overdue", label: "Overdue", short: "Late", icon: AlertCircle },
   { id: "today", label: "Due Today", short: "Today", icon: Clock },
   { id: "upcoming", label: "Upcoming", short: "Soon", icon: CalendarClock },
@@ -99,9 +103,110 @@ function CompletedFollowUpCard({ item }) {
   );
 }
 
-function FollowUpCard({ item, onCall }) {
+function NewLeadCard({ lead, onLiveCall, onWhatsApp }) {
+  const phone = lead?.phone || "";
+  const assignedLabel = formatRelativeTime(lead.assignedAt || lead.createdAt || lead.updatedAt);
+
+  return (
+    <article className="group flex flex-col rounded-xl sm:rounded-2xl border border-rose-200 bg-gradient-to-b from-rose-50/40 to-white p-2.5 sm:p-4 hover:border-rose-300 hover:shadow-[0_8px_24px_rgba(225,29,72,0.08)] transition-all duration-200 min-w-0">
+      <div className="flex items-center gap-2 mb-1 sm:mb-2">
+        <AvatarCircle initials={lead.av} color={lead.color} size={28} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-1.5">
+            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{lead.name}</p>
+            <span className="shrink-0 text-[7px] sm:text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border bg-rose-100 text-rose-800 border-rose-200">
+              New
+            </span>
+          </div>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">{lead.company}</p>
+        </div>
+      </div>
+
+      <div className="flex items-start justify-between gap-2 mt-0.5">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] sm:text-xs text-slate-600 leading-snug">
+            Assigned from admin · {lead.service && lead.service !== "—" ? lead.service : lead.source || "New lead"}
+          </p>
+          {phone ? (
+            <p className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 tabular-nums">{formatIndianPhone(phone)}</p>
+          ) : null}
+        </div>
+        <span className="text-[9px] sm:text-[10px] font-bold text-rose-600 tabular-nums shrink-0">{assignedLabel}</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1 mt-2.5 pt-2.5 border-t border-rose-100">
+        <button
+          type="button"
+          onClick={() => {
+            if (!phone) {
+              toast.error("Phone number not found for this lead");
+              return;
+            }
+            window.location.href = `tel:${phone}`;
+          }}
+          className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold border border-rose-200 bg-white text-rose-800 hover:bg-rose-50 transition active:scale-95 shadow-sm"
+        >
+          <Phone className="w-3 h-3 text-rose-600 shrink-0" />
+          Call
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!phone) {
+              toast.error("Phone number not found for this lead");
+              return;
+            }
+            onWhatsApp?.({ lead, phone });
+          }}
+          className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold border border-emerald-200 bg-emerald-50/20 text-emerald-800 hover:bg-emerald-50 transition active:scale-95 shadow-sm"
+        >
+          <MessageCircle className="w-3 h-3 text-emerald-600 shrink-0" />
+          WhatsApp
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onLiveCall(lead)}
+          className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold bg-rose-700 text-white hover:bg-rose-800 transition active:scale-95 shadow-sm"
+        >
+          <Zap className="w-3 h-3 fill-white text-white shrink-0" />
+          Live Call
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function NewLeadGrid({ leads, onLiveCall, onWhatsApp }) {
+  return (
+    <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 xl:grid-cols-3 sm:gap-3">
+      {leads.map((lead) => (
+        <NewLeadCard key={`new-lead-${lead.id}`} lead={lead} onLiveCall={onLiveCall} onWhatsApp={onWhatsApp} />
+      ))}
+    </div>
+  );
+}
+
+function leadToStaleFollowUp(lead) {
+  const assignedLabel = formatRelativeTime(lead.assignedAt || lead.createdAt || lead.updatedAt);
+  return {
+    id: `stale-admin-${lead.id}`,
+    leadId: lead.id,
+    name: lead.name,
+    company: lead.company || "—",
+    note: "Admin assigned — first contact pending",
+    urgency: "overdue",
+    type: "Call",
+    time: assignedLabel,
+    av: lead.av,
+    color: lead.color,
+    _fromStaleAdminLead: true,
+  };
+}
+
+function FollowUpCard({ item, onCall, onWhatsApp, leads = [] }) {
   const u = URGENCY[item.urgency] || URGENCY.upcoming;
-  const TypeIcon = TYPE_ICON[item.type] || Phone;
   const statusLabel = item.notPicked
     ? "Not Picked"
     : item.urgency === "overdue"
@@ -115,6 +220,10 @@ function FollowUpCard({ item, onCall }) {
     upcoming: "bg-emerald-50 text-emerald-700 border-emerald-200",
     notpicked: "bg-slate-100 text-slate-700 border-slate-300",
   }[item.notPicked ? "notpicked" : item.urgency] || "bg-slate-50 text-slate-600 border-slate-200";
+
+  // Find matching lead for phone lookup
+  const lead = leads.find((l) => l.id === item.leadId || l.name === item.name);
+  const phone = lead?.phone || "";
 
   return (
     <article className="group flex flex-col rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-2.5 sm:p-4 hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition-all duration-200 min-w-0">
@@ -140,36 +249,69 @@ function FollowUpCard({ item, onCall }) {
         </span>
       </div>
 
-      <p className="text-[10px] sm:text-xs text-slate-600 leading-snug line-clamp-1 sm:line-clamp-2">
-        {item.note}
-      </p>
-
-      <div className="flex items-center justify-between gap-2 mt-1.5 sm:mt-3">
-        <span className="inline-flex items-center gap-0.5 sm:gap-1 text-[9px] sm:text-[10px] font-semibold text-slate-600 bg-slate-50 px-1.5 sm:px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
-          <TypeIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-          {item.type}
-        </span>
-        <span className={`text-[9px] sm:text-[10px] font-semibold tabular-nums truncate ${u.time}`}>
+      <div className="flex items-start justify-between gap-3 mt-1">
+        <p className="text-[10px] sm:text-xs text-slate-600 leading-snug line-clamp-2 flex-1 min-w-0">
+          {item.note}
+        </p>
+        <span className={`text-[9px] sm:text-[10px] font-bold tabular-nums shrink-0 mt-0.5 ${u.time}`}>
           {item.time}
         </span>
       </div>
 
-      <button
-        type="button"
-        onClick={() => onCall(item)}
-        className={`${CARD_BTN} mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 col-span-2 bg-rose-700 text-white border-rose-700 hover:bg-rose-800`}
-      >
-        <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> View Script &amp; Call on Callyzer
-      </button>
+      <div className="grid grid-cols-3 gap-1 mt-2.5 pt-2.5 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!phone) {
+              toast.error("Phone number not found for this lead");
+              return;
+            }
+            window.location.href = `tel:${phone}`;
+          }}
+          className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold border border-rose-200 bg-white text-rose-800 hover:bg-rose-50 transition active:scale-95 shadow-sm"
+        >
+          <Phone className="w-3 h-3 text-rose-600 shrink-0" />
+          Call
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!phone) {
+              toast.error("Phone number not found for this lead");
+              return;
+            }
+            onWhatsApp?.({ item, lead, phone });
+          }}
+          className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold border border-emerald-200 bg-emerald-50/20 text-emerald-800 hover:bg-emerald-50 transition active:scale-95 shadow-sm"
+        >
+          <MessageCircle className="w-3 h-3 text-emerald-600 shrink-0" />
+          WhatsApp
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCall(item);
+          }}
+          className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold bg-rose-700 text-white hover:bg-rose-800 transition active:scale-95 shadow-sm"
+        >
+          <Zap className="w-3 h-3 fill-white text-white shrink-0" />
+          Live Call
+        </button>
+      </div>
     </article>
   );
 }
 
-function FollowUpGrid({ items, onCall }) {
+function FollowUpGrid({ items, onCall, onWhatsApp, leads = [] }) {
   return (
     <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 xl:grid-cols-3 sm:gap-3">
       {items.map((item) => (
-        <FollowUpCard key={item.id} item={item} onCall={onCall} />
+        <FollowUpCard key={item.id} item={item} onCall={onCall} onWhatsApp={onWhatsApp} leads={leads} />
       ))}
     </div>
   );
@@ -184,13 +326,14 @@ const EMPTY_SCHEDULE = {
 };
 
 export default function EmployeeFollowUps() {
-  const { leads, followUps, scheduleFollowUp } = useEmployee();
+  const { leads, followUps, scheduleFollowUp, refreshLeads, calls, employee } = useEmployee();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(searchParams.get("action") === "add");
   const [form, setForm] = useState(EMPTY_SCHEDULE);
+  const [waPicker, setWaPicker] = useState({ open: false, lead: null, phone: "" });
 
   useEffect(() => {
     const urlFilter = searchParams.get("filter");
@@ -203,10 +346,46 @@ export default function EmployeeFollowUps() {
     if (searchParams.get("action") === "add") setModalOpen(true);
   }, [searchParams]);
 
+  useEffect(() => {
+    refreshLeads?.();
+  }, [refreshLeads]);
+
+  const allCalls = useMemo(() => dedupePeriodCalls(calls || []), [calls]);
+
+  const newAssignedLeads = useMemo(() => {
+    let list = leads.filter((l) => isTodayUncontactedAdminLead(l, allCalls, employee?.id));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (l) =>
+          (l.name || "").toLowerCase().includes(q) ||
+          (l.company || "").toLowerCase().includes(q) ||
+          (l.phone || "").includes(q),
+      );
+    }
+    return list.sort((a, b) => {
+      const ta = new Date(a.assignedAt || a.createdAt || 0).getTime();
+      const tb = new Date(b.assignedAt || b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+  }, [leads, search, allCalls, employee?.id]);
+
+  const staleAdminFollowUps = useMemo(() => {
+    return leads
+      .filter((l) => isStaleUncontactedAdminLead(l, allCalls, employee?.id))
+      .map(leadToStaleFollowUp);
+  }, [leads, allCalls, employee?.id]);
+
   const openFollowUps = useMemo(
     () => followUps.filter((f) => !isFollowUpCompleted(f)),
     [followUps],
   );
+
+  const openFollowUpsWithStale = useMemo(() => {
+    const seenLeadIds = new Set(openFollowUps.map((f) => String(f.leadId)).filter(Boolean));
+    const extra = staleAdminFollowUps.filter((f) => !seenLeadIds.has(String(f.leadId)));
+    return [...openFollowUps, ...extra];
+  }, [openFollowUps, staleAdminFollowUps]);
 
   const completedFollowUps = useMemo(
     () => followUps
@@ -216,12 +395,13 @@ export default function EmployeeFollowUps() {
   );
 
   const filterCounts = useMemo(() => ({
-    all: openFollowUps.length,
-    overdue: openFollowUps.filter((f) => f.urgency === "overdue").length,
-    today: openFollowUps.filter((f) => f.urgency === "today").length,
-    upcoming: openFollowUps.filter((f) => f.urgency === "upcoming").length,
+    all: openFollowUpsWithStale.length,
+    new: newAssignedLeads.length,
+    overdue: openFollowUpsWithStale.filter((f) => f.urgency === "overdue").length,
+    today: openFollowUpsWithStale.filter((f) => f.urgency === "today").length,
+    upcoming: openFollowUpsWithStale.filter((f) => f.urgency === "upcoming").length,
     completed: completedFollowUps.length,
-  }), [openFollowUps, completedFollowUps]);
+  }), [openFollowUpsWithStale, completedFollowUps, newAssignedLeads.length]);
 
   const stats = useMemo(() => ({
     overdue: filterCounts.overdue,
@@ -232,7 +412,8 @@ export default function EmployeeFollowUps() {
   }), [filterCounts]);
 
   const filtered = useMemo(() => {
-    let list = filter === "completed" ? completedFollowUps : openFollowUps;
+    if (filter === "new") return [];
+    let list = filter === "completed" ? completedFollowUps : openFollowUpsWithStale;
     if (filter !== "all" && filter !== "completed") {
       list = list.filter((f) => f.urgency === filter);
     }
@@ -298,6 +479,21 @@ export default function EmployeeFollowUps() {
     if (item.name) params.set("lead", item.name);
     if (item.id) params.set("followUp", String(item.id));
     navigate(`/employee/call-assistant?${params.toString()}`);
+  };
+
+  const handleNewLeadLiveCall = (lead) => {
+    const params = new URLSearchParams();
+    if (lead?.id) params.set("leadId", String(lead.id));
+    if (lead?.name) params.set("lead", lead.name);
+    navigate(`/employee/call-assistant?${params.toString()}`);
+  };
+
+  const handleWhatsApp = ({ lead, phone }) => {
+    setWaPicker({
+      open: true,
+      lead: lead || { name: "", company: "" },
+      phone: phone || "",
+    });
   };
 
   const closeModal = () => {
@@ -381,7 +577,7 @@ export default function EmployeeFollowUps() {
       <GlassCard className="p-2.5 sm:p-4">
         <div className="flex flex-col gap-2 sm:gap-3">
           {/* Mobile: 4 equal filter pills in one row */}
-          <div className="grid grid-cols-5 gap-0.5 p-0.5 rounded-lg bg-slate-100/80 border border-slate-200/80 sm:hidden">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-0.5 p-0.5 rounded-lg bg-slate-100/80 border border-slate-200/80 sm:hidden">
             {FILTERS.map(({ id, short, icon: Icon }) => (
               <button
                 key={id}
@@ -434,13 +630,47 @@ export default function EmployeeFollowUps() {
           </div>
 
           <p className="text-[9px] sm:text-[11px] font-semibold text-slate-400">
-            {filterCounts.overdue} overdue · {filterCounts.today} today · {filtered.length} open shown
+            {filterCounts.new} new · {filterCounts.overdue} overdue · {filterCounts.today} today · {filtered.length} open shown
             <span className="hidden sm:inline"> · {filterCounts.upcoming} upcoming · {filterCounts.completed} completed</span>
           </p>
         </div>
       </GlassCard>
 
-      {filter === "completed" ? (
+      {filter === "new" ? (
+        newAssignedLeads.length === 0 ? (
+          <GlassCard className="py-4">
+            <EmpEmptyState
+              icon=""
+              title={search ? "No new leads match your search" : "No new admin assignments"}
+              subtitle={search ? "Try a different keyword" : "Today's admin assignments appear here; older uncontacted leads show under Overdue"}
+            />
+          </GlassCard>
+        ) : (
+          <GlassCard className="p-2.5 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2 mb-2 sm:mb-4">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl grid place-items-center shrink-0 bg-rose-100 text-rose-700 border border-rose-200">
+                <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <h3 className="text-xs sm:text-sm font-display font-bold text-slate-900">New Leads</h3>
+                  <span className="inline-flex items-center justify-center min-w-[1.125rem] h-4 px-1 rounded-full bg-rose-100 border border-rose-200 text-[9px] sm:text-[10px] font-bold text-rose-800 tabular-nums">
+                    {newAssignedLeads.length}
+                  </span>
+                </div>
+                <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
+                  Assigned today from admin — call or WhatsApp now
+                </p>
+              </div>
+            </div>
+            <NewLeadGrid
+              leads={newAssignedLeads}
+              onLiveCall={handleNewLeadLiveCall}
+              onWhatsApp={handleWhatsApp}
+            />
+          </GlassCard>
+        )
+      ) : filter === "completed" ? (
         filtered.length === 0 ? (
           <GlassCard className="py-4">
             <EmpEmptyState
@@ -474,7 +704,7 @@ export default function EmployeeFollowUps() {
             </div>
           </GlassCard>
         )
-      ) : filtered.length === 0 && filteredCompleted.length === 0 ? (
+      ) : filtered.length === 0 && filteredCompleted.length === 0 && newAssignedLeads.length === 0 ? (
         <GlassCard className="py-4">
           <EmpEmptyState
             icon=""
@@ -489,6 +719,32 @@ export default function EmployeeFollowUps() {
         </GlassCard>
           ) : (
         <div className="space-y-2 sm:space-y-5">
+          {filter === "all" && newAssignedLeads.length > 0 && (
+            <GlassCard className="p-2.5 sm:p-4 md:p-5">
+              <div className="flex items-center gap-2 mb-2 sm:mb-4">
+                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl grid place-items-center shrink-0 bg-rose-100 text-rose-700 border border-rose-200">
+                  <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <h3 className="text-xs sm:text-sm font-display font-bold text-slate-900">New Leads</h3>
+                    <span className="inline-flex items-center justify-center min-w-[1.125rem] h-4 px-1 rounded-full bg-rose-100 border border-rose-200 text-[9px] sm:text-[10px] font-bold text-rose-800 tabular-nums">
+                      {newAssignedLeads.length}
+                    </span>
+                  </div>
+                  <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
+                    Assigned today from admin — also in Pipeline → Lead (Today)
+                  </p>
+                </div>
+              </div>
+              <NewLeadGrid
+                leads={newAssignedLeads}
+                onLiveCall={handleNewLeadLiveCall}
+                onWhatsApp={handleWhatsApp}
+              />
+            </GlassCard>
+          )}
+
           {grouped ? (
             grouped.map(({ key, meta, items }) => {
               const SectionIcon = meta.icon;
@@ -510,12 +766,12 @@ export default function EmployeeFollowUps() {
                         </span>
                       </div>
                       <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
-                        {key === "overdue" ? "Past due — contact immediately" :
+                        {key === "overdue" ? "Past due — includes uncontacted admin assignments" :
                          key === "today" ? "Scheduled for today" : "Later this week"}
                       </p>
                     </div>
                   </div>
-                  <FollowUpGrid items={items} onCall={handleCall} />
+                  <FollowUpGrid items={items} onCall={handleCall} onWhatsApp={handleWhatsApp} leads={leads} />
                 </GlassCard>
               );
             })
@@ -529,7 +785,7 @@ export default function EmployeeFollowUps() {
                   <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium">{filtered.length} follow-ups</p>
                 </div>
               </div>
-              <FollowUpGrid items={filtered} onCall={handleCall} />
+              <FollowUpGrid items={filtered} onCall={handleCall} onWhatsApp={handleWhatsApp} leads={leads} />
             </GlassCard>
           )}
 
@@ -626,6 +882,13 @@ export default function EmployeeFollowUps() {
           This will also appear in <strong className="text-slate-700">My Tasks</strong> on the selected date.
         </p>
       </EmpModal>
+
+      <WhatsAppScriptPicker
+        open={waPicker.open}
+        onClose={() => setWaPicker({ open: false, lead: null, phone: "" })}
+        lead={waPicker.lead}
+        phone={waPicker.phone}
+      />
     </div>
   );
 }

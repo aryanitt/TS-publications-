@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Bell, History, Plus, ChevronDown,
@@ -12,6 +12,13 @@ import { apiGet, apiPost } from "../lib/api.js";
 import { queryKeys } from "../lib/queryKeys.js";
 import DateRangeFilter from "./DateRangeFilter.jsx";
 import AdminDoodleAvatar from "./AdminDoodleAvatar.jsx";
+import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
+
+const PIPELINE_PERIODS = [
+  { id: "today", label: "Today" },
+  { id: "week", label: "Week" },
+  { id: "month", label: "Month" },
+];
 
 const titles = {
   "/":           { title: "Dashboard",             sub: "Overview of your CRM activity",            cta: "Quick Action" },
@@ -23,7 +30,8 @@ const titles = {
   "/admin":      { title: "Admin Profile",         sub: "Your account, access & sign-in",            cta: "Save"         },
   "/leads":      { title: "Leads",                 sub: "Manage and track incoming leads",             cta: "Add Lead"     },
   "/pipeline":   { title: "Pipeline",              sub: "Real-time overview of your sales pipeline",   cta: "Add Lead"     },
-  "/forms":      { title: "Forms Dashboard",       sub: "Lead capture forms across all channels",      cta: "Create Form"  },
+  "/sources":    { title: "Source",                sub: "Leads grouped by channel — Meta, Google, Website & more", cta: null },
+  "/forms":      { title: "Source",                sub: "Leads grouped by channel — Meta, Google, Website & more", cta: null },
   "/services":   { title: "Services Catalog",      sub: "Productized offerings & revenue lines",         cta: "Add Service"  },
   "/reports":    { title: "Reports",               sub: "Analytics and performance exports",           cta: "Export"       },
 };
@@ -48,12 +56,12 @@ function resolvePageMeta(pathname) {
       sub: "Performance, tiers, and delivery",
     };
   }
-  if (pathname.startsWith("/forms/")) {
-    return { title: "Form Leads", sub: "Leads captured from this form", cta: "Export" };
+  if (pathname.startsWith("/sources/") || pathname.startsWith("/forms/")) {
+    return { title: "Source Leads", sub: "Leads from this marketing channel", cta: null };
   }
   const base = titles[pathname] ?? titles["/"];
-  if (pathname === "/forms") {
-    return { ...base, ctaTo: "/forms?action=createForm" };
+  if (pathname === "/sources" || pathname === "/forms") {
+    return base;
   }
   if (pathname === "/services") {
     return { ...base, ctaTo: "/services?action=addService" };
@@ -71,17 +79,19 @@ const HIDE_DATE_RANGE_ROUTES = ["/incentives", "/settings", "/admin"];
 
 function hideDateRange(pathname) {
   return HIDE_DATE_RANGE_ROUTES.includes(pathname)
+    || pathname.startsWith("/sources")
     || pathname.startsWith("/forms")
     || pathname.startsWith("/services")
     || pathname.startsWith("/sop")
-    || pathname === "/pipeline";
+    || pathname === "/pipeline"
+    || pathname === "/leads";
 }
 
 const quickActions = [
   { label: "Add Lead",             icon: Plus,       to: "/sales",     search: "?action=addLead" },
   { label: "Add SOP",              icon: FileText,   to: "/sop",       search: "?action=addSOP"  },
   { label: "Add New Team Member",  icon: Users,      to: "/team",      search: "?action=addMember" },
-  { label: "Create Form",          icon: FileText,   to: "/forms",     search: "?action=createForm" },
+  { label: "View Sources",         icon: FileText,   to: "/sources"                               },
   { label: "Calculate Incentive",  icon: Calculator, to: "/incentives"                            },
 ];
 
@@ -104,12 +114,22 @@ const TYPE_ICON = {
 
 export default function Topbar({ onMenu }) {
   const { pathname } = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isPipelinePage = pathname === "/pipeline";
   const isLeadsPage = pathname === "/leads" || pathname === "/pipeline" || pathname === "/sop";
+  const isDenseToolbar = isLeadsPage;
   const showDateRange = !hideDateRange(pathname);
   const navigate     = useNavigate();
   const { admin, selectedService, setSelectedService } = useAdmin();
   const { logout }   = useAuth();
   const meta         = resolvePageMeta(pathname);
+  const pipelinePeriod = String(searchParams.get("period") || "month").toLowerCase();
+
+  const setPipelinePeriod = (nextPeriod) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("period", String(nextPeriod).toLowerCase());
+    setSearchParams(params, { replace: true });
+  };
 
   const [openMenu,       setOpenMenu]       = useState(null);
   const [searchQ,        setSearchQ]        = useState("");
@@ -236,8 +256,12 @@ export default function Topbar({ onMenu }) {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-[#E5E7EB] shadow-sm overflow-x-clip">
-      <div className="flex items-center gap-2 px-3 sm:px-4 lg:px-8 py-2 min-h-[52px] md:min-h-20 min-w-0">
+    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-[#E5E7EB] shadow-sm">
+      <div
+        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 lg:px-6 xl:px-8 py-2 min-w-0 ${
+          isDenseToolbar ? "h-14" : "min-h-[52px] md:h-16"
+        }`}
+      >
 
         <button
           onClick={onMenu}
@@ -282,31 +306,42 @@ export default function Topbar({ onMenu }) {
         </div>
 
         {/* Desktop: page title */}
-        <div className="hidden md:flex items-center gap-2 shrink-0 min-w-0">
-          <div>
-            <h1 className="text-lg font-display font-semibold tracking-tight leading-tight text-[#111827]">
-              {meta.title}
-            </h1>
-            <p className="text-[10px] text-[#6B7280] leading-tight">{meta.sub}</p>
-          </div>
+        <div className={`hidden md:flex flex-col justify-center shrink-0 min-w-0 ${
+          isDenseToolbar ? "max-w-[108px] lg:max-w-[148px] xl:max-w-[200px]" : ""
+        }`}>
+          <h1 className={`font-display font-semibold tracking-tight leading-tight text-[#111827] truncate ${
+            isDenseToolbar ? "text-[15px] lg:text-base" : "text-lg"
+          }`}>
+            {meta.title}
+          </h1>
+          <p className={`text-[10px] text-[#6B7280] leading-tight truncate ${
+            isDenseToolbar ? "hidden xl:block" : ""
+          }`}>
+            {meta.sub}
+          </p>
         </div>
 
         {/* Desktop / tablet search */}
-        <div className={`relative hidden md:block flex-1 max-w-md mx-2 lg:mx-4 ${
-          isLeadsPage 
-            ? "min-w-[140px] lg:min-w-[200px] xl:min-w-[280px]" 
-            : "min-w-[140px] lg:min-w-[180px] xl:min-w-[280px]"
-        }`} ref={searchRef}>
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#DC143C]" />
+        <div
+          className={`relative hidden md:block min-w-0 ${
+            isDenseToolbar
+              ? "flex-1 mx-1 lg:mx-2"
+              : "flex-1 max-w-md mx-2 lg:mx-4 min-w-[140px] lg:min-w-[180px] xl:min-w-[280px]"
+          }`}
+          ref={searchRef}
+        >
+          <Search className="absolute left-3 lg:left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#DC143C]" />
           <input
             value={searchQ}
             onChange={(e) => { setSearchQ(e.target.value); setOpenMenu(null); }}
-            placeholder="Search deals, people, SOPs…"
-            className="w-full min-h-[44px] pl-11 pr-16 py-2.5 rounded-xl bg-[#F5F7FA] border border-[#E5E7EB]
+            placeholder={isDenseToolbar ? "Search deals, people…" : "Search deals, people, SOPs…"}
+            className={`w-full pl-9 lg:pl-11 pr-3 lg:pr-16 rounded-xl bg-[#F5F7FA] border border-[#E5E7EB]
               text-[#111827] text-sm placeholder:text-muted-foreground
-              focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition"
+              focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition ${
+                isDenseToolbar ? "h-10 py-2" : "min-h-[44px] py-2.5"
+              }`}
           />
-          <kbd className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#DC143C] px-2 py-0.5 rounded-md">
+          <kbd className="hidden xl:flex absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#DC143C] px-2 py-0.5 rounded-md">
             ⌘K
           </kbd>
           {(searchQ.length >= 2) && (
@@ -323,17 +358,34 @@ export default function Topbar({ onMenu }) {
 
         {showDateRange && <DateRangeFilter className="hidden xl:flex shrink-0" />}
 
-        <div className="hidden md:block flex-grow min-w-0" />
+        {!isDenseToolbar && <div className="hidden md:block flex-grow min-w-0" />}
 
         {/* Right actions */}
-        <div className="flex items-center gap-1 sm:gap-1.5 justify-end shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 justify-end shrink-0 min-w-0">
+
+          {isPipelinePage && (
+            <div className={`${SEGMENT_WRAP} hidden sm:inline-flex shrink-0`}>
+              {PIPELINE_PERIODS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPipelinePeriod(id)}
+                  className={`${SEGMENT_BTN} ${
+                    pipelinePeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {isLeadsPage && (
-            <div className="relative inline-flex w-auto shrink-0 mr-1">
+            <div className="relative inline-flex w-auto shrink-0">
               <select
                 value={selectedService}
                 onChange={(e) => setSelectedService(e.target.value)}
-                className="bg-white border border-[#FFD6E5] hover:border-[#fda4af] text-xs md:text-sm font-semibold text-[#111827] px-3 py-2 rounded-xl outline-none transition cursor-pointer appearance-none pr-8 w-32 md:w-40 truncate"
+                className="bg-white border border-[#FFD6E5] hover:border-[#fda4af] text-[11px] md:text-xs font-semibold text-[#111827] px-2.5 md:px-3 h-9 md:h-10 rounded-xl outline-none transition cursor-pointer appearance-none pr-7 md:pr-8 w-[7.5rem] md:w-36 lg:w-40 truncate"
                 style={{
                   background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
                 }}
@@ -349,25 +401,26 @@ export default function Topbar({ onMenu }) {
             <button
               type="button"
               onClick={() => navigate(meta.ctaTo)}
-              className="inline-flex items-center gap-1.5 bg-rose-700 hover:bg-rose-800 text-white
-                px-4 py-2 rounded-full text-xs md:text-sm font-bold shadow-md transition mr-1"
+              className="inline-flex items-center gap-1 bg-rose-700 hover:bg-rose-800 text-white
+                h-9 md:h-10 px-3 md:px-4 rounded-full text-[11px] md:text-xs font-bold shadow-md transition shrink-0"
             >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">{meta.cta}</span>
-              <span className="sm:hidden">New</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span className="hidden lg:inline">{meta.cta}</span>
+              <span className="lg:hidden">Add</span>
             </button>
           )}
 
           {/* Quick Actions — tablet+ (mobile uses FAB) */}
-          <div className="relative hidden md:inline-flex w-auto">
+          <div className="relative hidden md:inline-flex w-auto shrink-0">
             <button
               onClick={() => setOpenMenu(openMenu === "quick" ? null : "quick")}
-              className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground
-                px-3 py-2 rounded-xl text-xs md:text-sm font-medium hover:bg-primary/90 transition"
+              className="inline-flex items-center gap-1 bg-primary text-primary-foreground
+                h-9 md:h-10 px-2.5 md:px-3 rounded-xl text-[11px] md:text-xs font-medium hover:bg-primary/90 transition shrink-0"
             >
-              <Plus className="w-4 h-4" />
-              <span>Quick Actions</span>
-              <ChevronDown className="w-3 h-3" />
+              <Plus className="w-4 h-4 shrink-0" />
+              <span className="hidden xl:inline">Quick Actions</span>
+              <span className="hidden lg:inline xl:hidden">Actions</span>
+              <ChevronDown className="w-3 h-3 shrink-0" />
             </button>
             {openMenu === "quick" && (
               <div className="absolute right-0 top-full mt-2 popover-responsive bg-white rounded-2xl
@@ -479,9 +532,9 @@ export default function Topbar({ onMenu }) {
               border border-[#E5E7EB] bg-white hover:bg-[#FFE4EC] transition"
           >
             <AdminDoodleAvatar size={28} shape="circle" className="shrink-0" />
-            <div className={`${isLeadsPage ? "hidden xl:block" : "hidden lg:block"} text-left leading-tight`}>
-              <div className="text-xs font-semibold text-[#DC143C]">{admin.fullName}</div>
-              <div className="text-[10px] text-[#6B7280]">{admin.role}</div>
+            <div className={`${isLeadsPage ? "hidden 2xl:block" : "hidden lg:block"} text-left leading-tight min-w-0`}>
+              <div className="text-xs font-semibold text-[#DC143C] truncate max-w-[120px]">{admin.fullName}</div>
+              <div className="text-[10px] text-[#6B7280] truncate max-w-[120px]">{admin.role}</div>
             </div>
             <ChevronDown className="hidden sm:block w-3.5 h-3.5 text-muted-foreground shrink-0" />
             {openMenu === "user" && (
@@ -505,6 +558,39 @@ export default function Topbar({ onMenu }) {
           </button>
         </div>
       </div>
+
+      {isPipelinePage && (
+        <div className="sm:hidden px-3 pb-2 pt-0 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+          <div className="flex items-center gap-2">
+            <div className={`${SEGMENT_WRAP} inline-flex flex-1 min-w-0`}>
+              {PIPELINE_PERIODS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPipelinePeriod(id)}
+                  className={`${SEGMENT_BTN} flex-1 ${
+                    pipelinePeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+              className="bg-white border border-[#FFD6E5] text-[11px] font-semibold text-[#111827] h-9 px-2.5 rounded-xl outline-none appearance-none pr-7 w-[7.25rem] shrink-0 truncate"
+              style={{
+                background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
+              }}
+            >
+              {CANONICAL_SERVICES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {showDateRange && (
         <div className="xl:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -9,20 +9,19 @@ import {
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import {
   computeCallStatsFromCalls,
-  filterCallsForPeriod,
   LEAD_STATUS_LABELS,
   resolveEmployeeCallType,
-  callFromApi,
 } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
+import { CALL_CONVERSATION_LABEL, countConversationCalls, dedupePeriodCalls } from "../../lib/callMetrics.js";
+import { filterCallsForPeriod } from "../../lib/periodFilter.js";
 import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
-import { apiGet } from "../../lib/api.js";
-import { unwrapApiList } from "../../lib/leadSync.js";
+import { useEmployeeSyncedPeriodCalls } from "../../lib/useEmployeeSyncedPeriodCalls.js";
 import {
   AvatarCircle, BtnPrimary, BtnSecondary, EmpEmptyState, LeadStatusBadge,
 } from "../components/EmpUI.jsx";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
+import { formatCallDisplayDate, formatCallDurationLabel } from "../../lib/callDisplay.js";
 
 const PERIOD_LABEL = { today: "Today", week: "This Week", month: "This Month" };
 
@@ -129,9 +128,8 @@ function CallLogItem({ call, active, onSelect }) {
   const callType = resolveEmployeeCallType(call);
   const meta = TYPE_META[callType] || TYPE_META.out;
   const Icon = meta.icon;
-  const timeOnly = call.date?.includes("Today")
-    ? call.date.replace("Today ", "")
-    : call.date?.split(",")?.pop()?.trim() || call.date;
+  const displayDate = formatCallDisplayDate(call.callAt || call.startedAt || call.date);
+  const durationLabel = formatCallDurationLabel(call);
 
   return (
     <button
@@ -154,7 +152,9 @@ function CallLogItem({ call, active, onSelect }) {
               <p className="text-xs font-bold text-slate-900 truncate leading-tight">{call.name}</p>
               <p className="text-[10px] text-slate-500 truncate leading-tight">{call.company}</p>
             </div>
-            <span className="text-[11px] font-black text-slate-900 tabular-nums shrink-0">{call.duration}</span>
+            {durationLabel ? (
+              <span className="text-[11px] font-black text-slate-900 tabular-nums shrink-0">{durationLabel}</span>
+            ) : null}
           </div>
           <div className="flex items-center gap-1 mt-1 min-w-0">
             <span className="inline-flex max-w-[38%] shrink-0">
@@ -173,7 +173,7 @@ function CallLogItem({ call, active, onSelect }) {
               </span>
             )}
             <span className="text-[9px] font-semibold text-slate-400 truncate ml-auto shrink-0 min-w-0">
-              {timeOnly}
+              {displayDate}
             </span>
           </div>
         </div>
@@ -190,7 +190,9 @@ function CallLogItem({ call, active, onSelect }) {
               <p className="text-sm font-bold text-slate-900 truncate leading-tight">{call.name}</p>
               <p className="text-[11px] text-slate-500 truncate mt-0.5">{call.company}</p>
             </div>
-            <span className="text-sm font-black text-slate-900 tabular-nums shrink-0">{call.duration}</span>
+            {durationLabel ? (
+              <span className="text-sm font-black text-slate-900 tabular-nums shrink-0">{durationLabel}</span>
+            ) : null}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge tone={meta.tone}>{call.outcome}</Badge>
@@ -204,7 +206,7 @@ function CallLogItem({ call, active, onSelect }) {
                 REC
               </span>
             )}
-            <span className="text-[10px] font-semibold text-slate-400 ml-auto">{call.date}</span>
+            <span className="text-[10px] font-semibold text-slate-400 ml-auto">{displayDate}</span>
           </div>
         </div>
       </div>
@@ -216,102 +218,32 @@ export default function EmployeeCalls() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const period = searchParams.get("period") || "today";
-  const { calls: contextCalls = [], employee, leads = [] } = useEmployee();
+  const { employee, leads = [] } = useEmployee();
   const { stats: callyzerStats, configured: callyzerConfigured, syncing: statsSyncing } = useCallyzerStats(
     employee?.id,
     period,
     Boolean(employee?.id),
   );
-  const [periodCalls, setPeriodCalls] = useState([]);
-  const [callsLoading, setCallsLoading] = useState(false);
-  const [callsSyncing, setCallsSyncing] = useState(false);
-  const [callsLoaded, setCallsLoaded] = useState(false);
-  const callsCacheRef = useRef(new Map());
+  const {
+    calls: monthCalls,
+    loading: callsLoading,
+    syncing: callsSyncing,
+  } = useEmployeeSyncedPeriodCalls(employee?.id, "month", leads, Boolean(employee?.id));
+
+  const periodCalls = useMemo(
+    () => dedupePeriodCalls(filterCallsForPeriod(monthCalls || [], period)),
+    [monthCalls, period],
+  );
+
+  const callsLoaded = !callsLoading || periodCalls.length > 0;
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const mapCallItems = useCallback((items) => (
-    Array.isArray(items) ? items.map((c) => callFromApi(c, leads)) : []
-  ), [leads]);
-
-  const fetchPeriodCalls = useCallback(async ({ sync = false, silent = false } = {}) => {
-    if (!employee?.id) return;
-
-    const cacheKey = `${employee.id}:${period}`;
-    const cached = callsCacheRef.current.get(cacheKey);
-    if (!sync && cached) {
-      setPeriodCalls(cached);
-      setCallsLoaded(true);
-      return;
-    }
-
-    if (!silent && !cached) setCallsLoading(true);
-    if (sync) setCallsSyncing(true);
-
-    try {
-      const res = await apiGet(
-        `/api/v1/employee/${employee.id}/calls?period=${encodeURIComponent(period)}&sync=${sync ? 1 : 0}&limit=10000`,
-        { skipCache: sync, cacheTtl: sync ? 0 : 30_000 },
-      );
-      const items = unwrapApiList(res);
-      const mapped = mapCallItems(items);
-      callsCacheRef.current.set(cacheKey, mapped);
-      setPeriodCalls(mapped);
-      setCallsLoaded(true);
-    } catch {
-      if (!cached) setPeriodCalls([]);
-    } finally {
-      if (sync) setCallsSyncing(false);
-      if (!silent) setCallsLoading(false);
-    }
-  }, [employee?.id, period, mapCallItems]);
-
-  useEffect(() => {
-    const cacheKey = employee?.id ? `${employee.id}:${period}` : null;
-    const cached = cacheKey ? callsCacheRef.current.get(cacheKey) : null;
-    if (cached) {
-      setPeriodCalls(cached);
-      setCallsLoaded(true);
-    }
-
-    fetchPeriodCalls({ sync: false, silent: Boolean(cached) });
-
-    const syncTimer = window.setTimeout(() => {
-      fetchPeriodCalls({ sync: true, silent: true });
-    }, 80);
-
-    return () => window.clearTimeout(syncTimer);
-  }, [employee?.id, period, fetchPeriodCalls]);
-
-  useEffect(() => {
-    const onRefresh = () => {
-      fetchPeriodCalls({ sync: false, silent: true });
-      fetchPeriodCalls({ sync: true, silent: true });
-    };
-    window.addEventListener("callyzer:refresh", onRefresh);
-    return () => window.removeEventListener("callyzer:refresh", onRefresh);
-  }, [fetchPeriodCalls]);
-
-  useEffect(() => {
-    if (!employee?.id) return undefined;
-    const prefetch = (targetPeriod) => {
-      const cacheKey = `${employee.id}:${targetPeriod}`;
-      if (callsCacheRef.current.has(cacheKey)) return;
-      apiGet(
-        `/api/v1/employee/${employee.id}/calls?period=${targetPeriod}&sync=0&limit=10000`,
-        { cacheTtl: 30_000 },
-      )
-        .then((res) => {
-          callsCacheRef.current.set(cacheKey, mapCallItems(unwrapApiList(res)));
-        })
-        .catch(() => {});
-    };
-    ["today", "week", "month"].forEach((p) => {
-      if (p !== period) prefetch(p);
-    });
-  }, [employee?.id, period, mapCallItems]);
-
   const stats = useMemo(() => {
+    const fromCalls = computeCallStatsFromCalls(periodCalls, period);
+    if (callsLoaded && periodCalls.length >= 0) {
+      return fromCalls;
+    }
     if (callyzerConfigured && callyzerStats) {
       const pickupRate = callyzerStats.totalCalls
         ? Math.round((callyzerStats.connectedCalls / callyzerStats.totalCalls) * 100)
@@ -331,22 +263,21 @@ export default function EmployeeCalls() {
         quality: pickupRate,
       };
     }
-    const source = callsLoaded ? periodCalls : filterCallsForPeriod(contextCalls, period);
-    return computeCallStatsFromCalls(source, period);
-  }, [callyzerConfigured, callyzerStats, callsLoaded, periodCalls, contextCalls, period]);
+    return fromCalls;
+  }, [callyzerConfigured, callyzerStats, callsLoaded, periodCalls, period]);
 
   const conversationCount = useMemo(() => {
+    if (callsLoaded) {
+      return countConversationCalls(periodCalls);
+    }
     if (callyzerConfigured && callyzerStats?.conversations5MinPlus != null) {
       return callyzerStats.conversations5MinPlus;
     }
-    const source = callsLoaded ? periodCalls : filterCallsForPeriod(contextCalls, period);
-    return countConversationCalls(source, {
-      periodFilter: (list) => filterCallsForPeriod(list, period),
-    });
-  }, [callyzerConfigured, callyzerStats, callsLoaded, periodCalls, contextCalls, period]);
+    return countConversationCalls(periodCalls);
+  }, [callyzerConfigured, callyzerStats, callsLoaded, periodCalls]);
 
   const calls = useMemo(() => {
-    let list = callsLoaded ? periodCalls : filterCallsForPeriod(contextCalls, period);
+    let list = periodCalls;
 
     if (typeFilter !== "all") list = list.filter((c) => resolveEmployeeCallType(c) === typeFilter);
     if (search.trim()) {
@@ -360,7 +291,7 @@ export default function EmployeeCalls() {
       );
     }
     return list;
-  }, [callsLoaded, periodCalls, contextCalls, period, typeFilter, search]);
+  }, [periodCalls, typeFilter, search]);
 
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">

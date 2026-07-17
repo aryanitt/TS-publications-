@@ -21,6 +21,7 @@ const PAGE_META = {
   "/employee": { title: "Dashboard", sub: "Overview · Pipeline · Agenda" },
   "/employee/tasks": { title: "My Tasks", sub: "Today · Upcoming · Previous" },
   "/employee/follow-ups": { title: "Follow-Up", sub: "Overdue · Due Today · Upcoming" },
+  "/employee/whatsapp-scripts": { title: "WhatsApp Scripts", sub: "Create · Edit · Share on follow-ups" },
   "/employee/calls": { title: "Call Reporting", sub: "Analytics · Team Performance · Lead Activity" },
   "/employee/leads": { title: "Pipeline", sub: "Real-time overview of your sales pipeline" },
   "/employee/pipeline": { title: "Pipeline", sub: "Real-time overview of your sales pipeline" },
@@ -61,8 +62,11 @@ export default function EmployeeTopbar({ onMenu }) {
   const quickRef = useRef(null);
   const userRef = useRef(null);
   const isCallsPage = pathname === "/employee/calls";
+  const isDashboardPage = pathname === "/employee";
   const isPipelinePage = pathname === "/employee/leads" || pathname === "/employee/pipeline" || pathname === "/employee/sales-process";
-  const currentPeriod = String(searchParams.get("period") || (isCallsPage ? "today" : "month")).toLowerCase();
+  const showPeriodFilter = isCallsPage || isPipelinePage || isDashboardPage;
+  const defaultPeriod = isCallsPage || isDashboardPage ? "today" : "month";
+  const currentPeriod = String(searchParams.get("period") || defaultPeriod).toLowerCase();
 
   const setPeriod = (nextPeriod) => {
     const newParams = new URLSearchParams(searchParams);
@@ -154,7 +158,7 @@ export default function EmployeeTopbar({ onMenu }) {
 
           <div className="hidden md:block flex-grow min-w-0" />
 
-          {(isCallsPage || isPipelinePage) && (
+          {showPeriodFilter && (
             <div className={`${SEGMENT_WRAP} hidden sm:inline-flex mr-1 shrink-0`}>
               {CALL_PERIODS.map(({ id, label }) => (
                 <button
@@ -267,7 +271,7 @@ export default function EmployeeTopbar({ onMenu }) {
           </div>
         </div>
 
-        {(isCallsPage || isPipelinePage) && (
+        {showPeriodFilter && (
           <div className="sm:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
             <div className={`${SEGMENT_WRAP} w-full`}>
               {CALL_PERIODS.map(({ id, label }) => (

@@ -58,10 +58,24 @@ export function normalizeSource(raw = "") {
   if (s.includes("google")) return "google_ads";
   if (s.includes("whatsapp") || s.includes("wa ")) return "whatsapp";
   if (s.includes("website") || s.includes("organic") || s.includes("web")) return "website";
-  if (s.includes("manual") || s.includes("referral")) return "manual";
+  if (s.includes("linkedin")) return "linkedin";
+  if (s.includes("referral")) return "referral";
+  if (s.includes("campaign")) return "campaign";
+  if (s.includes("landing")) return "landing_page";
+  if (s.includes("manual")) return "manual";
   if (s.includes("n8n") || s.includes("webhook") || s.includes("zapier")) return "n8n";
+  if (s.includes("callyzer")) return "callyzer";
   if (s.includes("api")) return "api";
   return s.replace(/\s+/g, "_");
+}
+
+/** Leads Assign queue: n8n webhooks + admin manual entry only. */
+export const QUEUE_ELIGIBLE_SOURCES = new Set(["manual", "n8n"]);
+
+export function isQueueEligibleLead(lead) {
+  if (!lead) return false;
+  const key = normalizeSource(lead.source || lead.form_name);
+  return QUEUE_ELIGIBLE_SOURCES.has(key);
 }
 
 export function isConverted(lead) {
@@ -440,6 +454,25 @@ export function getAssignmentForLead(state, lead) {
   }
 
   return null;
+}
+
+export function isLeadUnassigned(state, lead) {
+  if (!lead) return false;
+  if (getAssignmentForLead(state, lead)) return false;
+
+  const status = String(lead.assignment_status || lead.assignmentStatus || "unassigned").toLowerCase();
+  if (["assigned", "accepted", "in_progress"].includes(status)) return false;
+
+  const raw = lead.assigned_to ?? lead.assignedTo;
+  if (raw != null && raw !== "" && raw !== 0) {
+    if (typeof raw === "object") {
+      if (raw.id != null && raw.id !== "") return false;
+    } else {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /** Resolve the sales employee assigned to a lead (API, DB, or local assignment). */

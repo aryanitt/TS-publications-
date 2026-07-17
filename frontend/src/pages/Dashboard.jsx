@@ -20,6 +20,7 @@ import {
   SectionHeader, priorityTone, stageTone
 } from "../components/Primitives.jsx";
 import { useDateRange } from "../context/DateRangeContext.jsx";
+import { buildPeriodQueryParams } from "../lib/periodQuery.js";
 import { useAdmin } from "../context/AdminContext.jsx";
 import { apiGet, readCachedJson, readStaleCachedJson } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
@@ -188,45 +189,64 @@ function TooltipPortal({ children, anchorRef, visible }) {
   );
 }
 
-// ─── Donut chart ──────────────────────────────────────────────────────────────
-function Donut({ pct, size = 80, stroke = 8, color = "#6366f1", label, compact = false }) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const val = (pct / 100) * c;
+// ─── Key metric circle with hover info ───────────────────────────────────────
+function MetricCircle({ pct, color, glow, label, shortLabel, info, size = 72, compact = false }) {
+  const [pinned, setPinned] = useState(false);
+  const safePct = Math.min(100, Math.max(0, Number(pct) || 0));
+  const inner = Math.max(compact ? 8 : 10, Math.round(size * 0.14));
+  const showInfo = pinned;
+
   return (
-    <div className="flex flex-col items-center gap-1 sm:gap-2 w-full min-w-0">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0" style={{ overflow: "visible" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth={stroke}
-          strokeDasharray={`${val} ${c}`}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-        <text
-          x={size / 2}
-          y={size / 2 + (compact ? 4 : 5)}
-          textAnchor="middle"
-          fill="#0f172a"
-          fontSize={compact ? 11 : 15}
-          fontWeight="700"
+    <div className="group relative flex flex-col items-center gap-1.5 sm:gap-2 w-full min-w-0">
+      <button
+        type="button"
+        onClick={() => setPinned((v) => !v)}
+        onBlur={() => setPinned(false)}
+        className="relative rounded-full flex items-center justify-center transition-transform duration-200 hover:scale-[1.06] focus:scale-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-300"
+        style={{
+          width: size,
+          height: size,
+          background: `conic-gradient(${color} 0deg ${safePct * 3.6}deg, #e2e8f0 ${safePct * 3.6}deg 360deg)`,
+          boxShadow: `0 4px 18px ${glow}33`,
+        }}
+        aria-label={`${label}: ${safePct}%. ${info}`}
+        aria-expanded={showInfo}
+      >
+        <div
+          className="absolute rounded-full bg-white flex items-center justify-center border border-slate-100 pointer-events-none"
+          style={{ inset: inner }}
         >
-          {pct}%
-        </text>
-      </svg>
-      {label && (
-        <span className={`text-slate-600 font-medium text-center leading-tight w-full min-w-0 px-0.5 ${
-          compact ? "text-[8px] sm:text-[10px]" : "text-[10px] max-w-[88px]"
+          <span
+            className="font-bold text-slate-900 tabular-nums leading-none"
+            style={{ fontSize: compact ? 11 : 15 }}
+          >
+            {safePct}%
+          </span>
+        </div>
+      </button>
+
+      <span className={`text-slate-600 font-semibold text-center leading-tight px-0.5 pointer-events-none ${
+        compact ? "text-[8px] sm:text-[10px]" : "text-[10px] sm:text-[11px]"
+      }`}
+      >
+        {compact ? shortLabel : label}
+      </span>
+
+      <div
+        className={`pointer-events-none absolute bottom-[calc(100%-4px)] left-1/2 -translate-x-1/2 z-30 w-[min(92vw,200px)] transition-all duration-200 ${
+          showInfo
+            ? "opacity-100 scale-100"
+            : "opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100"
         }`}
-        >
-          {label}
-        </span>
-      )}
+        role="tooltip"
+      >
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-lg shadow-slate-200/80 text-left">
+          <p className="text-[11px] font-bold text-slate-900">{label}</p>
+          <p className="text-lg font-black tabular-nums mt-0.5" style={{ color }}>{safePct}%</p>
+          <p className="text-[10px] text-slate-500 mt-1 leading-snug">{info}</p>
+        </div>
+        <div className="mx-auto w-2.5 h-2.5 rotate-45 bg-white border-r border-b border-slate-200 -mt-[5px]" />
+      </div>
     </div>
   );
 }
@@ -531,56 +551,140 @@ function ServiceBreakdown({ services, filterKey }) {
   );
 }
 
-// ─── Leader Board circle ──────────────────────────────────────────────────────
-function LeaderDonut({ pct, size = 88, stroke = 7, gradientId, colors, textColor = "#1e293b", fontSize = 16 }) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const val = (Math.min(pct, 100) / 100) * c;
+// ─── Leader Board multi-segment circle ───────────────────────────────────────
+const LEADER_METRIC_SEGMENTS = [
+  { id: "leads", label: "Leads", short: "Leads", color: "#3b82f6" },
+  { id: "contact", label: "Contact Rate", short: "Contact", color: "#8b5cf6" },
+  { id: "conv", label: "Conv. Rate", short: "Rate", color: "#10b981" },
+  { id: "conversions", label: "Conversions", short: "Deals", color: "#f59e0b" },
+  { id: "revenue", label: "Revenue", short: "Rev.", color: "#f43f5e" },
+];
+
+function polarToCartesian(cx, cy, r, angleDeg) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function describeDonutSegment(cx, cy, rOuter, rInner, startAngle, endAngle) {
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+  const outerStart = polarToCartesian(cx, cy, rOuter, startAngle);
+  const outerEnd = polarToCartesian(cx, cy, rOuter, endAngle);
+  const innerEnd = polarToCartesian(cx, cy, rInner, endAngle);
+  const innerStart = polarToCartesian(cx, cy, rInner, startAngle);
+  return [
+    "M", outerStart.x, outerStart.y,
+    "A", rOuter, rOuter, 0, largeArc, 1, outerEnd.x, outerEnd.y,
+    "L", innerEnd.x, innerEnd.y,
+    "A", rInner, rInner, 0, largeArc, 0, innerStart.x, innerStart.y,
+    "Z",
+  ].join(" ");
+}
+
+function parseLeaderPct(value) {
+  const n = parseInt(String(value ?? "").replace(/[^\d]/g, ""), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function leaderMetricValues(emp) {
+  return {
+    leads: { display: String(emp.leads ?? 0), raw: Number(emp.leads) || 0 },
+    contact: { display: emp.qualR || "0%", raw: parseLeaderPct(emp.qualR) },
+    conv: { display: emp.convR || "0%", raw: parseLeaderPct(emp.convR) },
+    conversions: { display: String(emp.conv ?? 0), raw: Number(emp.conv) || 0 },
+    revenue: { display: emp.rev || "₹0", raw: 0 },
+  };
+}
+
+function LeaderMetricRing({ emp, rankIdx }) {
+  const [activeId, setActiveId] = useState(null);
+  const viewSize = 112;
+  const cx = viewSize / 2;
+  const cy = viewSize / 2;
+  const stroke = 15;
+  const rOuter = (viewSize - stroke) / 2;
+  const rInner = rOuter - stroke;
+  const gap = 2.8;
+  const segmentCount = LEADER_METRIC_SEGMENTS.length;
+  const slice = 360 / segmentCount;
+  const values = leaderMetricValues(emp);
+  const active = LEADER_METRIC_SEGMENTS.find((s) => s.id === activeId);
+  const activeVal = active ? values[active.id] : null;
+  const rank = LEADERBOARD_RANKS[rankIdx] || LEADERBOARD_RANKS[2];
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="overflow-visible">
-      <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={colors[0]} />
-          <stop offset="100%" stopColor={colors[1]} />
-        </linearGradient>
-      </defs>
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke="#f1f5f9"
-        strokeWidth={stroke}
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={`url(#${gradientId})`}
-        strokeWidth={stroke}
-        strokeDasharray={`${val} ${c}`}
-        strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ filter: `drop-shadow(0 2px 6px ${colors[0]}44)` }}
-      />
-      <text
-        x={size / 2}
-        y={size / 2 + 5}
-        textAnchor="middle"
-        fill={textColor}
-        fontSize={fontSize}
-        fontWeight="700"
-      >
-        {pct}%
-      </text>
-    </svg>
+    <div
+      className="relative w-full max-w-[104px] aspect-square mx-auto"
+      onMouseLeave={() => setActiveId(null)}
+    >
+      <svg viewBox={`0 0 ${viewSize} ${viewSize}`} className="w-full h-full overflow-visible">
+        {LEADER_METRIC_SEGMENTS.map((seg, i) => {
+          const start = i * slice + gap / 2;
+          const end = (i + 1) * slice - gap / 2;
+          const isActive = activeId === seg.id;
+          const isDimmed = activeId && !isActive;
+          return (
+            <path
+              key={seg.id}
+              d={describeDonutSegment(cx, cy, rOuter, rInner, start, end)}
+              fill={seg.color}
+              stroke="#fff"
+              strokeWidth={2.2}
+              opacity={isDimmed ? 0.42 : 1}
+              className="cursor-pointer transition-all duration-150 ease-out"
+              style={{
+                filter: isActive ? `brightness(1.06) drop-shadow(0 1px 4px ${seg.color}55)` : undefined,
+              }}
+              onMouseEnter={() => setActiveId(seg.id)}
+              onFocus={() => setActiveId(seg.id)}
+              onBlur={() => setActiveId(null)}
+              onTouchStart={() => setActiveId(seg.id)}
+              role="img"
+              aria-label={`${seg.label}: ${values[seg.id].display}`}
+            />
+          );
+        })}
+        <circle cx={cx} cy={cy} r={rInner - 1.5} fill="#fff" />
+      </svg>
+
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-1">
+        {active && activeVal ? (
+          <>
+            <span
+              className="text-[7px] sm:text-[8px] font-bold uppercase tracking-wide leading-none truncate max-w-full"
+              style={{ color: active.color }}
+            >
+              {active.short}
+            </span>
+            <span className="text-sm sm:text-base font-black text-slate-900 tabular-nums leading-none mt-0.5">
+              {activeVal.display}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-[7px] sm:text-[8px] font-semibold uppercase tracking-wide leading-none" style={{ color: rank.textColor }}>
+              Conv.
+            </span>
+            <span className="text-base sm:text-lg font-black tabular-nums leading-none mt-0.5" style={{ color: rank.textColor }}>
+              {values.conv.display}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
-function getConvPct(emp) {
-  return emp.leads ? Math.round((emp.conv / emp.leads) * 100) : 0;
+function LeaderBoardLegend() {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1 max-w-[320px]">
+      {LEADER_METRIC_SEGMENTS.map((seg) => (
+        <span key={seg.id} className="inline-flex items-center gap-1 text-[9px] font-medium text-slate-500">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />
+          {seg.short}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 const LEADERBOARD_RANKS = [
@@ -616,94 +720,6 @@ const LEADERBOARD_RANKS = [
   },
 ];
 
-// ─── Leader Board Tooltip Portal ─────────────────────────────────────────────
-function LeaderBoardTooltip({ emp, anchorRef, visible }) {
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const [placement, setPlacement] = useState("above");
-
-  useEffect(() => {
-    if (!visible || !anchorRef?.current) return;
-    const update = () => {
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const TOOLTIP_W = 220, TOOLTIP_H = 210, MARGIN = 8;
-      const vw = window.innerWidth, vh = window.innerHeight;
-      const spaceAbove = rect.top, spaceBelow = vh - rect.bottom;
-      const above = spaceAbove >= TOOLTIP_H + MARGIN || spaceAbove > spaceBelow;
-
-      setPlacement(above ? "above" : "below");
-
-      let left = rect.left + rect.width / 2 - TOOLTIP_W / 2 + window.scrollX;
-      left = Math.max(MARGIN, Math.min(left, vw - TOOLTIP_W - MARGIN));
-
-      const top = above
-        ? rect.top + window.scrollY - TOOLTIP_H - MARGIN
-        : rect.bottom + window.scrollY + MARGIN;
-
-      setPos({ top, left });
-    };
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, [visible, anchorRef]);
-
-  if (typeof document === "undefined") return null;
-
-  const rows = [
-    { key: "leads", label: "Leads" },
-    { key: "qualR", label: "Contact Rate" },
-    { key: "convR", label: "Conv. Rate" },
-    { key: "conv", label: "Conversions" },
-    { key: "rev", label: "Revenue" },
-  ];
-
-  return ReactDOM.createPortal(
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          initial={{ opacity: 0, y: placement === "above" ? 6 : -6, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: placement === "above" ? 6 : -6, scale: 0.95 }}
-          transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          style={{ position: "absolute", top: pos.top, left: pos.left, zIndex: 99999, pointerEvents: "none" }}
-        >
-          <div className="relative">
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xl shadow-slate-200/60 w-[220px]">
-              <div className="text-[11px] font-extrabold text-slate-800 mb-3 uppercase tracking-wider border-b border-slate-100 pb-2">
-                {emp.name}
-              </div>
-              <div className="space-y-2">
-                {rows.map((r) => (
-                  <div key={r.key} className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 text-[10px] uppercase tracking-wider font-semibold">{r.label}</span>
-                    <span className="font-bold text-slate-800 tabular-nums">
-                      {emp[r.key]}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 border-slate-200 bg-white
-                ${placement === "above"
-                  ? "-bottom-[6px] border-b border-r"
-                  : "-top-[6px] border-t border-l"
-                }`}
-              style={{ zIndex: 1 }}
-            />
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>,
-    document.body
-  );
-}
-
 // ─── Leader Board ─────────────────────────────────────────────────────────────
 function fmtLeaderRevenue(n) {
   const v = Number(n) || 0;
@@ -736,57 +752,56 @@ function buildLeaderboardFromEmployees(employees) {
 }
 
 function LeaderBoard({ employees }) {
-  const [hoveredIdx, setHoveredIdx] = useState(null);
-  const cardRefs = useRef([]);
-  const isMobile = useIsMobile(640);
   const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 3);
 
   return (
-    <div className={`${PANEL} p-3 sm:p-4 md:p-5 min-w-0`}>
-      <SectionHead icon={Trophy} title="Leader Board" sub="Top performers by conversion rate" />
+    <div className={`${PANEL} p-3 sm:p-4 min-w-0`}>
+      <SectionHead
+        icon={Trophy}
+        title="Leader Board"
+        sub="Top performers by conversion rate"
+        compact
+        action={topPerformers.length > 0 ? <LeaderBoardLegend /> : null}
+      />
 
       {topPerformers.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 py-10 text-center">
-          <Trophy className="w-8 h-8 text-rose-300 mx-auto mb-2" />
+        <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 py-8 text-center">
+          <Trophy className="w-7 h-7 text-rose-300 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-600">No performance data yet</p>
           <p className="text-xs text-slate-400 mt-1">Add team members and assign leads to populate the leaderboard.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {topPerformers.map((emp, i) => {
             const rank = LEADERBOARD_RANKS[i] || LEADERBOARD_RANKS[2];
-            const convPct = getConvPct(emp);
-            const donutSize = isMobile ? 56 : 76;
-            const donutStroke = isMobile ? 5 : 6;
+            const isFirst = i === 0;
 
             return (
-              <div key={`${emp.name}-${i}`} className="relative min-w-0">
-                <div
-                  ref={(el) => { cardRefs.current[i] = el; }}
-                  className="rounded-lg sm:rounded-xl bg-slate-50/60 border border-slate-200/80 hover:border-slate-300 hover:bg-white transition-all duration-200 cursor-default flex flex-col py-2.5 sm:py-3.5 px-2 sm:px-3.5 gap-1.5 sm:gap-2 min-h-[128px] sm:min-h-[168px]"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5 sm:pb-2 gap-1.5">
-                    <p className="text-[10px] sm:text-xs font-black text-slate-800 truncate">{emp.name}</p>
-                    <div className={`inline-flex items-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9px] font-bold uppercase tracking-wide sm:tracking-widest px-1.5 sm:px-2 py-0.5 rounded-full border shrink-0 ${rank.badge}`}>
-                      <Medal className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${rank.medal}`} />
-                      #{i + 1}
-                    </div>
-                  </div>
+              <div
+                key={`${emp.name}-${i}`}
+                className={`relative rounded-xl border px-2 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center gap-2 min-w-0 transition-shadow ${
+                  isFirst
+                    ? "border-amber-200/90 bg-gradient-to-b from-amber-50/70 to-white shadow-sm"
+                    : "border-slate-100 bg-slate-50/50 hover:bg-white hover:border-slate-200"
+                }`}
+              >
+                <div className="w-full flex items-center justify-between gap-1.5 min-w-0">
+                  <p className="text-[10px] sm:text-xs font-bold text-slate-800 truncate leading-tight">
+                    {emp.name}
+                  </p>
+                  <span className={`inline-flex items-center gap-0.5 shrink-0 text-[8px] sm:text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border ${rank.badge}`}>
+                    <Medal className={`w-2.5 h-2.5 ${rank.medal}`} />
+                    #{i + 1}
+                  </span>
+                </div>
 
-                  <div className="flex-1 flex flex-col justify-center gap-0.5 sm:gap-1 mt-0.5">
-                    {[
-                      { label: "Leads", val: emp.leads },
-                      { label: "Contact Rate", val: emp.qualR },
-                      { label: "Conv. Rate", val: emp.convR },
-                      { label: "Conversions", val: emp.conv },
-                      { label: "Revenue", val: emp.rev },
-                    ].map((row, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-[8px] sm:text-[10px] leading-none">
-                        <span className="text-slate-400 font-bold uppercase text-[7px] sm:text-[8px] tracking-wider truncate max-w-[65%]">{row.label}</span>
-                        <span className="font-extrabold text-slate-700 tabular-nums text-[8.5px] sm:text-[10.5px]">{row.val}</span>
-                      </div>
-                    ))}
-                  </div>
+                <LeaderMetricRing emp={emp} rankIdx={i} />
+
+                <div className="w-full grid grid-cols-2 gap-x-1 gap-y-0.5 text-[8px] sm:text-[9px] leading-tight border-t border-slate-100/80 pt-2">
+                  <span className="text-slate-400">Leads</span>
+                  <span className="text-right font-bold text-slate-700 tabular-nums">{emp.leads}</span>
+                  <span className="text-slate-400">Deals</span>
+                  <span className="text-right font-bold text-slate-700 tabular-nums">{emp.conv}</span>
                 </div>
               </div>
             );
@@ -1134,7 +1149,7 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
   const bubbleRefs = useRef({});
 
   const resolved = useMemo(() => {
-    if (pipelineStats?.grid && ["database", "mock", "empty"].includes(pipelineStats.source)) {
+    if (pipelineStats?.grid && ["database", "mock", "empty", "kanban"].includes(pipelineStats.source)) {
       return pipelineStats;
     }
     return buildEmptyPipelineGrid();
@@ -1353,45 +1368,67 @@ function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0" }) {
 // ─── Imp. Metrics ─────────────────────────────────────────────────────────────
 function ImpMetrics({ metrics, filterKey }) {
   const isMobile = useIsMobile();
-  const cards = [
-    { label: "Pickup Rate", shortLabel: "Pickup", value: metrics.pickup, color: "#e11d48" },
-    { label: "Qualification Rate", shortLabel: "Qualify", value: metrics.qualification, color: "#6366f1" },
-    { label: "Conversion Rate", shortLabel: "Convert", value: metrics.conversion, color: "#10b981" },
+  const circleSize = isMobile ? 64 : 80;
+  const items = [
+    {
+      label: "Pickup Rate",
+      shortLabel: "Pickup",
+      value: metrics.pickup,
+      color: "#e11d48",
+      glow: "#e11d48",
+      info: "Share of calls that connected (duration > 0) vs total calls in this period.",
+    },
+    {
+      label: "Qualification Rate",
+      shortLabel: "Qualify",
+      value: metrics.qualification,
+      color: "#6366f1",
+      glow: "#6366f1",
+      info: "Leads with a 2 min+ conversation or meeting booked, as a share of total leads.",
+    },
+    {
+      label: "Conversion Rate",
+      shortLabel: "Convert",
+      value: metrics.conversion,
+      color: "#10b981",
+      glow: "#10b981",
+      info: "Leads marked converted or won vs total leads in this period.",
+    },
   ];
-  const ringSize = isMobile ? 58 : 78;
-  const ringStroke = isMobile ? 5 : 7;
 
   return (
-    <div className={`${PANEL} p-2.5 sm:p-5 min-w-0 w-full`}>
+    <div className={`${PANEL} p-2.5 sm:p-5 min-w-0 w-full overflow-visible`}>
       <SectionHead
         compact={isMobile}
         icon={Activity}
         title="Key Metrics"
-        sub={isMobile ? "Pickup, qualify & convert" : "Pickup, qualification & conversion rates"}
+        sub={isMobile ? "Hover a circle for details" : "Hover each circle for rate details"}
       />
       <AnimatePresence mode="wait">
         <motion.div
           key={filterKey}
-          className="grid grid-cols-3 gap-1.5 sm:gap-3 w-full min-w-0"
+          className="grid grid-cols-3 gap-2 sm:gap-4 w-full min-w-0 pt-1 overflow-visible"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35 }}
         >
-          {cards.map((c, i) => (
+          {items.map((c, i) => (
             <motion.div
               key={c.label}
-              className="min-w-0 w-full flex justify-center"
+              className="min-w-0 w-full flex justify-center overflow-visible pt-6 sm:pt-8"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: i * 0.08, duration: 0.35 }}
             >
-              <Donut
+              <MetricCircle
                 pct={c.value}
-                size={ringSize}
-                stroke={ringStroke}
                 color={c.color}
-                label={isMobile ? c.shortLabel : c.label}
+                glow={c.glow}
+                label={c.label}
+                shortLabel={c.shortLabel}
+                info={c.info}
+                size={circleSize}
                 compact={isMobile}
               />
             </motion.div>
@@ -2007,10 +2044,12 @@ function RevenueTrajectory({ data }) {
 // ─── ROOT DASHBOARD ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [lead,            setLead]           = useState(null);
-  const { preset } = useDateRange();
+  const { preset, bounds } = useDateRange();
   const { selectedService, setSelectedService } = useAdmin();
   const initialDash = hydrateDashboardCache();
   const [apiFilterData, setApiFilterData] = useState(initialDash?.filterData ?? null);
+  const [customFilterRange, setCustomFilterRange] = useState(null);
+  const [customRangeLoading, setCustomRangeLoading] = useState(false);
   const [aiInsights, setAiInsights] = useState(initialDash?.aiInsights ?? []);
   const [teamEmployees, setTeamEmployees] = useState(() => hydrateTeamCache());
   const [chartRevenue, setChartRevenue] = useState(initialDash?.revenueSeries ?? []);
@@ -2020,17 +2059,18 @@ export default function Dashboard() {
   const [dashboardLoading, setDashboardLoading] = useState(!initialDash?.filterData);
   const [dashboardError, setDashboardError] = useState(null);
 
-  const filterKey = preset === "custom" ? "week" : preset;
+  const filterKey = preset === "custom" ? "custom" : preset;
   const mergedFilter = mergeFilterData(null, apiFilterData);
-  const fd = mergedFilter?.[filterKey] || EMPTY_FILTER_RANGE;
+  const fd = preset === "custom"
+    ? (customFilterRange || EMPTY_FILTER_RANGE)
+    : (mergedFilter?.[filterKey] || EMPTY_FILTER_RANGE);
 
   const leaderboardData = useMemo(() => {
+    if (fd?.leaderboard?.length) return fd.leaderboard.slice(0, 3);
     const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
     if (fromTeam.length) return fromTeam;
-    const fromFilter = mergedFilter?.[filterKey]?.leaderboard;
-    if (fromFilter?.length) return fromFilter.slice(0, 3);
     return [];
-  }, [mergedFilter, filterKey, teamEmployees]);
+  }, [fd, teamEmployees]);
 
   const insightItems = aiInsights.length ? aiInsights : (fd.insights || []);
   const pipelineForecast = fd.kpis?.find((k) => k.label === "Pipeline Value")?.value || "₹0";
@@ -2100,9 +2140,50 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (preset !== "custom") {
+      setCustomFilterRange(null);
+      setCustomRangeLoading(false);
+      return;
+    }
+    if (!bounds?.start || !bounds?.end) {
+      setCustomFilterRange(null);
+      return;
+    }
+
+    let cancelled = false;
+    setCustomRangeLoading(true);
+    const params = buildPeriodQueryParams({
+      preset: "custom",
+      bounds,
+    });
+    params.set("range", "custom");
+
+    apiGet(`/api/dashboard/filter-range?${params.toString()}`, { cacheTtl: ADMIN_DASH_CACHE_TTL })
+      .then((data) => {
+        if (cancelled || !data?.success) return;
+        setCustomFilterRange({
+          kpis: data.kpis || EMPTY_FILTER_RANGE.kpis,
+          leaderboard: data.leaderboard || [],
+          metrics: data.metrics || EMPTY_FILTER_RANGE.metrics,
+          insights: data.insights || [],
+          activity: data.activity || [],
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setCustomFilterRange(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCustomRangeLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [preset, bounds?.start, bounds?.end]);
+
+  useEffect(() => {
     let cancelled = false;
     setPipelineLoading(true);
-    const params = new URLSearchParams({ range: filterKey, service: selectedService });
+    const params = buildPeriodQueryParams({ preset, bounds, extra: { service: selectedService } });
+    params.set("range", preset === "custom" ? "custom" : filterKey);
     apiGet(`/api/dashboard/pipeline-status?${params.toString()}`, { cacheTtl: ADMIN_DASH_CACHE_TTL })
       .then((data) => {
         if (!cancelled && data?.success) setPipelineStats(data);
@@ -2118,10 +2199,10 @@ export default function Dashboard() {
         if (!cancelled) setPipelineLoading(false);
       });
     return () => { cancelled = true; };
-  }, [filterKey, selectedService]);
+  }, [filterKey, preset, bounds?.start, bounds?.end, selectedService]);
 
   // Reset service filter when time filter changes
-  useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
+  useEffect(() => { setSelectedService("All Services"); }, [filterKey, preset]);
 
   const serviceBreakdownData = apiFilterData?.serviceBreakdown || null;
   const services = serviceBreakdownData?.[selectedService] || serviceBreakdownData?.["All Services"] || [];
@@ -2130,15 +2211,14 @@ export default function Dashboard() {
                            { label: "Total Revenue", value: "₹0", icon: "DollarSign" };
   const cashCollectedCard = fd.kpis?.find(k => k.label === "Cash Collected") || 
                             { label: "Cash Collected", value: "₹0", icon: "DollarSign" };
-  const totalLeadsValue = pipelineStats?.totalLeads != null ? String(pipelineStats.totalLeads) :
-                          (fd.kpis?.find(k => k.label === "Total Leads")?.value || "0");
+  const totalLeadsValue = fd.kpis?.find(k => k.label === "Total Leads")?.value || "0";
   const totalCallsValue = fd.kpis?.find(k => k.label === "Total Calls Made")?.value || "0";
   const qualifiedLeadsCard = fd.kpis?.find(k => k.label === "Qualified Leads") || 
                              { label: "Qualified Leads", value: "0", icon: "FileText" };
   const pipelineValueCard = fd.kpis?.find(k => k.label === "Pipeline Value") || 
                             { label: "Pipeline Value", value: "₹0", icon: "DollarSign" };
-  const closingsValue = pipelineStats?.conversions != null ? String(pipelineStats.conversions) :
-                        (fd.kpis?.find(k => k.label === "Closings")?.value || "0");
+  const closingsValue = fd.kpis?.find(k => k.label === "Closings")?.value || "0";
+  const kpiLoading = (dashboardLoading && !apiFilterData) || (preset === "custom" && customRangeLoading && !customFilterRange);
 
   const finalKpis = [
     { label: "Total Revenue", value: totalRevenueCard.value, icon: "DollarSign", trendVal: totalRevenueCard.trendVal, sub: totalRevenueCard.sub },
@@ -2166,7 +2246,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <KPICardsRow kpiData={dashboardLoading && !apiFilterData ? EMPTY_FILTER_RANGE.kpis : finalKpis} filterKey={filterKey} />
+      <KPICardsRow kpiData={kpiLoading ? EMPTY_FILTER_RANGE.kpis : finalKpis} filterKey={filterKey} />
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start min-w-0">
 

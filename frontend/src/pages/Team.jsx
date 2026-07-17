@@ -344,11 +344,51 @@ const WORK_LOCATIONS = ["Office", "Remote", "Hybrid"];
 
 function funnelConversionLabel(funnel, idx) {
   if (idx === 0) return "Top Funnel";
-  const prev = Number(funnel[idx - 1]?.value) || 0;
+  const top = Number(funnel[0]?.value) || 0;
   const curr = Number(funnel[idx]?.value) || 0;
-  if (!prev) return "0% Conversion";
-  return `${Math.round((curr / prev) * 100)}% Conversion`;
+  if (!top) return "0% Conv";
+  const pct = Math.min(100, Math.round((curr / top) * 100));
+  return `${pct}% Conv`;
 }
+
+/** Sales funnel stages aligned with Callyzer Call Reporting (dials → 2min+ → meetings → won). */
+function buildCallyzerFunnelStages({ assigned, converted, meetings, callyzerStats }) {
+  const cs = callyzerStats || {};
+  return [
+    { name: "Assigned", value: Number(assigned) || 0 },
+    { name: "Dialed", value: Number(cs.totalCalls) || 0 },
+    { name: "2min+", value: Number(cs.conversations5MinPlus) || 0 },
+    { name: "Meeting", value: Number(meetings) || 0 },
+    { name: "Converted", value: Number(converted) || 0 },
+  ];
+}
+
+const INSIGHT_CARD = {
+  background: "#fff",
+  border: "1px solid #ffe4e6",
+  borderRadius: 14,
+  padding: "14px 16px",
+  minWidth: 0,
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const INSIGHT_CARD_TITLE = {
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".08em",
+  color: "#be123c",
+  margin: 0,
+};
+
+const INSIGHT_CARD_SUB = {
+  fontSize: 10,
+  color: "#64748b",
+  margin: "4px 0 0",
+  lineHeight: 1.35,
+};
 
 function useEmployeeLeads(emp) {
   const [leads,        setLeads]        = useState([]);
@@ -1903,40 +1943,33 @@ function AiCoachInsightsPanel({ compact, insights }) {
 
   return (
     <div style={{
-      background: "#fff",
-      border: "1.5px solid #e11d48",
-      borderRadius: compact ? 10 : 16,
-      padding: compact ? "8px 10px" : "20px 24px",
-      boxShadow: "0 4px 14px rgba(244,63,94,0.08)",
-      minWidth: 0,
-      alignSelf: "start",
+      ...INSIGHT_CARD,
+      borderRadius: compact ? 10 : INSIGHT_CARD.borderRadius,
+      padding: compact ? "10px 12px" : INSIGHT_CARD.padding,
     }}>
       <h3 style={{
-        fontSize: compact ? 9 : 12,
-        fontWeight: 800,
-        textTransform: "uppercase",
-        letterSpacing: ".08em",
-        color: "#be123c",
-        margin: "0 0 6px",
+        ...INSIGHT_CARD_TITLE,
+        fontSize: compact ? 9 : INSIGHT_CARD_TITLE.fontSize,
+        marginBottom: compact ? 6 : 10,
         display: "flex",
         alignItems: "center",
         gap: 5,
       }}>
-        <Sparkles style={{ width: compact ? 11 : 14, height: compact ? 11 : 14 }} />
+        <Sparkles style={{ width: compact ? 11 : 13, height: compact ? 11 : 13 }} />
         AI Coach Insights
       </h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 8, flex: 1 }}>
         {rows.map((row) => (
           <div
             key={row.id}
             style={{
               background: "#fff1f2",
-              padding: compact ? "6px 8px" : "10px 12px",
-              borderRadius: compact ? 7 : 10,
+              padding: compact ? "7px 9px" : "9px 11px",
+              borderRadius: 8,
               borderLeft: "3px solid #e11d48",
-              fontSize: compact ? 9 : 11.5,
+              fontSize: compact ? 9 : 11,
               color: "#1e293b",
-              lineHeight: 1.3,
+              lineHeight: 1.45,
             }}
           >
             {row.body}
@@ -1974,7 +2007,10 @@ function PipelineFunnelGraphic({ funnelData, compact, dense = false, mini = fals
     const n = String(name || "").toLowerCase();
     if (n === "converted") return "WON";
     if (n === "meeting") return "MEET";
-    if (n === "contacted") return "CONTACT";
+    if (n === "dialed") return "DIALED";
+    if (n === "2min+" || n === "2min") return "2MIN+";
+    if (n === "contacted") return "DIALED";
+    if (n === "qualified") return "2MIN+";
     return String(name || "").toUpperCase();
   };
 
@@ -2071,7 +2107,7 @@ function PipelineFunnelGraphic({ funnelData, compact, dense = false, mini = fals
   );
 }
 
-function EmpDetail({ emp, onEdit, onDelete }) {
+function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
   const { employee: profile, loading: detailLoading } = useEmployeeDetails(emp);
   const activeEmp = profile || emp;
   const [leadDrawerOpen, setLeadDrawerOpen] = useState(false);
@@ -2080,6 +2116,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   const [compact, setCompact] = useState(() =>
     typeof window !== "undefined" && window.innerWidth < 1024,
   );
+  const stackInsights = compact || inDrawer;
   const [kraPeriod, setKraPeriod] = useState("month");
 
   useEffect(() => {
@@ -2091,7 +2128,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   }, []);
 
   const { leads, stats, activity, funnel, stageBreakdown, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
-  const { stats: callyzerStats, employeeName: callyzerEmpName, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
+  const { stats: callyzerStats, employeeName: callyzerEmpName, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage, periodLabel: callyzerPeriodLabel } =
     useTeamEmployeeCallyzerStats(activeEmp?.id, kraPeriod, Boolean(activeEmp?.id));
   const { metrics: kraMetrics, loading: kraMetricsLoading } = useEmployeeKraMetrics(activeEmp?.id, {
     enabled: Boolean(activeEmp?.id),
@@ -2214,23 +2251,38 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     return result;
   }, [leads, search]);
 
-  const calls     = stats?.contacted ?? 0;
-  const meetings  = stats?.totalMeetings ?? 0;
+  const calls     = callyzerStats?.totalCalls ?? stats?.contacted ?? 0;
+  const meetings  = kraMetrics.meetings ?? stats?.totalMeetings ?? stats?.booked ?? 0;
   const assigned  = stats?.totalLeads ?? 0;
-  const qualified = getPipelineQualifiedCount(stats, stageBreakdown);
+  const qualified = callyzerStats?.conversations5MinPlus ?? getPipelineQualifiedCount(stats, stageBreakdown);
   const followups = stats?.followUps ?? 0;
   const converted = stats?.converted ?? 0;
   const revenue   = stats?.revenue ?? 0;
 
-  const funnelData = funnel?.length
-    ? funnel.map((f, idx) => ({
-        label: f.name,
-        value: `${f.value} ${f.name}`,
-        sub: funnelConversionLabel(funnel, idx),
-        width: `${Math.max(40, 100 - idx * 12)}%`,
-        opacity: Math.max(0.45, 1 - idx * 0.12),
-      }))
-    : [];
+  const funnelStages = useMemo(() => {
+    if (callyzerConfigured && callyzerStats) {
+      return buildCallyzerFunnelStages({
+        assigned,
+        converted,
+        meetings,
+        callyzerStats,
+      });
+    }
+    return Array.isArray(funnel) ? funnel : [];
+  }, [callyzerConfigured, callyzerStats, assigned, converted, meetings, funnel]);
+
+  const funnelData = useMemo(
+    () => (funnelStages.length
+      ? funnelStages.map((f, idx) => ({
+          label: f.name,
+          value: `${f.value} ${f.name}`,
+          sub: funnelConversionLabel(funnelStages, idx),
+          width: `${Math.max(40, 100 - idx * 12)}%`,
+          opacity: Math.max(0.45, 1 - idx * 0.12),
+        }))
+      : []),
+    [funnelStages],
+  );
 
   const pipelineStages = useMemo(
     () => buildPipelineChartFromLeads(leads.map(mapTeamLeadForChart)),
@@ -2239,13 +2291,22 @@ function EmpDetail({ emp, onEdit, onDelete }) {
 
   const pipelineTotal = pipelineStages.reduce((sum, s) => sum + (s.count || 0), 0);
   const convertedCount = pipelineStages.find((s) => s.label === "Payment Complete")?.count || converted;
-  const convRate = pipelineTotal ? `${Math.round((convertedCount / pipelineTotal) * 100)}%` : "0%";
+  const pipelineDenom = assigned || pipelineTotal || 0;
+  const convRate = pipelineDenom ? `${Math.round((convertedCount / pipelineDenom) * 100)}%` : "0%";
 
-  const leadsList = leads.map((l) => ({
+  const formatLeadPriority = (lead) => {
+    const raw = String(lead.priority || lead.temperature || "").toLowerCase();
+    if (raw.includes("hot") || raw.includes("critical") || raw.includes("high")) return "Hot";
+    if (raw.includes("warm") || raw.includes("medium")) return "Warm";
+    if (raw.includes("cold") || raw.includes("low")) return "Cold";
+    return "Medium";
+  };
+
+  const leadsList = visibleLeads.map((l) => ({
     name: l.lead_name || "Unknown",
     company: l.business_name || "—",
     status: getEmpStageMeta(mapEmpLeadKanbanStage(l.pipeline_stage, l.status)).label,
-    priority: l.priority || l.temperature || "Medium",
+    priority: formatLeadPriority(l),
     temp: l.priority === "Critical" || l.priority === "High" || l.temperature === "hot" ? 4 : l.priority === "Medium" || l.temperature === "warm" ? 3 : 2,
     next: l.follow_up ? new Date(l.follow_up).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—",
     potential: l.revenue || l.expected_revenue ? fmtINR(l.revenue || l.expected_revenue) : "₹0",
@@ -2263,9 +2324,9 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       overallPerfClamped,
       revenue,
       fmtINR,
-      funnel,
+      funnel: funnelStages,
     }),
-    [activeEmp.name, assigned, converted, qualified, followups, calls, overallPerfClamped, revenue, funnel],
+    [activeEmp.name, assigned, converted, qualified, followups, calls, overallPerfClamped, revenue, funnelStages],
   );
 
   return (
@@ -2751,10 +2812,17 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             No cash payments recorded yet. Record payments from any lead drawer under this employee.
           </p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div
+            style={{
+              maxHeight: compact ? 200 : 240,
+              overflowY: "auto",
+              overflowX: "auto",
+              borderRadius: 8,
+            }}
+          >
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: compact ? 10 : 11.5 }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid #d1fae5", color: "#047857", textTransform: "uppercase", letterSpacing: ".04em", fontSize: compact ? 8.5 : 9.5 }}>
+                <tr style={{ borderBottom: "1px solid #d1fae5", color: "#047857", textTransform: "uppercase", letterSpacing: ".04em", fontSize: compact ? 8.5 : 9.5, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
                   <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Lead</th>
                   <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Amount</th>
                   <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Mode</th>
@@ -2801,28 +2869,28 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       {/* ── Funnel & Insights Grid ── */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))",
-        gap: compact ? 8 : 16,
+        gridTemplateColumns: stackInsights ? "1fr" : "minmax(0, 1.25fr) minmax(0, 1fr)",
+        gap: stackInsights ? 10 : 12,
         alignItems: "start",
+        position: "relative",
+        zIndex: 0,
       }}>
-        {/* Funnel chart — funnel left, stage rows right (always side-by-side) */}
+        {/* Sales Pipeline Funnel */}
         <div style={{
-          background: "#fff",
-          border: "1px solid #ffe4e6",
-          borderRadius: compact ? 10 : 16,
-          padding: compact ? "6px 8px" : "14px 18px",
-          display: "flex",
-          flexDirection: "column",
-          gap: compact ? 4 : 8,
-          minWidth: 0,
+          ...INSIGHT_CARD,
+          borderRadius: compact ? 10 : INSIGHT_CARD.borderRadius,
+          padding: compact ? "10px 12px" : INSIGHT_CARD.padding,
+          gap: 10,
         }}>
           <div>
-            <h3 style={{ fontSize: compact ? 9 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: 0 }}>
+            <h3 style={{ ...INSIGHT_CARD_TITLE, fontSize: compact ? 9 : INSIGHT_CARD_TITLE.fontSize }}>
               Sales Pipeline Funnel
             </h3>
             {!compact && (
-              <p style={{ fontSize: 11, color: "#64748b", margin: "2px 0 0", lineHeight: 1.3 }}>
-                Deal conversion progression and conversion efficiency
+              <p style={INSIGHT_CARD_SUB}>
+                {callyzerConfigured && callyzerStats
+                  ? `Callyzer call activity${callyzerPeriodLabel ? ` · ${callyzerPeriodLabel}` : ""} (% of assigned leads per stage)`
+                  : "Deal conversion progression (% of assigned leads per stage)"}
               </p>
             )}
           </div>
@@ -2830,19 +2898,14 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: compact ? "minmax(96px, 34%) 1fr" : "minmax(110px, 1fr) 1.5fr",
-              gap: compact ? 6 : 10,
-              alignItems: "center",
+              gridTemplateColumns: compact ? "minmax(88px, 32%) 1fr" : "minmax(100px, 38%) 1fr",
+              gap: compact ? 8 : 12,
+              alignItems: "start",
               minWidth: 0,
+              flex: 1,
             }}
           >
-            {/* SVG funnel — left */}
-            <div style={{
-              width: "100%",
-              maxWidth: compact ? 120 : 180,
-              justifySelf: compact ? "center" : "start",
-              flexShrink: 0,
-            }}>
+            <div style={{ width: "100%", maxWidth: compact ? 108 : 160, justifySelf: "center" }}>
               <PipelineFunnelGraphic
                 funnelData={funnelData}
                 compact={compact}
@@ -2851,14 +2914,11 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               />
             </div>
 
-            {/* Stage breakdown — right */}
             <div style={{
               display: "flex",
               flexDirection: "column",
-              gap: compact ? 2 : 4,
-              justifyContent: "space-between",
+              gap: compact ? 3 : 5,
               minWidth: 0,
-              minHeight: compact ? 118 : undefined,
             }}>
               {funnelData.map((item, idx) => {
                 const count = item.value.split(" ")[0];
@@ -2866,45 +2926,41 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                 const colors = ["#be123c", "#e11d48", "#dc2626", "#c2185b", "#881337"];
                 const bgs = ["#fff1f2", "#fff5f6", "#fff8f8", "#fffafb", "#ffffff"];
                 const borders = ["#fecdd3", "#ffe4e6", "#ffe4e6", "#ffe4e6", "#fecdd3"];
-                const rowPad = compact ? "2px 6px" : "6px 10px";
-                const convLabel = item.sub !== "Top Funnel"
-                  ? item.sub.replace(" Conversion", " Conv")
-                  : item.sub;
-                
+                const convLabel = item.sub;
+
                 return (
                   <div key={idx} style={{
                     display: "flex",
-                    flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    gap: 4,
-                    padding: rowPad,
-                    borderRadius: compact ? 6 : 10,
+                    gap: 8,
+                    padding: compact ? "4px 7px" : "6px 9px",
+                    borderRadius: 8,
                     background: bgs[idx],
                     border: `1px solid ${borders[idx]}`,
                     minWidth: 0,
-                    flex: compact ? 1 : undefined,
                   }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: compact ? 4 : 6, minWidth: 0, flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0, flex: 1 }}>
                       <div style={{
-                        width: compact ? 5 : 6,
-                        height: compact ? 5 : 6,
+                        width: 6,
+                        height: 6,
                         borderRadius: "50%",
                         background: colors[idx],
                         flexShrink: 0,
+                        marginTop: 5,
                       }} />
-                      <div style={{ minWidth: 0, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        <span style={{ fontSize: compact ? 9 : 12, fontWeight: 700, color: "#1e293b" }}>{count}</span>
-                        <span style={{ fontSize: compact ? 8 : 11, color: "#64748b", marginLeft: 3 }}>{stageName}</span>
+                      <div style={{ minWidth: 0, lineHeight: 1.25 }}>
+                        <span style={{ fontSize: compact ? 10 : 12, fontWeight: 800, color: "#1e293b" }}>{count}</span>
+                        <span style={{ fontSize: compact ? 9 : 11, color: "#64748b", marginLeft: 4 }}>{stageName}</span>
                       </div>
                     </div>
                     <span style={{
-                      fontSize: compact ? 7 : 10,
+                      fontSize: compact ? 8 : 9,
                       fontWeight: 700,
                       color: colors[idx],
                       background: "#ffffff",
-                      padding: compact ? "1px 4px" : "2px 6px",
-                      borderRadius: 8,
+                      padding: "2px 6px",
+                      borderRadius: 6,
                       border: `1px solid ${borders[idx]}`,
                       flexShrink: 0,
                       whiteSpace: "nowrap",
@@ -2918,92 +2974,102 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           </div>
         </div>
 
-        {/* Stage-wise breakdown — matches employee dashboard */}
+        {/* Right column — stage breakdown + coach + activity */}
         <div style={{
-          background: "#fff",
-          border: "1px solid #ffe4e6",
-          borderRadius: compact ? 10 : 16,
-          padding: compact ? "8px 10px" : "14px 18px",
+          display: "flex",
+          flexDirection: "column",
+          gap: stackInsights ? 10 : 12,
           minWidth: 0,
         }}>
-          <h3 style={{ fontSize: compact ? 9 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 6px" }}>
-            Stage-wise Breakdown
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: compact ? 4 : 8, marginBottom: compact ? 6 : 10 }}>
-            {[
-              { label: "In pipeline", val: pipelineTotal },
-              { label: "Converted", val: convertedCount },
-              { label: "Conv. rate", val: convRate },
-            ].map((s) => (
-              <div key={s.label} style={{ textAlign: "center", padding: compact ? "4px 2px" : "8px 4px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                <p style={{ fontSize: compact ? 11 : 14, fontWeight: 900, color: "#0f172a", margin: 0 }}>{s.val}</p>
-                <p style={{ fontSize: compact ? 7 : 9, color: "#64748b", margin: "2px 0 0" }}>{s.label}</p>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: compact ? 2 : 3 }}>
-            {pipelineStages.filter((s) => s.count > 0).map((s) => (
-              <div key={s.fullLabel || s.label} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, minHeight: compact ? 14 : 16 }}>
-                <span style={{ fontSize: compact ? 7 : 9, fontWeight: 600, color: "#64748b", width: compact ? 48 : 58, flexShrink: 0, lineHeight: 1.1 }} title={s.fullLabel || s.label}>{s.label}</span>
-                <div style={{ flex: 1, height: compact ? 4 : 5, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                  <div style={{ width: `${s.pct || 0}%`, height: "100%", background: s.color, borderRadius: 99, minWidth: s.count > 0 ? 3 : 0 }} />
-                </div>
-                <span style={{ fontSize: compact ? 8 : 10, fontWeight: 800, color: "#1e293b", width: 20, textAlign: "right", flexShrink: 0 }}>{s.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* AI & Activity columns */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: compact ? "repeat(2, minmax(0, 1fr))" : "1fr",
-          gap: compact ? 6 : 16,
-          minWidth: 0,
-          alignItems: "start",
-        }}>
-          <AiCoachInsightsPanel compact={compact} insights={aiCoachInsights} />
-
-          {/* Daily Activity */}
+          {/* Stage-wise breakdown */}
           <div style={{
-            background: "#fff",
-            border: "1px solid #ffe4e6",
-            borderRadius: compact ? 10 : 16,
-            padding: compact ? "8px 10px" : "20px 24px",
-            minWidth: 0,
-            alignSelf: "start",
+            ...INSIGHT_CARD,
+            borderRadius: compact ? 10 : INSIGHT_CARD.borderRadius,
+            padding: compact ? "10px 12px" : INSIGHT_CARD.padding,
+            flex: "0 0 auto",
           }}>
-            <h3 style={{ fontSize: compact ? 9 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 6px" }}>
-              Daily Activity
+            <h3 style={{ ...INSIGHT_CARD_TITLE, fontSize: compact ? 9 : INSIGHT_CARD_TITLE.fontSize, marginBottom: 8 }}>
+              Stage-wise Breakdown
             </h3>
-            <div style={{ position: "relative", paddingLeft: compact ? 12 : 18 }}>
-              <div style={{ position: "absolute", left: 4, top: 4, bottom: 4, width: 1.5, background: "#f1f5f9" }} />
-              {(activity?.length ? activity : []).slice(0, compact ? 2 : 3).map((act, idx, arr) => (
-                <div key={`${act.lead_name}-${idx}`} style={{ position: "relative", paddingBottom: idx < arr.length - 1 ? (compact ? 6 : 14) : 0 }}>
-                  <div style={{
-                    position: "absolute",
-                    left: compact ? -14 : -18,
-                    top: 2,
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "#e11d48",
-                    border: "2px solid #ffffff",
-                  }} />
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <PhoneCall style={{ width: 11, height: 11, color: "#be123c", opacity: 0.8, flexShrink: 0 }} />
-                    <p style={{ fontSize: compact ? 10 : 12, fontWeight: 600, color: "#1e293b", margin: 0, lineHeight: 1.25 }}>
-                      {act.lead_name} · {act.status}
-                    </p>
-                  </div>
-                  <p style={{ fontSize: compact ? 9 : 10, color: "#64748b", margin: "2px 0 0 16px", lineHeight: 1.25 }}>
-                    {act.business || "Lead update"} · {act.time ? fmtDate(act.time) : "Recently"}
-                  </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: compact ? 6 : 8, marginBottom: 10 }}>
+              {[
+                { label: "In pipeline", val: assigned || pipelineTotal },
+                { label: "Converted", val: convertedCount },
+                { label: "Conv. rate", val: convRate },
+              ].map((s) => (
+                <div key={s.label} style={{ textAlign: "center", padding: compact ? "5px 4px" : "7px 4px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                  <p style={{ fontSize: compact ? 11 : 13, fontWeight: 900, color: "#0f172a", margin: 0, lineHeight: 1.2 }}>{s.val}</p>
+                  <p style={{ fontSize: compact ? 7 : 8, color: "#64748b", margin: "3px 0 0", lineHeight: 1.2 }}>{s.label}</p>
                 </div>
               ))}
-              {!activity?.length && (
-                <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: 0 }}>No recent lead activity yet.</p>
-              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 5 }}>
+              {(pipelineStages.filter((s) => s.count > 0).length ? pipelineStages.filter((s) => s.count > 0) : pipelineStages.slice(0, 4)).map((s) => (
+                <div key={s.fullLabel || s.label} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <span
+                    style={{ fontSize: compact ? 8 : 9, fontWeight: 600, color: "#64748b", width: compact ? 52 : 72, flexShrink: 0, lineHeight: 1.2 }}
+                    title={s.fullLabel || s.label}
+                  >
+                    {s.label}
+                  </span>
+                  <div style={{ flex: 1, height: compact ? 5 : 6, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
+                    <div style={{ width: `${s.pct || 0}%`, height: "100%", background: s.color, borderRadius: 99, minWidth: s.count > 0 ? 3 : 0 }} />
+                  </div>
+                  <span style={{ fontSize: compact ? 9 : 10, fontWeight: 800, color: "#1e293b", width: 22, textAlign: "right", flexShrink: 0 }}>{s.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: stackInsights ? "1fr" : "repeat(2, minmax(0, 1fr))",
+            gap: stackInsights ? 10 : 12,
+            alignItems: "start",
+          }}>
+            <AiCoachInsightsPanel compact={stackInsights} insights={aiCoachInsights} />
+
+            <div style={{
+              ...INSIGHT_CARD,
+              borderRadius: stackInsights ? 10 : INSIGHT_CARD.borderRadius,
+              padding: stackInsights ? "10px 12px" : INSIGHT_CARD.padding,
+              overflow: "hidden",
+            }}>
+              <h3 style={{ ...INSIGHT_CARD_TITLE, fontSize: stackInsights ? 9 : INSIGHT_CARD_TITLE.fontSize, marginBottom: 8 }}>
+                Daily Activity
+              </h3>
+              <div style={{ position: "relative", paddingLeft: 14 }}>
+                <div style={{ position: "absolute", left: 3, top: 6, bottom: 6, width: 2, background: "#fce7f3", borderRadius: 99 }} />
+                {(activity?.length ? activity : []).slice(0, compact ? 3 : 4).map((act, idx, arr) => (
+                  <div key={`${act.lead_name}-${idx}`} style={{ position: "relative", paddingBottom: idx < arr.length - 1 ? 10 : 0 }}>
+                    <div style={{
+                      position: "absolute",
+                      left: -13,
+                      top: 4,
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#e11d48",
+                      border: "2px solid #ffffff",
+                      boxShadow: "0 0 0 1px #fecdd3",
+                    }} />
+                    <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                      <PhoneCall style={{ width: 12, height: 12, color: "#be123c", opacity: 0.85, flexShrink: 0, marginTop: 1 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: compact ? 10 : 11, fontWeight: 600, color: "#1e293b", margin: 0, lineHeight: 1.35 }}>
+                          {act.lead_name} · {act.status}
+                        </p>
+                        <p style={{ fontSize: compact ? 9 : 10, color: "#64748b", margin: "2px 0 0", lineHeight: 1.35 }}>
+                          {act.business || "Lead update"} · {act.time ? fmtDate(act.time) : "Recently"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!activity?.length && (
+                  <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: 0 }}>No recent lead activity yet.</p>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -3013,19 +3079,25 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       <div style={{
         background: "#fff",
         border: "1px solid #ffe4e6",
-        borderRadius: 16,
-        padding: "20px 24px",
+        borderRadius: inDrawer ? 12 : 16,
+        padding: inDrawer ? "12px 14px" : "20px 24px",
         display: "flex",
         flexDirection: "column",
-        gap: 16
+        gap: inDrawer ? 10 : 16,
+        position: "relative",
+        zIndex: 1,
+        marginTop: stackInsights ? 4 : 0,
+        clear: "both",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".1em", color: "#be123c", margin: 0 }}>
+          <h3 style={{ fontSize: inDrawer ? 11 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".1em", color: "#be123c", margin: 0 }}>
             Active Lead Workspace
           </h3>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input
               placeholder="Search leads..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               style={{
                 background: "#f8fafc",
                 border: "1px solid #ffe4e6",
@@ -3033,7 +3105,9 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                 padding: "6px 12px",
                 fontSize: 11.5,
                 color: "#1e293b",
-                outline: "none"
+                outline: "none",
+                minWidth: 120,
+                flex: "1 1 140px",
               }}
             />
             <button style={{
@@ -3053,11 +3127,12 @@ function EmpDetail({ emp, onEdit, onDelete }) {
         <div style={{
           overflowX: "auto",
           overflowY: "auto",
-          maxHeight: compact ? 320 : 420,
+          maxHeight: inDrawer ? 280 : (compact ? 320 : 420),
           border: "1px solid #f1f5f9",
           borderRadius: 10,
+          WebkitOverflowScrolling: "touch",
         }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 11.5 }}>
+          <table style={{ width: "100%", minWidth: inDrawer ? 720 : 640, borderCollapse: "collapse", textAlign: "left", fontSize: 11.5 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", color: "#64748b", background: "#fff" }}>
                 {["Lead Name", "Company", "Status", "Priority", "Temperature", "Next Follow-Up", "Potential", "Prob."].map(h => (
@@ -3106,8 +3181,8 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                     </span>
                   </td>
                   <td style={{ padding: "12px 8px" }}>
-                    <span style={{ color: lead.priority === 'Hot' ? "#ef4444" : lead.priority === 'Warm' ? "#f59e0b" : "#22c55e" }}>
-                      {lead.priority === 'Hot' ? 'Hot' : lead.priority === 'Warm' ? 'Warm' : 'Won'}
+                    <span style={{ color: lead.priority === "Hot" ? "#ef4444" : lead.priority === "Warm" ? "#f59e0b" : "#64748b" }}>
+                      {lead.priority}
                     </span>
                   </td>
                   <td style={{ padding: "12px 8px" }}>
@@ -3306,6 +3381,7 @@ function EmpDrawer({ employee, onClose, onSaved, onDeleteRequest, members }) {
                       emp={employee}
                       onEdit={() => setMode("edit")}
                       onDelete={onDeleteRequest}
+                      inDrawer
                     />
                   </motion.div>
                 ) : (

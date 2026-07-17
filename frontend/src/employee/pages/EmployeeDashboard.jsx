@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Plus, Users, Flame, CheckCircle2, ClipboardList, TrendingUp,
   Phone, Calendar, ArrowRight, Zap, Target, ChevronRight, MessageCircle,
@@ -17,7 +17,6 @@ import {
   getEmpPipelineSummary,
   getEmpAppToday,
   filterCallsForPeriod,
-  filterPipelineLeadsForPeriod,
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { AvatarCircle } from "../components/EmpUI.jsx";
@@ -27,8 +26,15 @@ import { formatGreeting } from "../../lib/greeting.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
 import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
-import { useEmployeePeriodCalls } from "../../lib/useEmployeePeriodCalls.js";
+import { useEmployeeSyncedPeriodCalls } from "../../lib/useEmployeeSyncedPeriodCalls.js";
+import { periodLabel } from "../../lib/periodQuery.js";
 import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
+
+const PERIOD_TO_CALLYZER = {
+  today: "Today",
+  week: "This Week",
+  month: "This Month",
+};
 
 const PIPE_FILTERS = [
   { id: "all", label: "All" },
@@ -36,8 +42,6 @@ const PIPE_FILTERS = [
   { id: "warm", label: "Warm" },
   { id: "cold", label: "Cold" },
 ];
-
-const PERIODS = ["Today", "This Week", "This Month"];
 
 function SectionHead({ icon: Icon, title, sub, action, stackAction }) {
   return (
@@ -79,43 +83,42 @@ export default function EmployeeDashboard() {
     return rawLeads.filter((l) => l.service === selectedService || l.requirements === selectedService);
   }, [rawLeads, selectedService]);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isMobile = useIsMobile(640);
-  const [period, setPeriod] = useState("Today");
+  const periodKey = String(searchParams.get("period") || "today").toLowerCase();
+  const period = PERIOD_TO_CALLYZER[periodKey] || "Today";
   const [pipeFilter, setPipeFilter] = useState("all");
   const [agendaDone, setAgendaDone] = useState({});
 
   const { stats: callyzerStats, loading: callyzerLoading, syncing: callyzerSyncing, configured: callyzerConfigured, message: callyzerMessage, lastUpdated: callyzerLastUpdated, refresh: refreshCallyzerStats } =
     useCallyzerStats(employee?.id, period, Boolean(employee?.id));
 
-  const periodKey = period === "This Week" ? "week" : period === "This Month" ? "month" : "today";
-  const { calls: periodCallsFromApi } = useEmployeePeriodCalls(
+  const { calls: monthCallsFromApi } = useEmployeeSyncedPeriodCalls(
     employee?.id,
-    periodKey,
+    "month",
     rawLeads,
     Boolean(employee?.id),
+  );
+  const periodCalls = useMemo(
+    () => filterCallsForPeriod(monthCallsFromApi || [], periodKey),
+    [monthCallsFromApi, periodKey],
   );
   const allMeetings = useMemo(
     () => [...(meetingsUpcoming || []), ...(meetingsHistory || [])],
     [meetingsUpcoming, meetingsHistory],
   );
-  const periodCalls = periodCallsFromApi;
-
-  const kanbanOptions = useMemo(
-    () => ({ callScopedOnly: periodKey !== "month", period: periodKey, meetings: allMeetings }),
-    [periodKey, allMeetings],
-  );
-  const pipelineLeads = useMemo(
-    () => filterPipelineLeadsForPeriod(leads, periodCalls, periodKey, allMeetings),
-    [leads, periodCalls, periodKey, allMeetings],
-  );
-  const pipelineMetrics = useMemo(() => ({ callyzerStats }), [callyzerStats]);
   const pipelineCountsKey = useMemo(
-    () => pipelineStageCountsKey(pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics),
-    [pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics],
+    () => pipelineStageCountsKey(leads, periodCalls, { period: periodKey, meetings: allMeetings }, { callyzerStats }),
+    [leads, periodCalls, periodKey, allMeetings, callyzerStats],
   );
   const pipeline = useMemo(
-    () => buildPipelineChartFromLeads(pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics),
-    [pipelineCountsKey, pipelineLeads, periodCalls, kanbanOptions, pipelineMetrics],
+    () => buildPipelineChartFromLeads(
+      leads,
+      periodCalls,
+      { period: periodKey, meetings: allMeetings },
+      { callyzerStats },
+    ),
+    [pipelineCountsKey, leads, periodCalls, periodKey, allMeetings, callyzerStats],
   );
   const sourceChart = useMemo(() => buildSourceChartFromLeads(leads), [leads]);
   const summary = useMemo(() => getEmpPipelineSummary(leads), [leads]);
@@ -236,7 +239,7 @@ export default function EmployeeDashboard() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              {period === "This Week" ? "Week" : period === "This Month" ? "Month" : period} · {dateLabel}
+              {periodLabel(periodKey)} · {dateLabel}
             </p>
             <h1 className="font-display text-base sm:text-xl font-black text-slate-900 tracking-tight mt-0.5">
               {formatGreeting(employee?.name || "Employee")}
@@ -266,25 +269,10 @@ export default function EmployeeDashboard() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <div className={`${SEGMENT_WRAP} flex-1 sm:flex-none min-w-0`}>
-              {PERIODS.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setPeriod(d)}
-                  className={`${SEGMENT_BTN} ${
-                    period === d ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
-                  }`}
-                >
-                  <span className="sm:hidden">{d === "This Week" ? "Week" : d === "This Month" ? "Month" : d}</span>
-                  <span className="hidden sm:inline">{d}</span>
-                </button>
-              ))}
-            </div>
             <button
               type="button"
               onClick={() => navigate("/employee/leads?action=add")}
-              className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#be123c] hover:bg-[#a20f32] text-white text-xs sm:text-sm font-bold transition shadow-md shrink-0"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#be123c] hover:bg-[#a20f32] text-white text-xs sm:text-sm font-bold transition shadow-md shrink-0"
             >
               <Plus className="w-4 h-4" /> Add Lead
             </button>
@@ -327,7 +315,7 @@ export default function EmployeeDashboard() {
           onRefresh={refreshCallyzerStats}
           configured={callyzerConfigured}
           message={callyzerMessage}
-          subtitle={`${period} · auto-syncs every 15s from Callyzer`}
+          subtitle={`${periodLabel(periodKey)} · auto-syncs every 15s from Callyzer`}
         />
       )}
 

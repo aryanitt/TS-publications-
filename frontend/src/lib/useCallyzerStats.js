@@ -125,9 +125,14 @@ export function useCallyzerStats(employeeId, period, enabled = true) {
 
     loadStats({ silent: Boolean(statsCacheRef.current[periodKey]), force: false, sync: false });
 
-    const syncTimer = window.setTimeout(() => {
-      loadStats({ silent: true, force: true, sync: true });
-    }, 80);
+    // Don't re-sync Callyzer on every Today/Week/Month toggle — only when cooldown expires.
+    let syncTimer;
+    const needsFullSyncOnOpen = Date.now() - lastFullSyncRef.current >= CALLYZER_FULL_SYNC_INTERVAL_MS;
+    if (needsFullSyncOnOpen) {
+      syncTimer = window.setTimeout(() => {
+        loadStats({ silent: true, force: true, sync: true });
+      }, 500);
+    }
 
     const poll = () => {
       if (document.hidden) return;
@@ -140,7 +145,9 @@ export function useCallyzerStats(employeeId, period, enabled = true) {
     const onVisibility = () => {
       if (!document.hidden) {
         loadStats({ silent: true, force: false, sync: false });
-        window.setTimeout(() => loadStats({ silent: true, force: true, sync: true }), 80);
+        if (Date.now() - lastFullSyncRef.current >= CALLYZER_FULL_SYNC_INTERVAL_MS) {
+          window.setTimeout(() => loadStats({ silent: true, force: true, sync: true }), 500);
+        }
       }
     };
     document.addEventListener("visibilitychange", onVisibility);

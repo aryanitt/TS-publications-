@@ -36,7 +36,7 @@ const items = [
   { to: "/sales", label: "Sales Funnel", icon: GitBranch },
   { to: "/pipeline", label: "Pipeline", icon: Kanban },
   { to: "/leads", label: "Leads Assign", icon: Users },
-  { to: "/forms", label: "Forms", icon: ClipboardList },
+  { to: "/sources", label: "Source", icon: ClipboardList },
   { to: "/services", label: "Services", icon: Package },
   { to: "/team", label: "Team Management", icon: BookUser },
   { to: "/incentives", label: "Incentives", icon: Coins },

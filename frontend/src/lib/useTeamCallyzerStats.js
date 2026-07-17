@@ -21,6 +21,7 @@ export function useTeamEmployeeCallyzerStats(employeeId, period = "month", enabl
   const [loading, setLoading] = useState(false);
   const [configured, setConfigured] = useState(true);
   const [message, setMessage] = useState(null);
+  const [periodLabel, setPeriodLabel] = useState("");
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!enabled || !employeeId) return;
@@ -35,6 +36,7 @@ export function useTeamEmployeeCallyzerStats(employeeId, period = "month", enabl
       setStats(data?.stats || null);
       setEmployeeName(data?.employeeName || data?.stats?.empName || null);
       setMessage(data?.message || null);
+      setPeriodLabel(data?.label || "");
     } catch (err) {
       if (!silent) {
         setStats(null);
@@ -67,7 +69,7 @@ export function useTeamEmployeeCallyzerStats(employeeId, period = "month", enabl
     };
   }, [load, enabled, employeeId]);
 
-  return { stats, employeeName, loading, configured, message, refresh: () => load({ silent: true }) };
+  return { stats, employeeName, loading, configured, message, periodLabel, refresh: () => load({ silent: true }) };
 }
 
 /** All employees' call stats for Team Management overview table. */

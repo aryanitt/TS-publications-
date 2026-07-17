@@ -20,10 +20,17 @@ import {
 import { formatIndianNumber } from "../lib/indianFormat.js";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import { useAdmin } from "../context/AdminContext.jsx";
+import { useDateRange } from "../context/DateRangeContext.jsx";
+import { buildPeriodQueryParams } from "../lib/periodQuery.js";
 import { apiGet, apiPut, apiDelete } from "../lib/api.js";
 import { useIsMobile } from "../hooks/use-mobile.tsx";
 
-/* ── Shared hover card style ─────────────────────────────── */
+function buildSalesQueryParams({ selectedService, selectedEmployee, preset, bounds }) {
+  const extra = {};
+  if (selectedService && selectedService !== "All Services") extra.service = selectedService;
+  if (selectedEmployee && selectedEmployee !== "All Employees") extra.employee = selectedEmployee;
+  return buildPeriodQueryParams({ preset, bounds, extra });
+}
 const cardHoverStyle = {
   transition: "border-color  .2s ease, box-shadow .2s ease, transform .2s ease",
 };
@@ -427,7 +434,7 @@ const EMPTY_PIPELINE_STATS = {
   Cold: { Contacted: 0, Qualified: 0, Meeting: 0, Negotiation: 0, Conversion: 0 },
 };
 
-function SalesPipelineStatus({ service, employee }) {
+function SalesPipelineStatus({ service, employee, periodPreset, periodBounds }) {
   const [stats,       setStats]       = useState(EMPTY_PIPELINE_STATS);
   const [stageTotals, setStageTotals] = useState({
     Contacted: 0, Qualified: 0, Meeting: 0, Negotiation: 0, Conversion: 0,
@@ -437,10 +444,12 @@ function SalesPipelineStatus({ service, employee }) {
   const bubbleRefs = useRef({});
 
   useEffect(() => {
-    // Pass filters to the backend
-    const q = new URLSearchParams();
-    if (service && service !== "All Services") q.append("service", service);
-    if (employee && employee !== "All Employees") q.append("employee", employee);
+    const q = buildSalesQueryParams({
+      selectedService: service,
+      selectedEmployee: employee,
+      preset: periodPreset,
+      bounds: periodBounds,
+    });
 
     apiGet(`/api/sales/emp-leads/pipeline-stats?${q.toString()}`)
       .then(d => {
@@ -451,7 +460,7 @@ function SalesPipelineStatus({ service, employee }) {
         }
       })
       .catch(e => console.error("pipeline-stats failed", e));
-  }, [service, employee]);
+  }, [service, employee, periodPreset, periodBounds?.start, periodBounds?.end]);
 
   const hotData = useMemo(() => STAGES.map(s => stats?.Hot?.[s] ?? 0), [stats]);
   const warmData = useMemo(() => STAGES.map(s => stats?.Warm?.[s] ?? 0), [stats]);
@@ -710,7 +719,7 @@ function IMMetrics({ metrics }) {
    5. REVENUE OPPORTUNITY — no tabs, count values, pipeline+closed only
 ══════════════════════════════════════════════════════════ */
 
-function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmployee }) {
+function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmployee, periodPreset, periodBounds }) {
   const isMobile = useIsMobile();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState("");
@@ -731,19 +740,23 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
     setDrawerOpen(true);
     setDrawerLoading(true);
     try {
-      const q = new URLSearchParams({ category });
-      if (selectedEmployee && selectedEmployee !== "All Employees") q.append("employee", selectedEmployee);
-      if (selectedService && selectedService !== "All Services") q.append("service", selectedService);
-      const d = await apiGet(`/api/sales/emp-leads/opp-leads?${q.toString()}`);
+      const q = buildSalesQueryParams({
+        selectedService,
+        selectedEmployee,
+        preset: periodPreset,
+        bounds: periodBounds,
+      });
+      q.set("category", category);
+      const d = await apiGet(`/api/sales/emp-leads/opp-leads?${q.toString()}`, { skipCache: true, cacheTtl: 0 });
       if (d && d.success) setDrawerLeads(d.leads || []);
     } catch (e) { console.error(e); }
     finally { setDrawerLoading(false); }
   };
 
   const dynamicCards = [
-    { label: "Not Contacted Leads", count: oppData.notContacted ?? 0, rgb: "245,158,11" },
-    { label: "Meeting Not Scheduled", count: oppData.noMeeting ?? 0, rgb: "124,58,237" },
-    { label: "Stuck In Pipeline", count: oppData.stuckPipeline ?? 0, rgb: "239,68,68" },
+    { label: "Not Contacted Leads", sublabel: "Not Pick", count: oppData.notContacted ?? 0, rgb: "245,158,11" },
+    { label: "Meeting Not Scheduled", sublabel: "Conversation", count: oppData.noMeeting ?? 0, rgb: "124,58,237" },
+    { label: "Stuck In Pipeline", sublabel: "Booked · Done · Proposal · Objection", count: oppData.stuckPipeline ?? 0, rgb: "239,68,68" },
   ];
 
   return (
@@ -765,6 +778,9 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
               <div className={`font-semibold text-gray-600 leading-tight line-clamp-2 ${isMobile ? "text-[10px] mb-1" : "text-[13px] mb-2"}`}>
                 {c.label}
               </div>
+              {!isMobile && c.sublabel && (
+                <div className="text-[10px] text-gray-400 mb-1">{c.sublabel}</div>
+              )}
               <div className={`font-bold tabular-nums ${isMobile ? "text-xl" : "text-2xl"}`} style={{ letterSpacing: "-0.03em", color: "#111827" }}>
                 {c.count}
               </div>
@@ -1066,6 +1082,7 @@ export default function Sales() {
   const [toast, setToast] = useState(null);
   
   const { selectedService, setSelectedService } = useAdmin();
+  const { preset: periodPreset, bounds: periodBounds } = useDateRange();
   const [selectedEmployee, setSelectedEmployee] = useState("All Employees");
   
   const [servicesList, setServicesList] = useState([]);
@@ -1098,11 +1115,14 @@ export default function Sales() {
   };
 
   useEffect(() => {
-    const q = new URLSearchParams();
-    if (selectedService && selectedService !== "All Services") q.append("service", selectedService);
-    if (selectedEmployee && selectedEmployee !== "All Employees") q.append("employee", selectedEmployee);
+    const q = buildSalesQueryParams({
+      selectedService,
+      selectedEmployee,
+      preset: periodPreset,
+      bounds: periodBounds,
+    });
 
-    apiGet(`/api/sales/emp-leads/sales-kpis?${q.toString()}`)
+    apiGet(`/api/sales/emp-leads/sales-kpis?${q.toString()}`, { skipCache: true, cacheTtl: 0 })
       .then(d => {
         if (d && d.success) {
           setKpiData(d.kpiData || []);
@@ -1110,7 +1130,7 @@ export default function Sales() {
           setMetricsData(d.metrics || null);
         }
       }).catch(e => console.error(e));
-  }, [selectedService, selectedEmployee]);
+  }, [selectedService, selectedEmployee, periodPreset, periodBounds?.start, periodBounds?.end]);
   return (
     <div className="space-y-4 sm:space-y-6 page-shell min-w-0">
       
@@ -1149,7 +1169,13 @@ export default function Sales() {
       {/* ── 2. Revenue Opportunity + IMP Metrics (left) + AI Insights (right) ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-6 items-start min-w-0">
         <div className="xl:col-span-2 flex flex-col gap-3 sm:gap-6 min-w-0">
-          <RevenueOpportunitySection oppData={oppData} selectedService={selectedService} selectedEmployee={selectedEmployee} />
+          <RevenueOpportunitySection
+            oppData={oppData}
+            selectedService={selectedService}
+            selectedEmployee={selectedEmployee}
+            periodPreset={periodPreset}
+            periodBounds={periodBounds}
+          />
           <IMMetrics metrics={metricsData} />
         </div>
 
@@ -1157,7 +1183,12 @@ export default function Sales() {
       </div>
 
       {/* ── 3. Sales Pipeline Status ── */}
-      <SalesPipelineStatus service={selectedService} employee={selectedEmployee} />
+      <SalesPipelineStatus
+        service={selectedService}
+        employee={selectedEmployee}
+        periodPreset={periodPreset}
+        periodBounds={periodBounds}
+      />
 
       <AddLeadDrawer
         open={addOpen}

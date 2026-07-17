@@ -1,5 +1,5 @@
 /** LRMS v7 employee panel mock data — mirrors lrms-v7.html */
-import { CALL_CONVERSATION_MIN_SEC, isMissedCall as isMissedCallMetric, phonesMatchLoose as phonesMatchLooseMetric } from "../lib/callMetrics.js";
+import { CALL_CONVERSATION_MIN_SEC, isMissedCall as isMissedCallMetric, phonesMatchLoose as phonesMatchLooseMetric, parseCallDurationSeconds } from "../lib/callMetrics.js";
 import { mapStageToId, normalizeStageLabel, isPaymentCompleteStageId, PIPELINE_STAGE_DEFINITIONS } from "../lib/pipelineStages.js";
 import {
   resolveLeadKanbanColumn,
@@ -9,6 +9,11 @@ import {
   filterMeetingsForPeriod,
   getPipelineStageDisplayCounts,
   isEmployeeNewAssignedLead,
+  isNewPipelineLead,
+  isLeadAssignedInPeriod,
+  isAdminPanelAssignedLead,
+  isTodayUncontactedAdminLead,
+  isStaleUncontactedAdminLead,
 } from "../lib/leadKanban.js";
 import { isDateKeyInPeriod, localDateKey as periodLocalDateKey } from "../lib/periodFilter.js";
 
@@ -19,6 +24,11 @@ export {
   filterMeetingsForPeriod,
   getPipelineStageDisplayCounts,
   isEmployeeNewAssignedLead,
+  isNewPipelineLead,
+  isLeadAssignedInPeriod,
+  isAdminPanelAssignedLead,
+  isTodayUncontactedAdminLead,
+  isStaleUncontactedAdminLead,
 };
 
 /** Mock-only id — never exists in MySQL; must be replaced after API bootstrap. */
@@ -75,49 +85,20 @@ export const EMP_NAV_BADGES = {
   meetings: 3,
 };
 
-export const EMP_LEADS = [
-  { id: 1, name: "Rajesh Mehta", company: "Tech Corp India", status: "hot", stage: "Proposal Sent", source: "LinkedIn", budget: "₹8L", service: "AI Automation Suite", last: "2h ago", av: "RM", color: "#2563eb" },
-  { id: 2, name: "Priya Sharma", company: "InfoSystems Ltd", status: "converted", stage: "Converted", source: "Referral", budget: "₹12L", service: "CRM Setup & Onboarding", last: "1d ago", av: "PS", color: "#10b981" },
-  { id: 3, name: "Suresh Jain", company: "BuildNext Pvt", status: "warm", stage: "Attempted", source: "Facebook", budget: "₹3L", service: "Lead Gen Engine", last: "30m ago", av: "SJ", color: "#f59e0b" },
-  { id: 4, name: "Kavitha Nair", company: "EduTech Hub", status: "warm", stage: "Call Booked", source: "Website", budget: "₹6L", service: "Strategic Consulting", last: "3h ago", av: "KN", color: "#7c3aed" },
-  { id: 5, name: "Deepak Singh", company: "RetailMax", status: "cold", stage: "Attempted", source: "Cold Call", budget: "₹4L", service: "Custom Software Dev", last: "1d ago", av: "DS", color: "#64748b" },
-  { id: 6, name: "Anjali Gupta", company: "MediCare Plus", status: "hot", stage: "Negotiation", source: "Exhibition", budget: "₹15L", service: "AI Automation Suite", last: "4h ago", av: "AG", color: "#dc2626" },
-  { id: 7, name: "Meena Pillai", company: "FinServe India", status: "hot", stage: "Proposal Sent", source: "Referral", budget: "₹20L", service: "CRM Setup & Onboarding", last: "2d ago", av: "MP", color: "#dc2626" },
-  { id: 8, name: "Arun Kumar", company: "LogiTrans", status: "warm", stage: "Call Booked", source: "Website", budget: "₹5L", service: "Lead Gen Engine", last: "6h ago", av: "AK2", color: "#0ea5e9" },
-  { id: 9, name: "Sneha Verma", company: "FoodChain", status: "cold", stage: "Attempted", source: "Facebook", budget: "₹1L", service: "Strategic Consulting", last: "3d ago", av: "SV", color: "#94a3b8" },
-  { id: 10, name: "Vikram Rao", company: "SmartHome Co", status: "notpick", stage: "Not Pick", source: "LinkedIn", budget: "₹2L", service: "Custom Software Dev", last: "5h ago", av: "VR", color: "#64748b" },
-  { id: 11, name: "Ritu Arora", company: "MediaPlus", status: "ni", stage: "Closed", source: "Instagram", budget: "₹3L", service: "AI Automation Suite", last: "2d ago", av: "RA", color: "#7c3aed" },
-  { id: 12, name: "Siddharth Roy", company: "DataPro Pvt", status: "ni", stage: "Closed", source: "Cold Call", budget: "₹2L", service: "CRM Setup & Onboarding", last: "4d ago", av: "SR", color: "#ec4899" },
-];
-
 export function buildPipelineChartFromLeads(leads = [], calls = [], options = {}, metrics = {}) {
-  const { callScopedOnly = false, period = "month", meetings = [] } = options;
-  let counts;
-
-  if (callScopedOnly) {
-    const grouped = groupLeadsKanbanByCalls(leads, calls, {
-      callScopedOnly,
-      period,
-      meetings,
-      visibleLeads: leads,
-    });
-    const periodMeetings = filterMeetingsForPeriod(meetings, period);
-    const callMetrics = countPipelineCallMetrics(calls);
-    counts = getPipelineStageDisplayCounts(grouped, {
-      callyzerStats: metrics.callyzerStats,
-      callMetrics,
-      periodMeetings,
-      callScopedOnly: true,
-    });
-  } else {
-    const grouped = groupLeadsKanbanByCalls(leads, [], {
-      callScopedOnly: false,
-      period,
-      meetings,
-      visibleLeads: leads,
-    });
-    counts = getPipelineStageDisplayCounts(grouped, { callScopedOnly: false });
-  }
+  const { period = "month", meetings = [] } = options;
+  const grouped = groupLeadsKanbanByCalls(leads, calls, {
+    period,
+    meetings,
+    visibleLeads: leads,
+  });
+  const periodMeetings = filterMeetingsForPeriod(meetings, period);
+  const callMetrics = countPipelineCallMetrics(calls);
+  const counts = getPipelineStageDisplayCounts(grouped, {
+    callyzerStats: metrics.callyzerStats,
+    callMetrics,
+    periodMeetings,
+  });
 
   const max = Math.max(1, ...Object.values(counts));
   return EMP_KANBAN_STAGES.map((s) => ({
@@ -133,6 +114,27 @@ export function buildPipelineChartFromLeads(leads = [], calls = [], options = {}
 export function pipelineStageCountsKey(leads = [], calls = [], options = {}, metrics = {}) {
   const chart = buildPipelineChartFromLeads(leads, calls, options, metrics);
   return chart.map((s) => s.count).join(",");
+}
+
+/** Pipeline chart from DB pipeline_stage — matches admin Sales Funnel buckets per employee. */
+export function buildPipelineChartFromLeadStages(leads = []) {
+  const counts = Object.fromEntries(PIPELINE_STAGE_DEFINITIONS.map((s) => [s.id, 0]));
+  for (const lead of leads) {
+    const stageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
+    if (counts[stageId] != null) counts[stageId] += 1;
+  }
+  const max = Math.max(1, ...Object.values(counts));
+  return PIPELINE_STAGE_DEFINITIONS.map((s) => ({
+    label: s.shortLabel || s.label,
+    fullLabel: s.label,
+    count: counts[s.id] || 0,
+    pct: Math.round(((counts[s.id] || 0) / max) * 100),
+    color: s.color,
+  }));
+}
+
+export function pipelineLeadStageCountsKey(leads = []) {
+  return buildPipelineChartFromLeadStages(leads).map((s) => s.count).join(",");
 }
 
 export function buildSourceChartFromLeads(leads = []) {
@@ -762,7 +764,7 @@ export function empLeadFromDrawerPayload(raw, avatarColors) {
     id,
     name,
     company: raw.company_name || raw.company || "—",
-    status: DRAWER_WARMTH_TO_STATUS[raw.temperature] || "warm",
+    status: DRAWER_WARMTH_TO_STATUS[raw.temperature] || "cold",
     stage: normalizeStageLabel(raw.pipeline_stage, raw.status),
     source: raw.source || "Website",
     budget: revenue > 0 ? formatEmpPipelineValue(revenue) : "—",
@@ -1175,11 +1177,27 @@ export function callFromApi(apiCall, leads = []) {
       ? `${createdDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${createdDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
       : "—";
 
-  const dir = apiCall.direction === "inbound" ? "in" : "out";
+  const durationRaw = apiCall.durationSec ?? apiCall.duration_sec;
+  const durationSec = Number.isFinite(durationRaw)
+    ? durationRaw
+    : parseCallDurationSeconds(durationRaw ?? apiCall.duration);
+  const directionRaw = String(apiCall.direction || "").toLowerCase();
+  const outcomeLower = String(apiCall.outcome || "").toLowerCase();
+  // Client no-pick is always an outbound dial (fix legacy inbound mis-tags).
+  const direction = (
+    durationSec < CALL_CONVERSATION_MIN_SEC
+    && /not connected|not pick|rejected|no answer|busy|unanswered|not answered/.test(outcomeLower)
+  )
+    ? "outbound"
+    : (directionRaw === "inbound" || directionRaw === "in" || directionRaw === "incoming"
+      ? "inbound"
+      : "outbound");
+  const dir = direction === "inbound" ? "in" : "out";
   const type = isMissedCall({
     type: dir,
+    direction,
     outcome: apiCall.outcome,
-    durationSec: apiCall.durationSec,
+    durationSec,
   })
     ? "miss"
     : dir;
@@ -1189,8 +1207,9 @@ export function callFromApi(apiCall, leads = []) {
     leadId: apiCall.leadId ?? lead?.id ?? null,
     name: lead?.name || lead?.leadName || apiCall.clientName || "Unknown Lead",
     company: lead?.company || lead?.companyName || "—",
-    duration: formatDurationFromSeconds(apiCall.durationSec),
-    durationSec: Number.isFinite(apiCall.durationSec) ? apiCall.durationSec : 0,
+    duration: formatDurationFromSeconds(durationSec),
+    durationSec,
+    direction,
     type,
     date: dateLabel,
     callAt: created || (createdDate ? createdDate.toISOString() : null),

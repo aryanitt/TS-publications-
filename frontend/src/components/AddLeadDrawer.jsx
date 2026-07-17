@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Sparkles, BarChart2, Calendar,
-  Mail, CheckCircle2
+  Mail, CheckCircle2, Radio, Briefcase,
 } from "lucide-react";
 import { Drawer } from "./Primitives.jsx";
-import { apiPost, invalidateCache } from "../lib/api.js";
+import { apiPost, apiGet, invalidateCache } from "../lib/api.js";
 import { getAdminCrmHeaders } from "../lib/crmContext.js";
 import { apiLeadToAdmin, unwrapApiData } from "../lib/leadSync.js";
+import { SOURCE_CATALOG } from "../lib/leadSource.js";
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa",
@@ -17,7 +18,9 @@ const INDIAN_STATES = [
   "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
 ].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
 
-const CANONICAL_SERVICES = [
+const LEAD_SOURCE_OPTIONS = SOURCE_CATALOG.filter((s) => !["n8n", "api", "form", "other"].includes(s.key)).map((s) => s.label);
+
+const DEFAULT_SERVICES = [
   "AI Automation Suite",
   "CRM Setup & Onboarding",
   "Lead Gen Engine",
@@ -27,21 +30,39 @@ const CANONICAL_SERVICES = [
 
 export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Lead" }) {
     const [activeTab, setActiveTab] = useState("basic");
-    const [warmth, setWarmth] = useState("Hot Lead");
+    const [warmth, setWarmth] = useState("Cold Lead");
     const [stage, setStage] = useState(defaultStage);
     const [prob, setProb] = useState(50);
     const [dealVal, setDealVal] = useState("");
     const [countryCode, setCountryCode] = useState("+91");
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(false);
+    const [serviceOptions, setServiceOptions] = useState(DEFAULT_SERVICES);
   
     const [formData, setFormData] = useState({
       lead_name: "", phone: "", email: "", city: "", state: "", company_name: "",
-      source: "", keyword: "", ad_content: "", campaign_notes: "",
+      source: "", service: "",
+      keyword: "", ad_content: "", campaign_notes: "",
       win_probability: 50, purchased: "", expected_close_date: "",
       interactions: 0, next_followup_date: "", mom: "", call_summary: "", notes: "",
-      expected_revenue: "", service: "AI Automation Suite",
+      expected_revenue: "",
     });
+
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
+          const names = (data?.services || data?.data || [])
+            .map((s) => s.name || s.title)
+            .filter(Boolean);
+          if (!cancelled && names.length) setServiceOptions(names);
+        } catch {
+          // keep defaults
+        }
+      })();
+      return () => { cancelled = true; };
+    }, []);
   
     const tabs = [
       { id: "basic",     label: "Basic Info",  icon: Users },
@@ -89,9 +110,11 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
         else if (!/^\d{10}$/.test(formData.phone.trim())) errs.phone = "Phone must be exactly 10 digits";
         if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.(com|in|org|net|co|io|edu|gov|uk|au|us)$/i.test(formData.email.trim()))
           errs.email = "Enter a valid email (e.g. name@domain.com)";
+        if (!formData.source) errs.source = "Lead source is required";
+        if (!formData.service) errs.service = "Service is required";
       }
       if (tabId === "marketing") {
-        if (!formData.source) errs.source = "Lead source is required";
+        // source captured on Basic Info tab
       }
       if (tabId === "pipeline") {
         if (!dealVal.trim()) errs.expected_revenue = "Proposal value is required";
@@ -176,14 +199,21 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
             phone: payload.phone,
             email: payload.email || "",
             city: payload.city,
-            source: payload.source || "Manual",
+            source: "manual",
+            formName: payload.service,
+            form_name: payload.service,
             temperature: payload.temperature,
             pipelineStage: payload.pipeline_stage,
             status: payload.status,
             winProbability: prob,
             expectedRevenue: payload.expected_revenue || 0,
-            requirements: payload.interested_service || payload.service || "",
-            notes: payload.campaign_notes || "",
+            requirements: payload.service,
+            notes: payload.campaign_notes || payload.notes || "",
+            sourceMeta: {
+              integration: "admin",
+              channel: payload.source,
+              service: payload.service,
+            },
           };
           const res = await apiPost("/api/v1/leads", v1Payload, { headers: getAdminCrmHeaders() });
           const saved = unwrapApiData(res) || res?.data || res;
@@ -379,6 +409,43 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
                 </FormField>
   
               </div>
+
+              <SectionDivider label="Source & service" />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+
+                <FormField label="Source" required>
+                  <div style={iconFieldWrap}>
+                    <Radio size={14} style={iconStyle} />
+                    <div style={{ paddingLeft: 36 }}>
+                      <ALSelect
+                        options={LEAD_SOURCE_OPTIONS}
+                        value={formData.source}
+                        onChange={val => setField("source", val)}
+                        error={!!errors.source}
+                        placeholder="Select source (Meta, Google…)"
+                      />
+                    </div>
+                  </div>
+                  <ErrMsg field="source" />
+                </FormField>
+
+                <FormField label="Service" required>
+                  <div style={iconFieldWrap}>
+                    <Briefcase size={14} style={iconStyle} />
+                    <div style={{ paddingLeft: 36 }}>
+                      <ALSelect
+                        options={serviceOptions}
+                        value={formData.service}
+                        onChange={val => setField("service", val)}
+                        error={!!errors.service}
+                        placeholder="Select service"
+                      />
+                    </div>
+                  </div>
+                  <ErrMsg field="service" />
+                </FormField>
+
+              </div>
             </motion.div>
           )}
   
@@ -387,9 +454,9 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
               <SectionDivider label="Campaign attribution" />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
   
-                <FormField label="Lead Source" required>
-                  <ALSelect options={["Website","Instagram","Facebook Ads","Google Ads","Referral","Cold Call","LinkedIn","WhatsApp","Walk-in"]} value={formData.source} onChange={val => setField("source", val)} error={!!errors.source} />
-                  <ErrMsg field="source" />
+                <FormField label="Lead Source" fullWidth>
+                  <ALSelect options={LEAD_SOURCE_OPTIONS} value={formData.source} onChange={val => setField("source", val)} error={!!errors.source} placeholder="Set on Basic Info tab" />
+                  <p style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Primary source is set under Basic Info → Source &amp; service.</p>
                 </FormField>
   
                 <FormField label="Keyword / Adset">
@@ -561,19 +628,6 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
   
                 <FormField label="Purchased">
                   <input className="al-input" placeholder="Product / plan purchased" value={formData.purchased} onChange={e => setField("purchased", e.target.value)} />
-                </FormField>
-
-                <FormField label="Service">
-                  <select
-                    className="al-input"
-                    value={formData.service}
-                    onChange={e => setField("service", e.target.value)}
-                    style={{ appearance: "auto" }}
-                  >
-                    {CANONICAL_SERVICES.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
                 </FormField>
   
                 <FormField label="Expected Close Date">

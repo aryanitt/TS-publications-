@@ -21,8 +21,9 @@ import {
   getAssignmentState, assignLead, bulkAssign,
   toggleEmployeeReceiving, setDistributionMode, setAutoAssign,
   initRoundRobinOrder, syncRoundRobinOrder, autoAssignUnassigned, runDistributionNow, computeWorkload,
-  workloadStatus, getAssignmentForLead, getLeadId, normalizeSource,
+  workloadStatus,   getAssignmentForLead, getLeadId, normalizeSource,
   isConverted, persistAssignmentState,
+  isQueueEligibleLead, isLeadUnassigned,
 } from "../lib/leadAssignment.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
 import { PERIOD_PILL_BTN, PERIOD_PILL_INACTIVE } from "../lib/dateRange.js";
@@ -51,14 +52,12 @@ const VISIBLE_EMPLOYEE_COUNT = 2;
 const EMPLOYEE_CARD_HEIGHT_PX = 190;
 const EMPLOYEE_LIST_VIEWPORT_PX = VISIBLE_EMPLOYEE_COUNT * EMPLOYEE_CARD_HEIGHT_PX + (VISIBLE_EMPLOYEE_COUNT - 1) * 10;
 
-function SourceBadge({ lead, compact = false }) {
-  const key = normalizeSource(lead.source || lead.form_name);
-  const cfg = SOURCE_LABELS[key] || { label: lead.source || "Other", tone: "muted" };
-  return (
-    <Badge tone={cfg.tone}>
-      <span className={compact ? "text-[9px] normal-case tracking-normal" : undefined}>{cfg.label}</span>
-    </Badge>
-  );
+function getLeadPhone(lead) {
+  return lead.phone || lead.phone_number || "—";
+}
+
+function getLeadService(lead) {
+  return lead.service || lead.requirements || lead.insights || "—";
 }
 
 function EmployeeCard({ emp, stats, utilPct, status, paused, onTogglePause, onDrop, dragOver }) {
@@ -156,8 +155,6 @@ const [addOpen, setAddOpen] = useState(false);
 const [toast, setToast] = useState(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("All");
-  const [assignFilter, setAssignFilter] = useState("All");
   const [selected, setSelected] = useState(new Set());
   const [dragLeadId, setDragLeadId] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
@@ -250,25 +247,30 @@ const showToast = (message, type = "success") => {
     [leads, assignState],
   );
 
+  const queueLeads = useMemo(
+    () =>
+      enrichedLeads.filter(
+        (l) => isQueueEligibleLead(l) && isLeadUnassigned(assignState, l) && !isConverted(l),
+      ),
+    [enrichedLeads, assignState],
+  );
+
   const metrics = useMemo(() => {
-    const total = leads.length;
-    const pickup = enrichedLeads.filter((l) => !l._assignment && !isConverted(l)).length;
-    const hotLeads = leads.filter((l) =>
+    const total = queueLeads.length;
+    const pickup = total;
+    const hotLeads = queueLeads.filter((l) =>
       String(l.temperature || "").toLowerCase().includes("hot"),
     ).length;
     const converted = leads.filter(isConverted).length;
-    return { total, pickup, hotLeads, converted };
-  }, [leads, enrichedLeads]);
+    return { total, pickup, hotLeads, converted, unassigned: total, assigned: leads.length - total };
+  }, [queueLeads, leads]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return enrichedLeads
+    return queueLeads
       .filter((l) => {
-        if (sourceFilter !== "All" && l._sourceKey !== sourceFilter) return false;
-        if (assignFilter === "Assigned" && !l._assignment) return false;
-        if (assignFilter === "Unassigned" && l._assignment) return false;
         if (!q) return true;
-        return [l.lead_name, l.company_name, l.email, l.phone, l.phone_number]
+        return [l.lead_name, l.phone, l.phone_number, getLeadService(l)]
           .some((f) => String(f || "").toLowerCase().includes(q));
       })
       .sort((a, b) => {
@@ -278,7 +280,7 @@ const showToast = (message, type = "success") => {
           ? String(va).localeCompare(String(vb))
           : String(vb).localeCompare(String(va));
       });
-  }, [enrichedLeads, search, sourceFilter, assignFilter, sortKey, sortDir]);
+  }, [queueLeads, search, sortKey, sortDir]);
 
   const handleAssign = useCallback(
     async (lead, employee, method = "manual") => {
@@ -396,14 +398,14 @@ const showToast = (message, type = "success") => {
 
   const sourcePerformance = useMemo(() => {
     const map = {};
-    for (const l of enrichedLeads) {
+    for (const l of queueLeads) {
       const k = l._sourceKey;
       if (!map[k]) map[k] = { source: SOURCE_LABELS[k]?.label || k, leads: 0, converted: 0 };
       map[k].leads += 1;
       if (isConverted(l)) map[k].converted += 1;
     }
     return Object.values(map);
-  }, [enrichedLeads]);
+  }, [queueLeads]);
 
   const employeeChartData = useMemo(
     () =>
@@ -430,15 +432,14 @@ const showToast = (message, type = "success") => {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
-      const count = enrichedLeads.filter((l) => {
-        if (l._assignment) return false;
+      const count = queueLeads.filter((l) => {
         const created = (l.created_at || "").slice(0, 10);
         return created <= key;
       }).length;
       days.push({ day: d.toLocaleDateString("en-IN", { weekday: "short" }), unassigned: count });
     }
     return days;
-  }, [enrichedLeads]);
+  }, [queueLeads]);
 
   const rrOrder = useMemo(() => {
     const rotatable = employees.filter(
@@ -496,7 +497,7 @@ const showToast = (message, type = "success") => {
     <div className="space-y-4 pb-6 page-shell min-w-0">
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-        <StatCard label="Total Leads" value={metrics.total} icon={Users} tone="primary" change={`${metrics.total} in pipeline`} sub="" />
+        <StatCard label="In Queue" value={metrics.total} icon={Users} tone="primary" change={`${metrics.total} unassigned`} sub="N8N & manual only" />
         <StatCard label="Pickup" value={metrics.pickup} icon={PhoneCall} tone="info" change={metrics.pickup ? "Awaiting assignment" : "Queue clear"} sub="" />
         <StatCard label="Hot Leads" value={metrics.hotLeads} icon={Flame} tone="warning" change={metrics.hotLeads ? "High intent" : "None hot right now"} sub="" />
         <StatCard label="Converted" value={metrics.converted} icon={Target} tone="success" change="Closed won" sub="" />
@@ -675,36 +676,18 @@ const showToast = (message, type = "success") => {
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
                 {/* Search + filters */}
                 <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
-                  <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-[240px]">
+                  <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-[280px]">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-rose-300 pointer-events-none" />
                     <input
                       value={searchInput}
                       onChange={(e) => setSearchInput(e.target.value)}
-                      placeholder="Search leads…"
+                      placeholder="Search name, phone, service…"
                       className="w-full h-8 pl-8 pr-2.5 rounded-lg border border-rose-100 text-xs text-slate-900 placeholder:text-slate-400 outline-none focus:border-rose-400 bg-white"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5 sm:contents">
-                    <select
-                      value={sourceFilter}
-                      onChange={(e) => setSourceFilter(e.target.value)}
-                      className="w-full sm:w-auto sm:min-w-[112px] h-8 px-2 rounded-lg border border-rose-100 text-[10px] sm:text-[11px] font-bold text-rose-800 bg-white outline-none focus:border-rose-400"
-                    >
-                      <option value="All">All Sources</option>
-                      {Object.entries(SOURCE_LABELS).map(([k, v]) => (
-                        <option key={k} value={k}>{v.label}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={assignFilter}
-                      onChange={(e) => setAssignFilter(e.target.value)}
-                      className="w-full sm:w-auto sm:min-w-[104px] h-8 px-2 rounded-lg border border-rose-100 text-[10px] sm:text-[11px] font-bold text-rose-800 bg-white outline-none focus:border-rose-400"
-                    >
-                      <option value="All">All Status</option>
-                      <option value="Unassigned">Unassigned</option>
-                      <option value="Assigned">Assigned</option>
-                    </select>
-                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium px-0.5">
+                    Unassigned · N8N & manual only
+                  </p>
           </div>
 
                 {/* Actions */}
@@ -740,7 +723,7 @@ const showToast = (message, type = "success") => {
               {loading ? (
                 <p className="p-6 text-center text-rose-300 font-semibold text-xs">Loading queue…</p>
               ) : filtered.length === 0 ? (
-                <p className="p-6 text-center text-slate-400 text-xs">No leads match filters</p>
+                <p className="p-6 text-center text-slate-400 text-xs">No unassigned N8N or manual leads in queue</p>
               ) : isMobile ? (
                 <div className="p-2 sm:p-3 flex flex-col gap-2">
                   {filtered.map((lead) => {
@@ -762,18 +745,12 @@ const showToast = (message, type = "success") => {
                           />
                           <button type="button" onClick={() => setDetailLead(lead)} className="text-left flex-1 min-w-0">
                             <p className="text-xs font-bold text-slate-900 truncate leading-tight">{lead.lead_name || "—"}</p>
-                            <p className="text-[10px] text-slate-400 truncate">{lead.company_name || lead.email}</p>
+                            <p className="text-[10px] text-slate-500 truncate tabular-nums">{getLeadPhone(lead)}</p>
                           </button>
                           <GripVertical size={14} className="text-rose-300 shrink-0" />
                         </div>
                         <div className="flex flex-wrap items-center gap-1 mt-1.5 pl-5">
-                          <SourceBadge lead={lead} compact />
-                          {lead._assignment ? (
-                            <span className="text-[10px] font-bold text-emerald-700 truncate max-w-[40%]">{lead._assignment.employeeName}</span>
-                          ) : (
-                            <Badge tone="warning"><span className="text-[9px]">Unassigned</span></Badge>
-                          )}
-                          <span className="text-[10px] font-semibold text-slate-500">{lead.pipeline_stage || lead.status || "—"}</span>
+                          <span className="text-[10px] font-semibold text-slate-600 truncate">{getLeadService(lead)}</span>
                         </div>
                       </div>
                     );
@@ -788,9 +765,8 @@ const showToast = (message, type = "success") => {
                       <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleSelectAll} />
                     </th>
                     <th className="p-2 text-left text-[9px] font-bold text-rose-700 uppercase tracking-wider">Lead</th>
-                    <th className="p-2 text-left text-[9px] font-bold text-rose-700 uppercase tracking-wider">Source</th>
-                    <th className="p-2 text-left text-[9px] font-bold text-rose-700 uppercase tracking-wider">Assignment</th>
-                    <th className="p-2 text-left text-[9px] font-bold text-rose-700 uppercase tracking-wider">Stage</th>
+                    <th className="p-2 text-left text-[9px] font-bold text-rose-700 uppercase tracking-wider">Phone</th>
+                    <th className="p-2 text-left text-[9px] font-bold text-rose-700 uppercase tracking-wider">Service</th>
                     <th className="p-2 w-8" />
                 </tr>
               </thead>
@@ -811,19 +787,13 @@ const showToast = (message, type = "success") => {
                         <td className="p-2">
                           <button type="button" onClick={() => setDetailLead(lead)} className="text-left">
                             <p className="text-xs font-bold text-slate-900">{lead.lead_name || "—"}</p>
-                            <p className="text-[10px] text-slate-400">{lead.company_name || lead.email}</p>
                           </button>
                         </td>
-                        <td className="p-2"><SourceBadge lead={lead} compact /></td>
                         <td className="p-2">
-                          {lead._assignment ? (
-                            <span className="text-[10px] font-bold text-emerald-700">{lead._assignment.employeeName}</span>
-                          ) : (
-                            <Badge tone="warning"><span className="text-[9px]">Unassigned</span></Badge>
-                          )}
+                          <span className="text-[11px] font-semibold text-slate-700 tabular-nums">{getLeadPhone(lead)}</span>
                         </td>
                         <td className="p-2">
-                          <span className="text-[10px] font-semibold text-slate-600">{lead.pipeline_stage || lead.status || "—"}</span>
+                          <span className="text-[10px] font-semibold text-slate-600">{getLeadService(lead)}</span>
                         </td>
                         <td className="p-2 text-rose-300">
                           <GripVertical size={14} />
@@ -837,7 +807,7 @@ const showToast = (message, type = "success") => {
               )}
             </div>
             <div className="px-3 sm:px-4 py-2 border-t border-rose-50 text-[9px] sm:text-[10px] text-slate-400">
-              Select leads → pick mode → Run Now · drag onto employee cards · {filtered.length} in queue
+              N8N & manual unassigned leads · drag onto employee cards · {filtered.length} in queue
             </div>
           </div>
           </div>
@@ -898,14 +868,6 @@ const showToast = (message, type = "success") => {
         open={!!detailLead}
         onClose={() => setDetailLead(null)}
         lead={detailLead}
-        onLeadUpdated={(updated) => {
-          setLeads((prev) => prev.map((l) => (
-            String(l.id) === String(updated.id) ? { ...l, ...updated } : l
-          )));
-          setDetailLead((current) => (
-            current && String(current.id) === String(updated.id) ? { ...current, ...updated } : current
-          ));
-        }}
       />
 
       <Drawer open={historyOpen} onClose={() => setHistoryOpen(false)} title="Assignment Audit Log">

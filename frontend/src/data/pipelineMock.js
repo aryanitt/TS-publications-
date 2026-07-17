@@ -1,9 +1,8 @@
 import { PIPELINE_STAGE_DEFINITIONS, mapStageToId } from "../lib/pipelineStages.js";
-import { resolveLeadKanbanColumn } from "../lib/leadKanban.js";
+import {
+  groupEmpLeadsKanban,
+} from "../lib/leadKanban.js";
 import { normalizeLeadForDetailPanel } from "../lib/leadSync.js";
-
-const hoursAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
-const daysAgo = (d) => new Date(Date.now() - d * 86400000).toISOString();
 
 export const PIPELINE_STAGES = PIPELINE_STAGE_DEFINITIONS;
 
@@ -14,181 +13,6 @@ export const PRIORITY_BADGE = {
 };
 
 export const PRIORITY_OPTIONS = ["HOT", "WARM", "COLD"];
-
-function lead(id, stage, name, company, value, priority, updatedHours, extra = {}) {
-  return {
-    id,
-    stage,
-    name,
-    company,
-    value,
-    priority,
-    status: extra.status || stage,
-    updatedAt: hoursAgo(updatedHours),
-    phone: extra.phone || "+919876543210",
-    email: extra.email || `${name.split(" ")[0].toLowerCase()}@${company.split(" ")[0].toLowerCase()}.in`,
-    city: extra.city || "Mumbai",
-    source: extra.source || "Website",
-    owner: extra.owner || "Priya Sharma",
-    winProbability: extra.winProbability ?? 50,
-    nextFollowUp: extra.nextFollowUp || "2026-06-22",
-    notes: extra.notes || "",
-    activities: extra.activities || [],
-    tasks: extra.tasks || [],
-  };
-}
-
-export const PIPELINE_LEADS = [
-  lead("p1", "new", "Ananya Sharma", "Penguin India", 478000, "HOT", 31, {
-    city: "Delhi",
-    source: "Meta Ads",
-    winProbability: 42,
-    activities: [
-      { id: 1, type: "created", text: "Lead captured from Meta Lead Form", at: daysAgo(2) },
-      { id: 2, type: "note", text: "Requested catalog pricing for Q3", at: hoursAgo(31) },
-    ],
-    tasks: [
-      { id: 1, text: "Send intro deck", done: false },
-      { id: 2, text: "Qualify budget timeline", done: false },
-    ],
-  }),
-  lead("p2", "new", "Rohan Mehta", "Mehta Textiles", 215000, "WARM", 18, {
-    source: "Google Ads",
-    activities: [{ id: 1, type: "created", text: "Inbound from Google Ads campaign", at: hoursAgo(18) }],
-    tasks: [{ id: 1, text: "First outreach call", done: false }],
-  }),
-  lead("p3", "new", "Kavya Nair", "Nair Foods", 89000, "COLD", 52, {
-    source: "Website",
-    activities: [{ id: 1, type: "created", text: "Website form submission", at: hoursAgo(52) }],
-    tasks: [],
-  }),
-  lead("p4", "new", "Arjun Patel", "Patel Logistics", 156000, "WARM", 8, {
-    source: "Referral",
-    activities: [{ id: 1, type: "created", text: "Referred by existing client", at: hoursAgo(8) }],
-    tasks: [{ id: 1, text: "Verify referral contact", done: true }],
-  }),
-  lead("p5", "new", "Isha Dutta", "Dutta Media", 124000, "COLD", 26, {
-    source: "WhatsApp",
-    activities: [{ id: 1, type: "created", text: "WhatsApp inquiry received", at: hoursAgo(26) }],
-    tasks: [],
-  }),
-
-  lead("p6", "contacted", "Meera Joshi", "Joshi Retail", 175000, "HOT", 14, {
-    activities: [
-      { id: 1, type: "call", text: "Discovery call completed — 22 min", at: hoursAgo(14) },
-      { id: 2, type: "email", text: "Follow-up email sent with case study", at: hoursAgo(20) },
-    ],
-    tasks: [
-      { id: 1, text: "Schedule demo", done: false },
-      { id: 2, text: "Share ROI calculator", done: true },
-    ],
-  }),
-  lead("p7", "contacted", "Harish Bhatt", "Bhatt Manufacturing", 310000, "WARM", 22, {
-    activities: [{ id: 1, type: "call", text: "Left voicemail, awaiting callback", at: hoursAgo(22) }],
-    tasks: [{ id: 1, text: "Retry call tomorrow", done: false }],
-  }),
-  lead("p8", "contacted", "Divya Menon", "Menon Foods", 145000, "WARM", 6, {
-    activities: [{ id: 1, type: "meeting", text: "Intro meeting held with ops head", at: hoursAgo(6) }],
-    tasks: [{ id: 1, text: "Send meeting recap", done: false }],
-  }),
-  lead("p9", "contacted", "Tanvi Shah", "Shah Jewellers", 195000, "WARM", 40, {
-    activities: [{ id: 1, type: "email", text: "Pricing sheet shared", at: hoursAgo(40) }],
-    tasks: [],
-  }),
-  lead("p10", "contacted", "Vikram Singh", "Singh Auto", 88000, "COLD", 72, {
-    activities: [{ id: 1, type: "call", text: "No answer — 2 attempts", at: hoursAgo(72) }],
-    tasks: [{ id: 1, text: "Try alternate number", done: false }],
-  }),
-
-  lead("p11", "qualified", "Sneha Iyer", "Iyer Tech Solutions", 280000, "WARM", 12, {
-    winProbability: 55,
-    activities: [
-      { id: 1, type: "meeting", text: "Technical qualification completed", at: hoursAgo(12) },
-      { id: 2, type: "note", text: "Budget confirmed for Q3 rollout", at: hoursAgo(24) },
-    ],
-    tasks: [
-      { id: 1, text: "Prepare custom scope", done: false },
-      { id: 2, text: "Loop in solutions engineer", done: true },
-    ],
-  }),
-  lead("p12", "qualified", "Isha Banerjee", "Banerjee Media", 340000, "HOT", 9, {
-    winProbability: 58,
-    activities: [{ id: 1, type: "call", text: "Decision maker identified — CMO", at: hoursAgo(9) }],
-    tasks: [{ id: 1, text: "Draft proposal outline", done: false }],
-  }),
-  lead("p13", "qualified", "Neha Kapoor", "Kapoor Studios", 210000, "WARM", 28, {
-    activities: [{ id: 1, type: "email", text: "Sent qualification questionnaire", at: hoursAgo(28) }],
-    tasks: [{ id: 1, text: "Review questionnaire responses", done: false }],
-  }),
-  lead("p14", "qualified", "Sanjay Rao", "Rao Constructions", 85000, "COLD", 48, {
-    activities: [{ id: 1, type: "note", text: "Needs board approval — slow cycle", at: hoursAgo(48) }],
-    tasks: [],
-  }),
-
-  lead("p15", "proposal", "Deepak Malhotra", "Malhotra Finance", 520000, "HOT", 5, {
-    winProbability: 61,
-    activities: [
-      { id: 1, type: "email", text: "Proposal v2 sent — annual retainer", at: hoursAgo(5) },
-      { id: 2, type: "call", text: "Walkthrough call scheduled Friday", at: hoursAgo(16) },
-    ],
-    tasks: [
-      { id: 1, text: "Proposal walkthrough prep", done: false },
-      { id: 2, text: "Legal review checklist", done: false },
-    ],
-  }),
-  lead("p16", "proposal", "Vivek Choudhary", "Choudhary Pharma", 750000, "HOT", 11, {
-    activities: [{ id: 1, type: "email", text: "Enterprise proposal delivered", at: hoursAgo(11) }],
-    tasks: [{ id: 1, text: "Follow up on open questions", done: false }],
-  }),
-  lead("p17", "proposal", "Lakshmi Venkat", "Venkat Exports", 120000, "COLD", 36, {
-    activities: [{ id: 1, type: "email", text: "Standard proposal sent", at: hoursAgo(36) }],
-    tasks: [],
-  }),
-  lead("p18", "proposal", "Rahul Verma", "Verma Digital", 265000, "WARM", 19, {
-    activities: [{ id: 1, type: "meeting", text: "Proposal review meeting done", at: hoursAgo(19) }],
-    tasks: [{ id: 1, text: "Revise pricing tier", done: false }],
-  }),
-
-  lead("p19", "negotiation", "Amit Desai", "Desai Logistics", 450000, "HOT", 4, {
-    winProbability: 72,
-    activities: [
-      { id: 1, type: "call", text: "Negotiated 8% discount on year-1", at: hoursAgo(4) },
-      { id: 2, type: "note", text: "Legal reviewing MSA redlines", at: hoursAgo(10) },
-    ],
-    tasks: [
-      { id: 1, text: "Finalize contract terms", done: false },
-      { id: 2, text: "Get finance sign-off", done: false },
-    ],
-  }),
-  lead("p20", "negotiation", "Rohit Saxena", "Saxena Auto", 890000, "HOT", 7, {
-    winProbability: 78,
-    activities: [{ id: 1, type: "meeting", text: "Commercial terms discussion", at: hoursAgo(7) }],
-    tasks: [{ id: 1, text: "Send revised SOW", done: false }],
-  }),
-  lead("p21", "negotiation", "Karan Gill", "Gill Sports", 395000, "WARM", 15, {
-    activities: [{ id: 1, type: "email", text: "Counter-offer received", at: hoursAgo(15) }],
-    tasks: [{ id: 1, text: "Prepare counter proposal", done: false }],
-  }),
-
-  lead("p22", "payment_complete", "Manish Tiwari", "Tiwari Infra", 420000, "HOT", 120, {
-    winProbability: 100,
-    activities: [
-      { id: 1, type: "won", text: "Deal closed — contract signed", at: daysAgo(5) },
-      { id: 2, type: "note", text: "Kickoff scheduled for next week", at: daysAgo(4) },
-    ],
-    tasks: [{ id: 1, text: "Hand off to onboarding", done: true }],
-  }),
-  lead("p23", "payment_complete", "Pooja Agarwal", "Agarwal Healthcare", 680000, "HOT", 336, {
-    winProbability: 100,
-    activities: [{ id: 1, type: "won", text: "Closed won — enterprise package", at: daysAgo(14) }],
-    tasks: [],
-  }),
-  lead("p24", "payment_complete", "Sarah Chen", "Chen Analytics", 550000, "WARM", 480, {
-    winProbability: 100,
-    activities: [{ id: 1, type: "won", text: "Annual subscription signed", at: daysAgo(20) }],
-    tasks: [{ id: 1, text: "Send welcome kit", done: true }],
-  }),
-];
 
 export function formatPipelineValue(amount) {
   const n = Number(amount) || 0;
@@ -228,14 +52,14 @@ export function patchLead(lead, patch, activityText, activityType = "note") {
   return next;
 }
 
-export function groupLeadsByStage(leads, calls = []) {
-  const map = Object.fromEntries(PIPELINE_STAGES.map((s) => [s.id, []]));
-  leads.forEach((l) => {
-    const normalized = normalizeLeadForDetailPanel(l) || l;
-    const id = resolveLeadKanbanColumn(normalized, calls);
-    if (map[id]) map[id].push(l);
+export function groupLeadsByStage(leads, calls = [], options = {}) {
+  const period = String(options.period || "month").toLowerCase();
+  const meetings = options.meetings || [];
+  return groupEmpLeadsKanban(leads, calls, {
+    period,
+    meetings,
+    visibleLeads: options.visibleLeads,
   });
-  return map;
 }
 
 const FORM_STAGE_TO_PIPELINE = {
@@ -245,9 +69,9 @@ const FORM_STAGE_TO_PIPELINE = {
   "Conversation 2 min+": "conversation_2min",
   Conversation: "conversation_2min",
   "Conversation - 5 (Inko follow Up)": "conversation_2min",
-  Contacted: "conversation_2min",
-  Qualified: "conversation_2min",
-  Attempted: "conversation_2min",
+  Contacted: "lead",
+  Qualified: "meeting_booked",
+  Attempted: "not_pick",
   "Meeting Booked": "meeting_booked",
   Booked: "meeting_booked",
   "Call Booked": "meeting_booked",
@@ -272,7 +96,7 @@ const FORM_TEMP_TO_PRIORITY = {
 
 export function leadFromForm(raw) {
   const stage = FORM_STAGE_TO_PIPELINE[raw.pipeline_stage] || "lead";
-  const priority = FORM_TEMP_TO_PRIORITY[raw.temperature] || "WARM";
+  const priority = FORM_TEMP_TO_PRIORITY[raw.temperature] || "COLD";
   const assigneeName =
     raw.assignee_name ||
     raw.assigneeName ||
@@ -311,10 +135,16 @@ export function leadFromForm(raw) {
 
 export function getPipelineSummary(leads) {
   const total = leads.length;
-  const hot = leads.filter((l) => l.priority === "HOT").length;
-  const warm = leads.filter((l) => l.priority === "WARM").length;
-  const cold = leads.filter((l) => l.priority === "COLD").length;
-  const value = leads.reduce((s, l) => s + l.value, 0);
+  let hot = 0;
+  let warm = 0;
+  let cold = 0;
+  for (const l of leads) {
+    const temp = String(l.temperature || l.status || "").toLowerCase();
+    if (l.priority === "HOT" || temp.includes("hot")) hot += 1;
+    else if (l.priority === "COLD" || temp.includes("cold")) cold += 1;
+    else warm += 1;
+  }
+  const value = leads.reduce((s, l) => s + (Number(l.value) || 0), 0);
   
   const notInterested = leads.filter((l) => {
     const status = String(l.status || "").toLowerCase().trim();

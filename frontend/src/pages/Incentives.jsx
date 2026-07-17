@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import {
   Calculator, Calendar, Target, Users, Kanban, Award,
-  Clock, Phone, TrendingUp, MessageSquare, Repeat, Mail, Tag,
+  Clock, Phone, TrendingUp, MessageSquare, Repeat, Mail, Tag, Download,
 } from "lucide-react";
 import {
   Tooltip, ResponsiveContainer,
@@ -21,6 +21,13 @@ import { useEmployeeKraMetrics } from "../lib/useEmployeeKraMetrics.js";
 import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
 import { KRA_PERIODS, kraPeriodLabel } from "../lib/kraPeriod.js";
 import { CustomSelect } from "../components/CustomSelect.jsx";
+import { downloadEmployeeIncentiveReport } from "../lib/incentiveReportExport.js";
+import {
+  computeRemunerationBreakdown,
+  computeWeightedKraScore,
+  resolveIncentiveSlabRate,
+  DEFAULT_INCENTIVE_SETTINGS,
+} from "../lib/incentiveCalculator.js";
 
 const MONTH_OPTIONS = [
   { value: "2026-07", label: "July, 2026" },
@@ -107,8 +114,8 @@ function classifyIncentiveLeadTab(lead) {
 function tempToPriorityLabel(temp) {
   const t = String(temp || "").toLowerCase();
   if (t.includes("hot")) return "HOT";
-  if (t.includes("cold")) return "COLD";
-  return "WARM";
+  if (t.includes("warm")) return "WARM";
+  return "COLD";
 }
 
 function getLeadWeekIndex(dateIso, monthValue) {
@@ -353,20 +360,27 @@ function computeKraEarned(actual, target, weight) {
   return Math.round((achievement / 100) * weight * 10) / 10;
 }
 
-function computeIncentiveFromDraft(draft) {
-  const comm = Math.round(getSafeNum(draft.cashCollected) * (getSafeNum(draft.incRate) / 100));
-  const bonus = getSafeNum(draft.incBonus);
-  const penalty = getSafeNum(draft.penaltyDeduction);
-  return Math.round(comm + bonus - penalty);
+function computeWeightedScore(emp, kraRows) {
+  return computeWeightedKraScore(emp, kraRows);
 }
 
-function computeWeightedScore(emp, kraRows) {
-  let earned = 0;
-  kraRows.forEach((row) => {
-    const { actual, target } = getInsightValues(emp, row.key);
-    earned += computeKraEarned(actual, target, row.weight);
-  });
-  return Math.round(earned * 10) / 10;
+function buildRemunerationOptions({
+  kraRows,
+  selected,
+  weightedPerformance,
+  incentiveSettings,
+  calcDraft,
+  useManualCashRate = false,
+}) {
+  return {
+    kraRows,
+    employee: selected,
+    weightedPerformance,
+    baseIncentiveRate: incentiveSettings.baseIncentiveRate,
+    targetBonusAmount: incentiveSettings.targetBonusAmount,
+    incentiveSlabs: incentiveSettings.incentiveSlabs,
+    useManualCashRate,
+  };
 }
 
 function incentiveStatusTone(status) {
@@ -535,6 +549,7 @@ export default function Incentives() {
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcDraft, setCalcDraft] = useState(null);
   const [calcResult, setCalcResult] = useState(null);
+  const [incentiveSettings, setIncentiveSettings] = useState(DEFAULT_INCENTIVE_SETTINGS);
   const [employeeLeads, setEmployeeLeads] = useState([]);
   const [loadingEmployeeLeads, setLoadingEmployeeLeads] = useState(false);
   const { metrics: kraMetrics } = useEmployeeKraMetrics(selectedId, {
@@ -549,6 +564,13 @@ export default function Incentives() {
       try {
         // First try incentives dashboard (has performance data)
         const incData = await apiGet(`/api/incentives/dashboard?month=${selectedMonth}`, { skipCache: true, cacheTtl: 0 });
+        setIncentiveSettings({
+          baseIncentiveRate: incData.baseIncentiveRate ?? DEFAULT_INCENTIVE_SETTINGS.baseIncentiveRate,
+          targetBonusAmount: incData.targetBonusAmount ?? DEFAULT_INCENTIVE_SETTINGS.targetBonusAmount,
+          incentiveSlabs: incData.incentiveSlabs?.length
+            ? incData.incentiveSlabs
+            : DEFAULT_INCENTIVE_SETTINGS.incentiveSlabs,
+        });
         if (incData.teammates?.length) {
           const mapped = incData.teammates.map((t) => ({
             ...buildBlankTeammate(t),
@@ -842,10 +864,16 @@ export default function Incentives() {
 
   useEffect(() => {
     if (calcOpen && selected) {
-      setCalcDraft(buildDraftFromEmployee(selected));
+      const draft = buildDraftFromEmployee(selected);
+      draft.incRate = resolveIncentiveSlabRate(
+        draft.cashCollected,
+        incentiveSettings.incentiveSlabs,
+        incentiveSettings.baseIncentiveRate,
+      );
+      setCalcDraft(draft);
       setCalcResult(null);
     }
-  }, [calcOpen, selected]);
+  }, [calcOpen, selected, incentiveSettings]);
 
   const handleCalculateOpen = () => {
     setCalcOpen(true);
@@ -857,17 +885,23 @@ export default function Incentives() {
       toast.error("KRA weights must total 100%");
       return;
     }
-    const incentiveAmount = computeIncentiveFromDraft(calcDraft);
-    const commission = Math.round(getSafeNum(calcDraft.cashCollected) * (getSafeNum(calcDraft.incRate) / 100));
-    const performance = computeWeightedScore(
-      { ...selected, ...calcDraft },
-      kraRows,
+    const performance = computeWeightedScore({ ...selected, ...calcDraft }, kraRows);
+    const breakdown = computeRemunerationBreakdown(
+      calcDraft,
+      buildRemunerationOptions({
+        kraRows,
+        selected,
+        weightedPerformance: performance,
+        incentiveSettings,
+        calcDraft,
+        useManualCashRate: true,
+      }),
     );
     setCalcResult({
-      incentiveAmount,
-      commission,
+      ...breakdown,
+      incentiveAmount: breakdown.incentiveTotal,
       performance,
-      totalRemuneration: getSafeNum(calcDraft.baseSalary) + incentiveAmount,
+      totalRemuneration: breakdown.totalMoney,
     });
     toast.success(`Calculated for ${selected.name}`);
   };
@@ -890,6 +924,69 @@ export default function Incentives() {
 
   const updateDraft = (field, val) => {
     setCalcDraft((prev) => ({ ...prev, [field]: val === "" ? "" : getSafeNum(val) || val }));
+  };
+
+  const remunerationPreview = useMemo(() => {
+    if (!selected) return null;
+    const draft = calcDraft || buildDraftFromEmployee(selected);
+    const performance = calcResult?.performance ?? weightedPerformance;
+    return computeRemunerationBreakdown(
+      draft,
+      buildRemunerationOptions({
+        kraRows,
+        selected,
+        weightedPerformance: performance,
+        incentiveSettings,
+        calcDraft: draft,
+        useManualCashRate: Boolean(calcDraft),
+      }),
+    );
+  }, [calcDraft, selected, calcResult, weightedPerformance, kraRows, incentiveSettings]);
+
+  const reportLeads = useMemo(() => {
+    if (!selected || !employeeLeads.length) return [];
+    return employeeLeads
+      .map((lead) => {
+        const tab = classifyIncentiveLeadTab(lead);
+        const mapped = apiLeadToEmployee(lead);
+        return mapTeamLeadToStatusCardWithWeek(
+          lead,
+          tab,
+          selected,
+          monthLabel,
+          weekRanges,
+          selectedMonth,
+        );
+      })
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  }, [selected, employeeLeads, monthLabel, weekRanges, selectedMonth]);
+
+  const buildReportPayload = () => ({
+    employee: selected,
+    monthValue: selectedMonth,
+    monthLabel,
+    kraPeriod,
+    kraRows,
+    insightRows,
+    kraMetrics,
+    serviceMetrics,
+    leadSnapshot,
+    competency: radarData,
+    remunerationDraft: calcDraft || buildDraftFromEmployee(selected),
+    calcResult,
+    leads: reportLeads,
+    weightedPerformance,
+    incentiveSettings,
+  });
+
+  const handleDownloadReport = (format = "csv") => {
+    if (!selected) return;
+    downloadEmployeeIncentiveReport(buildReportPayload(), format);
+    toast.success(
+      format === "csv"
+        ? `Report downloaded for ${selected.name}`
+        : `Opening printable report for ${selected.name}`,
+    );
   };
 
   if (loadingEmployees) {
@@ -948,6 +1045,15 @@ export default function Incentives() {
             >
               {selected.status}
             </span>
+            <button
+              type="button"
+              onClick={() => handleDownloadReport("csv")}
+              className="inline-flex items-center justify-center gap-1.5 h-9 sm:h-10 px-2.5 sm:px-3 rounded-lg sm:rounded-xl border border-slate-200 bg-white hover:border-rose-300 hover:bg-rose-50 text-slate-700 text-[11px] sm:text-xs font-bold transition shrink-0"
+              title="Download employee report (CSV)"
+            >
+              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="hidden sm:inline">Report</span>
+            </button>
             <button
               type="button"
               onClick={handleCalculateOpen}
@@ -1020,10 +1126,12 @@ export default function Incentives() {
                   {totalKraWeight}%
                 </p>
               </div>
-              {calcResult && (
+              {remunerationPreview && (
                 <div>
                   <p className="text-[9px] font-bold text-slate-400 uppercase">Incentive</p>
-                  <p className="text-sm font-black text-rose-700 tabular-nums">{formatCash(calcResult.incentiveAmount)}</p>
+                  <p className="text-sm font-black text-rose-700 tabular-nums">
+                    {formatCash(calcResult?.incentiveAmount ?? remunerationPreview.incentiveTotal)}
+                  </p>
                 </div>
               )}
             </div>
@@ -1287,26 +1395,54 @@ export default function Incentives() {
 
             <div>
               <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Performance Inputs</h4>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Base Salary ($)</label>
+                  <input
+                    type="number"
+                    value={calcDraft.baseSalary}
+                    onChange={(e) => updateDraft("baseSalary", e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 text-slate-800 text-xs font-bold outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400"
+                  />
+                </div>
+
                 {[
-                  { field: "baseSalary", label: "Base Salary ($)" },
-                  { field: "callsCompleted", label: "Calls Completed" },
-                  { field: "callsTarget", label: "Calls Target" },
-                  { field: "qualifiedLeads", label: "Qualified Leads" },
-                  { field: "qualifiedTarget", label: "Qualified Target" },
-                  { field: "meetingsScheduled", label: "Meetings Scheduled" },
-                  { field: "meetingsTarget", label: "Meetings Target" },
-                  { field: "cashCollected", label: "Cash Collected (₹)" },
-                  { field: "cashTarget", label: "Cash Target (₹)" },
-                ].map(({ field, label }) => (
-                  <div key={field}>
-                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block mb-1">{label}</label>
-                    <input
-                      type="number"
-                      value={calcDraft[field]}
-                      onChange={(e) => updateDraft(field, e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 text-slate-800 text-xs font-bold outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400"
-                    />
+                  {
+                    label: "Calls",
+                    left: { field: "callsCompleted", label: "Calls Completed" },
+                    right: { field: "callsTarget", label: "Calls Target" },
+                  },
+                  {
+                    label: "Qualified Leads",
+                    left: { field: "qualifiedLeads", label: "Qualified Leads" },
+                    right: { field: "qualifiedTarget", label: "Qualified Target" },
+                  },
+                  {
+                    label: "Meetings",
+                    left: { field: "meetingsScheduled", label: "Meetings Scheduled" },
+                    right: { field: "meetingsTarget", label: "Meetings Target" },
+                  },
+                  {
+                    label: "Cash",
+                    left: { field: "cashCollected", label: "Cash Collected (₹)" },
+                    right: { field: "cashTarget", label: "Cash Target (₹)" },
+                  },
+                ].map(({ label, left, right }) => (
+                  <div key={label} className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+                    <p className="text-[9px] font-bold text-rose-700 uppercase tracking-wide mb-2">{label}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[left, right].map(({ field, label: fieldLabel }) => (
+                        <div key={field}>
+                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block mb-1">{fieldLabel}</label>
+                          <input
+                            type="number"
+                            value={calcDraft[field]}
+                            onChange={(e) => updateDraft(field, e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-slate-800 text-xs font-bold outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1316,7 +1452,7 @@ export default function Incentives() {
               <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Incentive Settings</h4>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { field: "incRate", label: "Incentive Rate (%)" },
+                  { field: "incRate", label: "Cash Commission Rate (%)" },
                   { field: "incBonus", label: "Bonus ($)" },
                   { field: "penaltyDeduction", label: "Penalty ($)" },
                 ].map(({ field, label }) => (
@@ -1354,31 +1490,111 @@ export default function Incentives() {
               </div>
             </div>
 
+            {remunerationPreview && (
+              <div className="rounded-xl border border-emerald-200 bg-gradient-to-b from-emerald-50/70 to-white overflow-hidden">
+                <div className="px-3 py-2 bg-emerald-100/80 text-[10px] font-bold text-emerald-800 uppercase tracking-wide">
+                  Total Money
+                </div>
+                <div className="px-3 py-3 space-y-2 text-xs">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-600">Base Salary</span>
+                    <span className="font-bold text-slate-800 tabular-nums">{formatCash(remunerationPreview.baseSalary)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-600">
+                      KRA Incentive ({remunerationPreview.kraScore}% × {remunerationPreview.baselineRate}% of salary)
+                    </span>
+                    <span className="font-bold text-rose-700 tabular-nums">{formatCash(remunerationPreview.kraIncentive)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-600">
+                      Cash Commission{calcDraft?.incRate ? ` (${calcDraft.incRate}% on cash)` : ""}
+                    </span>
+                    <span className="font-bold text-rose-700 tabular-nums">{formatCash(remunerationPreview.cashCommission)}</span>
+                  </div>
+                  {(remunerationPreview.bonus > 0 || remunerationPreview.autoTargetBonus > 0) && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-600">
+                        Bonus
+                        {remunerationPreview.autoTargetBonus > 0 ? " (target reached)" : ""}
+                      </span>
+                      <span className="font-bold text-emerald-700 tabular-nums">{formatCash(remunerationPreview.bonus)}</span>
+                    </div>
+                  )}
+                  {remunerationPreview.penalty > 0 && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-600">Penalty</span>
+                      <span className="font-bold text-red-600 tabular-nums">−{formatCash(remunerationPreview.penalty)}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-emerald-100 pt-2.5 flex justify-between items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-800">Total</span>
+                    <span className="text-xl font-black text-emerald-700 tabular-nums">
+                      {formatCash(remunerationPreview.totalMoney)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleRunCalculation}
+                className="w-full py-3 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold shadow-md flex items-center justify-center gap-2 transition"
+              >
+                <Calculator className="w-4 h-4" />
+                Calculate Incentive
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadReport("csv")}
+                className="w-full py-3 rounded-xl border border-slate-200 bg-white hover:border-rose-300 hover:bg-rose-50 text-slate-700 text-sm font-bold flex items-center justify-center gap-2 transition"
+              >
+                <Download className="w-4 h-4" />
+                Download Report
+              </button>
+            </div>
             <button
               type="button"
-              onClick={handleRunCalculation}
-              className="w-full py-3 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold shadow-md flex items-center justify-center gap-2 transition"
+              onClick={() => handleDownloadReport("html")}
+              className="w-full py-2 rounded-xl border border-dashed border-slate-200 text-slate-500 hover:text-rose-700 hover:border-rose-200 text-xs font-semibold transition"
             >
-              <Calculator className="w-4 h-4" />
-              Calculate Incentive
+              Download PDF Report
             </button>
 
             {calcResult && (
               <div className="rounded-xl border border-rose-200 bg-gradient-to-b from-rose-50/80 to-white p-4 space-y-3">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Commission ({calcDraft.incRate}%)</span>
-                  <span className="font-bold">{formatCash(calcResult.commission)}</span>
+                  <span className="text-slate-500">Base Salary</span>
+                  <span className="font-bold">{formatCash(calcResult.baseSalary)}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Incentive Amount</span>
-                  <span className="font-bold text-rose-700">{formatCash(calcResult.incentiveAmount)}</span>
+                  <span className="text-slate-500">KRA Incentive ({calcResult.kraScore}% performance)</span>
+                  <span className="font-bold text-rose-700">{formatCash(calcResult.kraIncentive)}</span>
                 </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500">Cash Commission ({calcDraft.incRate}% on cash)</span>
+                  <span className="font-bold text-rose-700">{formatCash(calcResult.cashCommission)}</span>
+                </div>
+                {calcResult.bonus > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Bonus</span>
+                    <span className="font-bold text-emerald-700">{formatCash(calcResult.bonus)}</span>
+                  </div>
+                )}
+                {calcResult.penalty > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Penalty</span>
+                    <span className="font-bold text-red-600">−{formatCash(calcResult.penalty)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">KRA Performance</span>
                   <span className="font-bold">{calcResult.performance}%</span>
                 </div>
                 <div className="border-t border-rose-100 pt-3 flex justify-between items-center">
-                  <span className="text-sm font-semibold text-slate-700">Total Remuneration</span>
+                  <span className="text-sm font-semibold text-slate-700">Total Money</span>
                   <span className="text-2xl font-black text-rose-700">{formatCash(calcResult.totalRemuneration)}</span>
                 </div>
               </div>

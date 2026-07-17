@@ -17,6 +17,7 @@ import {
 import { TimeOfDaySelects } from "../components/TimeOfDaySelects.jsx";
 import { LOCAL_SOPS, LEAD_STATUS_LABELS, EMP_KANBAN_STAGES, getEmpStageMeta, mapEmpLeadKanbanStage, resolveLeadForCall } from "../../data/employeeMock.js";
 import { temperatureToApi, workflowStatusFromTemperature, apiLeadToEmployee, unwrapApiList } from "../../lib/leadSync.js";
+import { formatCallDisplayDate, formatCallDurationLabel } from "../../lib/callDisplay.js";
 
 const EMP_STAGE_OPTIONS = EMP_KANBAN_STAGES.map((stage) => ({
   id: stage.id,
@@ -731,8 +732,16 @@ export default function EmployeeCallDetail() {
             
             <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-0.5 flex-wrap">
               <span className="flex items-center gap-1 font-semibold">
-                <Clock className="w-3.5 h-3.5 text-rose-500" /> {call.date}
+                <Clock className="w-3.5 h-3.5 text-rose-500" /> {formatCallDisplayDate(call.callAt || call.startedAt || call.date)}
               </span>
+              {formatCallDurationLabel(call) ? (
+                <>
+                  <span>•</span>
+                  <span className="flex items-center gap-1 font-semibold tabular-nums">
+                    {formatCallDurationLabel(call)} connected
+                  </span>
+                </>
+              ) : null}
               <span>•</span>
               <span className="flex items-center gap-1 font-semibold">
                 <Volume2 className="w-3.5 h-3.5 text-rose-500" /> {call.type === "out" ? "Outbound Call" : "Inbound Call"}

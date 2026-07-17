@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Bot, Database, Target, Briefcase, Code, Plus, Trash2,
+  Users, Shuffle, Zap,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
@@ -9,6 +10,8 @@ import {
   SERVICE_CATEGORIES, formatServicePriceLabel,
 } from "../../data/servicesMock.js";
 import { apiGet, apiPost } from "../../lib/api.js";
+import { getAdminCrmHeaders } from "../../lib/crmContext.js";
+import { apiEmployeeToAdmin, unwrapApiData } from "../../lib/leadSync.js";
 
 const ICON_MAP = {
   bot: Bot,
@@ -20,6 +23,7 @@ const ICON_MAP = {
 
 const TABS = [
   "General Information",
+  "Lead Distribution",
   "Pricing & Plans",
   "Features & Workflow",
 ];
@@ -46,6 +50,10 @@ function initDraft(service) {
     tags: [...(service.tags || [])],
     tiers: (service.tiers || []).map((t) => ({ ...t, features: [...(t.features || [])] })),
     features: (service.features || []).map((f) => ({ ...f })),
+    distributionEnabled: Boolean(service.distributionEnabled),
+    distributionEmployeeIds: (service.distributionEmployeeIds || []).map(String),
+    distributionRrIndex: Number(service.distributionRrIndex) || 0,
+    lastDistributedAt: service.lastDistributedAt || null,
   };
 }
 
@@ -93,23 +101,41 @@ export default function ServiceEdit() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("General Information");
   const [draft, setDraft] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [distributing, setDistributing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const res = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
-        const found = (res?.services || []).find((s) => String(s.id) === String(serviceId)) || null;
+        const [svcRes, empRes] = await Promise.all([
+          apiGet("/api/services", { skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 })
+            .then((res) => {
+              if (res?.success && Array.isArray(res.employees) && res.employees.length) {
+                return res.employees;
+              }
+              throw new Error("empty");
+            })
+            .catch(() =>
+              apiGet("/api/v1/employees", { headers: getAdminCrmHeaders(), skipCache: true, cacheTtl: 0 })
+                .then((res) => unwrapApiData(res).map(apiEmployeeToAdmin))
+                .catch(() => []),
+            ),
+        ]);
+        const found = (svcRes?.services || []).find((s) => String(s.id) === String(serviceId)) || null;
         if (!cancelled) {
           setService(found);
           setDraft(initDraft(found));
+          setEmployees(Array.isArray(empRes) ? empRes : []);
           setActiveTab("General Information");
         }
       } catch {
         if (!cancelled) {
           setService(null);
           setDraft(null);
+          setEmployees([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -193,6 +219,42 @@ export default function ServiceEdit() {
     }));
   };
 
+  const toggleDistributionEmployee = (employeeId) => {
+    const id = String(employeeId);
+    setDraft((prev) => {
+      const current = new Set((prev.distributionEmployeeIds || []).map(String));
+      if (current.has(id)) current.delete(id);
+      else current.add(id);
+      return { ...prev, distributionEmployeeIds: [...current] };
+    });
+  };
+
+  const runDistributionNow = async () => {
+    if (!draft.distributionEmployeeIds?.length) {
+      toast.error("Select at least one employee first");
+      return;
+    }
+    setDistributing(true);
+    try {
+      await apiPost("/api/services", {
+        ...draft,
+        id: service.id,
+        distributionEnabled: draft.distributionEnabled,
+        distributionEmployeeIds: draft.distributionEmployeeIds,
+      });
+      const res = await apiPost(`/api/services/${service.id}/distribute`, {});
+      const count = res?.assigned ?? 0;
+      toast.success(count ? `${count} lead(s) distributed for ${draft.name}` : "No unassigned leads matched this service");
+      if (res?.details?.[0]?.assigned != null) {
+        setDraft((prev) => ({ ...prev, lastDistributedAt: new Date().toISOString() }));
+      }
+    } catch {
+      toast.error("Distribution failed — save settings and ensure backend is running");
+    } finally {
+      setDistributing(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!draft.name.trim()) {
       toast.error("Service name is required");
@@ -206,6 +268,9 @@ export default function ServiceEdit() {
       description: draft.description.trim(),
       price: formatServicePriceLabel(draft.price, priceNum),
       priceNum,
+      distributionEnabled: Boolean(draft.distributionEnabled),
+      distributionEmployeeIds: (draft.distributionEmployeeIds || []).map(String),
+      distributionRrIndex: Number(draft.distributionRrIndex) || 0,
       tiers: (draft.tiers || []).map((tier) => ({
         ...tier,
         price: formatServicePriceLabel(tier.price),
@@ -213,6 +278,9 @@ export default function ServiceEdit() {
     };
     try {
       await apiPost("/api/services", payload);
+      if (payload.distributionEnabled && payload.distributionEmployeeIds.length) {
+        await apiPost(`/api/services/${service.id}/distribute`, {}).catch(() => {});
+      }
       toast.success(`${payload.name} saved`);
       navigate(`/services/${service.id}`);
     } catch {
@@ -344,6 +412,92 @@ export default function ServiceEdit() {
                   <p className="text-[10px] text-slate-400 mt-1.5">Used for filtering and card labels on the services catalog.</p>
                 </div>
               </FormSection>
+            </div>
+          )}
+
+          {activeTab === "Lead Distribution" && (
+            <div className="space-y-4">
+              <FormSection
+                title="Auto Distribution"
+                subtitle="Unassigned leads with this service name are shared equally across selected employees every 10 minutes."
+              >
+                <div>
+                  <label className={labelClass}>Distribution</label>
+                  <SegmentedControl
+                    options={[false, true]}
+                    value={draft.distributionEnabled}
+                    onChange={(distributionEnabled) => patch({ distributionEnabled })}
+                    formatLabel={(v) => (v ? "ON · every 10 min" : "OFF")}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                    Matches leads whose <strong>Service</strong> field equals “{draft.name}” (from n8n or manual add).
+                    Assignments rotate evenly across the team you select below.
+                  </p>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Select employees</label>
+                  {employees.length === 0 ? (
+                    <p className="text-xs text-slate-400 py-3">No team members loaded — add employees in Team Management.</p>
+                  ) : (
+                    <div className="rounded-xl border border-rose-100 bg-white max-h-56 overflow-y-auto divide-y divide-rose-50">
+                      {employees.map((emp) => {
+                        const checked = (draft.distributionEmployeeIds || []).map(String).includes(String(emp.id));
+                        return (
+                          <label
+                            key={emp.id}
+                            className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition ${checked ? "bg-rose-50/80" : "hover:bg-rose-50/40"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDistributionEmployee(emp.id)}
+                              className="accent-rose-600"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-slate-900 truncate">{emp.name}</p>
+                              <p className="text-[10px] text-slate-400 truncate">{emp.department || emp.role || "Sales"}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    {(draft.distributionEmployeeIds || []).length} employee{(draft.distributionEmployeeIds || []).length === 1 ? "" : "s"} selected
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={distributing || !draft.distributionEmployeeIds?.length}
+                    onClick={runDistributionNow}
+                    className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50 transition"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    {distributing ? "Distributing…" : "Distribute now"}
+                  </button>
+                  {draft.lastDistributedAt && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 self-center">
+                      <Shuffle className="w-3 h-3" />
+                      Last run {new Date(draft.lastDistributedAt).toLocaleString("en-IN")}
+                    </span>
+                  )}
+                </div>
+              </FormSection>
+
+              <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 p-4 flex gap-3">
+                <Users className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-slate-600 leading-relaxed">
+                  <p className="font-bold text-slate-800 mb-1">How it works</p>
+                  <ul className="list-disc pl-4 space-y-1 text-slate-500">
+                    <li>Only <strong>unassigned</strong> leads with service “{draft.name}” are included.</li>
+                    <li>Leads rotate one-by-one across selected employees (equal load).</li>
+                    <li>Turn <strong>Distribution ON</strong> and save — the server runs every 10 minutes automatically.</li>
+                  </ul>
+                </div>
+              </div>
             </div>
           )}
 

@@ -69,3 +69,14 @@ export function filterCallsForPeriod(calls, period, now = new Date()) {
   if (!period || period === "all") return list;
   return list.filter((c) => isCallInPeriod(c, period, now));
 }
+
+export function filterLeadsByActivityPeriod(leads, period, now = new Date()) {
+  const list = Array.isArray(leads) ? leads : [];
+  if (!period || period === "all") return list;
+  return list.filter((lead) => {
+    const raw = lead.updatedAt || lead.lastActivityAt || lead.createdAt || lead.last;
+    if (!raw) return period === "month";
+    const key = localDateKey(new Date(raw));
+    return isDateKeyInPeriod(key, period, now);
+  });
+}

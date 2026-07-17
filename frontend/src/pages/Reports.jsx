@@ -16,6 +16,8 @@ import {
 } from "recharts";
 import { GlassCard, SectionHeader, StatCard, Badge } from "../components/Primitives.jsx";
 import { motion } from "framer-motion";
+import { useDateRange } from "../context/DateRangeContext.jsx";
+import { buildPeriodQueryParams } from "../lib/periodQuery.js";
 import { apiGet, readCachedJson } from "../lib/api.js";
 import { formatINR } from "../lib/indianFormat.js";
 
@@ -173,6 +175,7 @@ function TeamTooltip({ active, payload, label }) {
   );
 }
 export default function Reports() {
+  const { preset, bounds } = useDateRange();
   const [exportFormat, setExportFormat] = useState("PDF");
   const [chartRevenue, setChartRevenue] = useState([]);
   const [leadSources, setLeadSources] = useState([]);
@@ -205,12 +208,16 @@ export default function Reports() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const periodQuery = buildPeriodQueryParams({ preset, bounds }).toString();
+
     (async () => {
       try {
         const [dash, analytics] = await Promise.all([
-          apiGet("/api/reports/dashboard", { skipCache: true, cacheTtl: 0 }),
-          apiGet("/api/reports/analytics", { skipCache: true, cacheTtl: 0 }),
+          apiGet(`/api/reports/dashboard?${periodQuery}`, { skipCache: true, cacheTtl: 0 }),
+          apiGet(`/api/reports/analytics?${periodQuery}`, { skipCache: true, cacheTtl: 0 }),
         ]);
+        if (cancelled) return;
         if (dash.kpis) {
           setReportKpis([
             { label: "Total Revenue", value: dash.kpis.totalRevenue?.value || "—", Icon: DollarSign },
@@ -240,10 +247,14 @@ export default function Reports() {
           })));
         }
       } catch {
-        // keep empty defaults
+        if (!cancelled) {
+          // keep prior values on error
+        }
       }
     })();
-  }, []);
+
+    return () => { cancelled = true; };
+  }, [preset, bounds?.start, bounds?.end]);
 
   const leadSourceTotal = leadSources.reduce((sum, s) => sum + (Number(s.value) || 0), 0);
 
