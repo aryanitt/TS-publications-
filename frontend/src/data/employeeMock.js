@@ -1109,23 +1109,10 @@ export function resolveLeadForCall(call, leadList = []) {
     if (byId) return byId;
   }
 
-  const phone = call.phone || "";
+  const phone = call.phone || call.clientPhone || "";
   if (phone) {
-    const byPhone = leadList.find((l) => phonesMatchLoose(l.phone, phone));
+    const byPhone = leadList.find((l) => phonesMatchLoose(l.phone || l.clientPhone, phone));
     if (byPhone) return byPhone;
-  }
-
-  const name = (call.name || "").trim().toLowerCase();
-  if (name && name !== "unknown lead" && name !== "unknown") {
-    const byExact = leadList.find((l) => String(l.name || "").trim().toLowerCase() === name);
-    if (byExact) return byExact;
-
-    const byPartial = leadList.find((l) => {
-      const leadName = String(l.name || "").trim().toLowerCase();
-      if (!leadName) return false;
-      return leadName.includes(name) || name.includes(leadName);
-    });
-    if (byPartial) return byPartial;
   }
 
   return null;
@@ -1228,8 +1215,12 @@ export function callFromApi(apiCall, leads = []) {
 }
 
 export function followUpToApiPayload(params, employeeId, leads = []) {
-  const { leadName, type, date, time, note, leadId } = params;
-  const lead = leads.find((l) => l.id === leadId || l.name === leadName);
+  const { leadName, type, date, time, note, leadId, phone } = params;
+  const lead = leadId != null
+    ? leads.find((l) => String(l.id) === String(leadId))
+    : (phone
+      ? leads.find((l) => phonesMatchLoose(l.phone || l.clientPhone, phone))
+      : null);
   const resolvedLeadId = leadId ?? lead?.id;
   if (!resolvedLeadId) {
     throw new Error("Select a valid lead to schedule follow-up");

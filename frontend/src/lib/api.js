@@ -70,6 +70,14 @@ export function shouldPersistToApi(usingApi = false) {
   return typeof window !== "undefined";
 }
 
+function resolveLocalDevApiBase() {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl != null && String(envUrl).trim() !== "") {
+    return String(envUrl).replace(/\/$/, "");
+  }
+  return "http://localhost:5000";
+}
+
 export function apiUrl(path) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   if (typeof window !== "undefined") {
@@ -77,6 +85,10 @@ export function apiUrl(path) {
     // egress IP; Hostinger rate-limits bursts (429) and the dashboard shows zeros.
     if (shouldUseDirectBackendUrl()) {
       return `${resolveDirectApiBase()}${normalized}`;
+    }
+    // Local dev: Nitro dev breaks Vite's /api proxy — call Express on :5000 directly.
+    if (isLocalDevHost()) {
+      return `${resolveLocalDevApiBase()}${normalized}`;
     }
     return normalized;
   }

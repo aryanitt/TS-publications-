@@ -9,6 +9,9 @@ import {
   normalizeStageLabel,
 } from "./pipelineStages.js";
 import { formatCallDisplayDate } from "./callDisplay.js";
+import { resolveLeadForCall } from "./leadKanban.js";
+import { phonesMatchLoose } from "./callMetrics.js";
+import { apiGet } from "./api.js";
 
 /** Canonical pipeline_stage values written to DB (employee kanban labels). */
 export const CANONICAL_STAGE_LABELS = EMP_KANBAN_STAGES.map((s) => s.label);
@@ -258,7 +261,7 @@ export function apiEmployeeToAdmin(emp) {
 }
 
 /** Fetch all leads from paginated /api/v1/leads (admin lists were capped at 200). */
-export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPages = 40, extraQuery = {} } = {}) {
+export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPages = 40, extraQuery = {}, skipCache = true, cacheTtl = skipCache ? 0 : 60_000 } = {}) {
   const all = [];
   let page = 1;
 
@@ -272,8 +275,8 @@ export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPage
     });
     const res = await apiGetFn(`/api/v1/leads?${params.toString()}`, {
       headers,
-      skipCache: true,
-      cacheTtl: 0,
+      skipCache,
+      cacheTtl,
     });
     const items = unwrapApiData(res);
     if (!Array.isArray(items) || items.length === 0) break;
@@ -288,8 +291,24 @@ export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPage
   return all;
 }
 
+/** Leads Assign page: two parallel filtered requests instead of full catalog pagination. */
+export async function fetchLeadsForAssignPage(apiGetFn, { headers, queueLimit = 500, assignedLimit = 500 } = {}) {
+  const cacheOpts = { headers, cacheTtl: 60_000, skipCache: false };
+  const [unassignedRes, assignedRes] = await Promise.all([
+    apiGetFn(`/api/v1/leads?assignmentStatus=unassigned&limit=${queueLimit}&page=1`, cacheOpts),
+    apiGetFn(`/api/v1/leads?assignmentStatus=assigned&limit=${assignedLimit}&page=1`, cacheOpts),
+  ]);
+  const unassigned = unwrapApiData(unassignedRes) || [];
+  const assigned = unwrapApiData(assignedRes) || [];
+  const byId = new Map();
+  for (const lead of [...unassigned, ...assigned]) {
+    if (lead?.id != null) byId.set(String(lead.id), lead);
+  }
+  return [...byId.values()];
+}
+
 /** Fetch all leads for an employee (paginates when API returns partial pages). */
-export async function fetchAllEmployeeLeads(apiGetFn, employeeId, { headers, pageSize = 500, maxPages = 40, extraQuery = {} } = {}) {
+export async function fetchAllEmployeeLeads(apiGetFn, employeeId, { headers, pageSize = 500, maxPages = 40, extraQuery = {}, skipCache = true, cacheTtl = skipCache ? 0 : 60_000 } = {}) {
   if (!employeeId) return [];
 
   const extra = Object.fromEntries(
@@ -297,7 +316,7 @@ export async function fetchAllEmployeeLeads(apiGetFn, employeeId, { headers, pag
   );
   const extraQs = new URLSearchParams(extra).toString();
   const bulkPath = `/api/v1/employee/${employeeId}/leads${extraQs ? `?${extraQs}` : ""}`;
-  const bulkRes = await apiGetFn(bulkPath, { headers, skipCache: true, cacheTtl: 0 });
+  const bulkRes = await apiGetFn(bulkPath, { headers, skipCache, cacheTtl });
   const bulkItems = unwrapApiData(bulkRes);
   const bulkTotal = Number(bulkRes?.total);
 
@@ -316,8 +335,8 @@ export async function fetchAllEmployeeLeads(apiGetFn, employeeId, { headers, pag
     });
     const res = await apiGetFn(`/api/v1/employee/${employeeId}/leads?${params.toString()}`, {
       headers,
-      skipCache: true,
-      cacheTtl: 0,
+      skipCache,
+      cacheTtl,
     });
     const items = unwrapApiData(res);
     if (!Array.isArray(items) || items.length === 0) break;
@@ -384,11 +403,19 @@ export function apiLeadToPipeline(lead) {
 
 const DETAIL_AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
 
+function displayLeadName(lead) {
+  const raw = String(lead?.name || lead?.lead_name || lead?.leadName || "").trim();
+  if (raw && !/^unknown$/i.test(raw) && raw !== "Lead") return raw;
+  const phone = String(lead?.phone || lead?.clientPhone || "").replace(/\D/g, "");
+  if (phone.length >= 10) return phone.slice(-10);
+  return raw || "Lead";
+}
+
 /** Normalize admin, pipeline, or employee lead shapes for the shared detail drawer. */
 export function normalizeLeadForDetailPanel(lead) {
   if (!lead) return null;
 
-  const name = lead.name || lead.lead_name || "Lead";
+  const name = displayLeadName(lead);
   const av = lead.av || name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const color = lead.color || DETAIL_AVATAR_COLORS[Number(lead.id) % DETAIL_AVATAR_COLORS.length];
   const revenue = Number(
@@ -412,7 +439,8 @@ export function normalizeLeadForDetailPanel(lead) {
   }
 
   return {
-    id: lead.id,
+    id: lead._dbId ?? lead.id,
+    _dbId: lead._dbId ?? (/^\d+$/.test(String(lead.id)) ? lead.id : null),
     name,
     company: lead.company || lead.company_name || "—",
     phone: lead.phone || "",
@@ -446,4 +474,114 @@ export function buildDetailDraft(lead) {
     company: lead.company || "",
     expectedRevenue: String(lead.expectedRevenue || parseEmpBudget(lead.budget) || ""),
   };
+}
+
+function isNumericLeadId(id) {
+  return /^\d+$/.test(String(id ?? ""));
+}
+
+function mergeCallContextOntoLead(crmLead, cardLead, call) {
+  if (!crmLead) return cardLead;
+  const callAt = call?.callAt || cardLead?.callAt || cardLead?.startedAt || crmLead.callAt;
+  return {
+    ...crmLead,
+    callAt,
+    startedAt: callAt,
+    last: cardLead?.last && cardLead.last !== "—" ? cardLead.last : crmLead.last,
+  };
+}
+
+function hasRichCrmFields(lead) {
+  if (!lead || !isNumericLeadId(lead.id)) return false;
+  const source = String(lead.source || "").trim();
+  const service = String(lead.service || lead.requirements || "").trim();
+  return (source && source !== "Callyzer" && source !== "—")
+    || (service && service !== "—");
+}
+
+/** Resolve a pipeline kanban card to a CRM lead using local lists first. */
+export function resolvePipelineCardLeadLocal(cardLead, { leads = [], periodCalls = [] } = {}) {
+  if (!cardLead) return null;
+
+  if (isNumericLeadId(cardLead.id)) {
+    return leads.find((l) => String(l.id) === String(cardLead.id)) || cardLead;
+  }
+
+  if (!cardLead._fromCall) return cardLead;
+
+  const call = (periodCalls || []).find((c) => String(c.id) === String(cardLead._callId));
+  if (call?.leadId != null) {
+    const byId = leads.find((l) => String(l.id) === String(call.leadId));
+    if (byId) return mergeCallContextOntoLead(byId, cardLead, call);
+  }
+
+  if (call) {
+    const byCall = resolveLeadForCall(call, leads);
+    if (byCall) return mergeCallContextOntoLead(byCall, cardLead, call);
+  }
+
+  if (cardLead._linkedLeadId != null) {
+    const byLinked = leads.find((l) => String(l.id) === String(cardLead._linkedLeadId));
+    if (byLinked) return mergeCallContextOntoLead(byLinked, cardLead, call);
+  }
+
+  if (cardLead.phone) {
+    const byPhone = leads.find((l) => phonesMatchLoose(l.phone || l.clientPhone, cardLead.phone));
+    if (byPhone) return mergeCallContextOntoLead(byPhone, cardLead, call);
+  }
+
+  return cardLead;
+}
+
+/** Fetch full CRM lead for orphan Callyzer pipeline cards (source, service, etc.). */
+export async function fetchLeadForPipelineCard(
+  cardLead,
+  {
+    leads = [],
+    periodCalls = [],
+    headers,
+    mapLead = apiLeadToEmployee,
+  } = {},
+) {
+  const local = resolvePipelineCardLeadLocal(cardLead, { leads, periodCalls });
+  if (hasRichCrmFields(local)) return local;
+
+  const call = cardLead?._fromCall
+    ? (periodCalls || []).find((c) => String(c.id) === String(cardLead._callId))
+    : null;
+  const leadId = call?.leadId ?? cardLead?._linkedLeadId ?? (isNumericLeadId(local?.id) ? local.id : null);
+
+  if (leadId != null && isNumericLeadId(leadId)) {
+    try {
+      const res = await apiGet(`/api/v1/leads/${leadId}`, { headers, cacheTtl: 30_000 });
+      const raw = res?.data ?? res;
+      if (raw?.id) {
+        return mergeCallContextOntoLead(mapLead(raw), cardLead, call);
+      }
+    } catch {
+      // fall through to phone search
+    }
+  }
+
+  const phone = cardLead?.phone || call?.phone || call?.clientPhone;
+  if (phone) {
+    const digits = String(phone).replace(/\D/g, "").slice(-10);
+    if (digits.length >= 10) {
+      try {
+        const res = await apiGet(
+          `/api/v1/leads?q=${encodeURIComponent(digits)}&limit=20`,
+          { headers, cacheTtl: 30_000 },
+        );
+        const items = unwrapApiList(res) || [];
+        const match = items.find((row) => phonesMatchLoose(row.phone || row.client_phone, phone));
+        if (match?.id) {
+          return mergeCallContextOntoLead(mapLead(match), cardLead, call);
+        }
+      } catch {
+        // keep local/card fallback
+      }
+    }
+  }
+
+  return local || cardLead;
 }

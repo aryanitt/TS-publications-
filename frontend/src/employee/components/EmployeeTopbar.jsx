@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, startTransition } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, Bell, Menu, Plus, ChevronDown, X,
@@ -71,7 +71,9 @@ export default function EmployeeTopbar({ onMenu }) {
   const setPeriod = (nextPeriod) => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set("period", String(nextPeriod).toLowerCase());
-    setSearchParams(newParams, { replace: true });
+    startTransition(() => {
+      setSearchParams(newParams, { replace: true });
+    });
   };
 
   const handleQuickAction = (action) => {

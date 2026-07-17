@@ -21,10 +21,14 @@ function isLoginRateLimited(err) {
 }
 
 async function postLoginWithBackoff(loginId, password) {
+  const isLocal = typeof window !== "undefined"
+    && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
   // Spread burst logins from the same office network (shared public IP).
-  await sleep(Math.floor(Math.random() * 1500));
+  if (!isLocal) {
+    await sleep(Math.floor(Math.random() * 1500));
+  }
 
-  const maxAttempts = 6;
+  const maxAttempts = isLocal ? 2 : 6;
   let lastErr;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, startTransition } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -128,7 +128,9 @@ export default function Topbar({ onMenu }) {
   const setPipelinePeriod = (nextPeriod) => {
     const params = new URLSearchParams(searchParams);
     params.set("period", String(nextPeriod).toLowerCase());
-    setSearchParams(params, { replace: true });
+    startTransition(() => {
+      setSearchParams(params, { replace: true });
+    });
   };
 
   const [openMenu,       setOpenMenu]       = useState(null);

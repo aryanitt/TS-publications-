@@ -11,7 +11,7 @@ export const CALLYZER_PERIOD_MAP = {
 };
 
 /** How often the UI polls for fresh Callyzer stats while the tab is visible. */
-export const CALLYZER_POLL_INTERVAL_MS = 15_000;
+export const CALLYZER_POLL_INTERVAL_MS = 45_000;
 /** Full Callyzer API sync runs at most this often (background). */
 export const CALLYZER_FULL_SYNC_INTERVAL_MS = 60_000;
 

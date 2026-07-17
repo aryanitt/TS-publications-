@@ -478,16 +478,17 @@ export function EmployeeProvider({ children }) {
       const callsPath = employeeResourcePath(resolvedId, "calls");
       if (!callsPath) return;
 
-      invalidateCache("/api/v1/employee/");
       invalidateCallyzerStatsCache(employee.id);
 
       const headers = getCrmHeaders("employee", employee);
-      const fetchOpts = { headers, cacheTtl: 0, skipCache: true };
+      const fetchOpts = { headers, cacheTtl: 60_000, skipCache: false };
+      const callsQuery = "?period=month&limit=5000";
+      const shouldRefreshLeads = !Array.isArray(leadsRef.current) || leadsRef.current.length === 0;
       const [leadItems, callsRes] = await Promise.all([
-        resolvedId && !isMockEmployeeId(resolvedId, MOCK_EMPLOYEE_ID)
-          ? fetchAllEmployeeLeads(apiGet, resolvedId, { headers })
+        shouldRefreshLeads && resolvedId && !isMockEmployeeId(resolvedId, MOCK_EMPLOYEE_ID)
+          ? fetchAllEmployeeLeads(apiGet, resolvedId, { headers, skipCache: false, cacheTtl: 60_000 })
           : Promise.resolve(null),
-        apiGet(callsPath, fetchOpts),
+        apiGet(`${callsPath}${callsQuery}`, fetchOpts),
       ]);
 
       let mappedLeads = leadsRef.current;
@@ -719,8 +720,10 @@ export function EmployeeProvider({ children }) {
     });
   }, []);
 
-  const scheduleFollowUp = useCallback(async ({ leadName, company, type, date, time, note, leadId }) => {
-    const lead = leads.find((l) => l.name === leadName || l.id === leadId);
+  const scheduleFollowUp = useCallback(async ({ leadName, company, type, date, time, note, leadId, phone }) => {
+    const lead = leadId != null
+      ? leads.find((l) => String(l.id) === String(leadId))
+      : null;
     const resolvedLeadId = leadId ?? lead?.id;
     const urgency = getFollowUpUrgency(date);
     const resolvedCompany = company || lead?.company || "—";

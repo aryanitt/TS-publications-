@@ -92,14 +92,22 @@ export default function Login() {
       toast.success(`Welcome back, ${authUser.name || authUser.loginId}!`, { id: LOGIN_TOAST_ID });
       window.location.replace(nextPath);
     } catch (err) {
-      submittingRef.current = false;
-      setBusy(false);
       const msg = err?.message || "Invalid login ID or password";
       if (err?.status === 429 || msg.toLowerCase().includes("too many")) {
         toast.error("Login server is busy. Please wait 5 seconds and try again.", { id: LOGIN_TOAST_ID });
-        return;
+      } else if (msg.toLowerCase().includes("timed out") || msg.toLowerCase().includes("database unavailable")) {
+        toast.error(
+          msg.toLowerCase().includes("database")
+            ? "Database unreachable — check backend .env or set VITE_API_URL to your Hostinger backend in frontend/.env.local"
+            : "Login timed out — ensure backend is running on port 5000",
+          { id: LOGIN_TOAST_ID },
+        );
+      } else {
+        toast.error(msg, { id: LOGIN_TOAST_ID });
       }
-      toast.error(msg, { id: LOGIN_TOAST_ID });
+    } finally {
+      submittingRef.current = false;
+      setBusy(false);
     }
   };
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "../hooks/use-mobile.tsx";
 import {
@@ -7,16 +8,12 @@ import {
   GripVertical, ChevronDown, ChevronUp, History, Layers,
   Shuffle, Zap,
   } from "lucide-react";
-import {
-  ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
-  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, Legend,
-} from "recharts";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import LeadDetailDrawer from "../components/leads/LeadDetailDrawer.jsx";
 import { GlassCard, StatCard, Badge, Drawer, SectionHeader } from "../components/Primitives.jsx";
-import { apiGet, apiPost, readCachedJson, invalidateCache } from "../lib/api.js";
+import { apiGet, apiPost, apiPut, apiPatch, readCachedJson, invalidateCache } from "../lib/api.js";
 import { getAdminCrmHeaders } from "../lib/crmContext.js";
-import { apiLeadToAdmin, apiEmployeeToAdmin, fetchAllLeads, unwrapApiData } from "../lib/leadSync.js";
+import { apiLeadToAdmin, apiEmployeeToAdmin, fetchLeadsForAssignPage, unwrapApiData } from "../lib/leadSync.js";
 import {
   getAssignmentState, assignLead, bulkAssign,
   toggleEmployeeReceiving, setDistributionMode, setAutoAssign,
@@ -38,7 +35,7 @@ const SOURCE_LABELS = {
   n8n: { label: "N8N", tone: "info", color: "#7c3aed" },
 };
 
-const CHART_COLORS = ["#f43f5e", "#fb7185", "#fda4af", "#be123c", "#9f1239", "#881337"];
+const LEADS_CACHE_KEY = "/api/v1/leads?assignmentStatus=unassigned&limit=500&page=1";
 
 const cardBase = {
   background: "#fff",
@@ -137,17 +134,17 @@ function EmployeeCard({ emp, stats, utilPct, status, paused, onTogglePause, onDr
 
 export default function Leads() {
   const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState(() => {
-    const cached = readCachedJson("/api/sales/leads");
-    if (cached?.success && cached.leads?.length) return cached.leads;
+    const cached = readCachedJson(LEADS_CACHE_KEY);
+    if (cached?.success && Array.isArray(cached.data) && cached.data.length) {
+      return cached.data.map(apiLeadToAdmin);
+    }
     return [];
   });
   const [employees, setEmployees] = useState([]);
   const [assignState, setAssignState] = useState(() => getAssignmentState());
-  const [loading, setLoading] = useState(() => {
-    const cached = readCachedJson("/api/sales/leads");
-    return !(cached?.success && cached.leads?.length);
-  });
+  const [loading, setLoading] = useState(() => leads.length === 0);
 const [addOpen, setAddOpen] = useState(false);
   const [detailLead, setDetailLead] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -158,7 +155,6 @@ const [toast, setToast] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [dragLeadId, setDragLeadId] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
-  const [showAnalytics, setShowAnalytics] = useState(true);
   const [sortKey, setSortKey] = useState("created_at");
   const [sortDir] = useState("desc");
 
@@ -179,32 +175,36 @@ const showToast = (message, type = "success") => {
 
   useEffect(() => {
     Promise.all([
-      fetchAllLeads(apiGet, { headers: getAdminCrmHeaders() })
+      fetchLeadsForAssignPage(apiGet, { headers: getAdminCrmHeaders() })
         .then((items) => ({ success: true, leads: items.map(apiLeadToAdmin), fromV1: true }))
         .catch(() => ({ success: false, leads: [] })),
-      // prefer /api/team/employees (real Team page data), fall back to v1
-      apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 })
+      apiGet("/api/v1/employees", { headers: getAdminCrmHeaders(), cacheTtl: 120_000 })
         .then((res) => {
-          if (res?.success && Array.isArray(res.employees) && res.employees.length) {
-            return { success: true, employees: res.employees.map((e) => ({
-              id: e.id,
-              name: e.name,
-              email: e.email,
-              role: e.role,
-              department: e.department,
-              status: e.status || "active",
-            })) };
+          const items = unwrapApiData(res);
+          if (items.length) {
+            return { success: true, employees: items.map(apiEmployeeToAdmin) };
           }
           throw new Error("empty");
         })
         .catch(() =>
-          apiGet("/api/v1/employees", { headers: getAdminCrmHeaders(), skipCache: true, cacheTtl: 0 })
+          apiGet("/api/team/employees", { cacheTtl: 120_000 })
             .then((res) => {
-              const items = unwrapApiData(res);
-              if (items.length) return { success: true, employees: items.map(apiEmployeeToAdmin) };
-              throw new Error("empty");
+              if (res?.success && Array.isArray(res.employees) && res.employees.length) {
+                return {
+                  success: true,
+                  employees: res.employees.map((e) => ({
+                    id: e.id,
+                    name: e.name,
+                    email: e.email,
+                    role: e.role,
+                    department: e.department,
+                    status: e.status || "active",
+                  })),
+                };
+              }
+              return { success: true, employees: [] };
             })
-            .catch(() => ({ success: true, employees: [] }))
+            .catch(() => ({ success: true, employees: [] })),
         ),
     ])
       .then(([leadData, empData]) => {
@@ -232,9 +232,87 @@ const showToast = (message, type = "success") => {
     .finally(() => setLoading(false));
 }, []);
 
+  useEffect(() => {
+    const leadId = searchParams.get("leadId");
+    if (!leadId || !leads.length) return;
+    const hit = leads.find((l) => String(getLeadId(l)) === String(leadId));
+    if (hit) setDetailLead(hit);
+  }, [searchParams, leads]);
+
+  const saveLeadDetails = useCallback(async (leadId, updates) => {
+    const payload = {};
+    if (updates.phone !== undefined) payload.phone = updates.phone;
+    if (updates.email !== undefined) payload.email = updates.email;
+    if (updates.company !== undefined) payload.companyName = updates.company;
+    if (updates.city !== undefined) payload.city = updates.city;
+    if (updates.source !== undefined) payload.source = updates.source;
+    if (updates.service !== undefined) payload.requirements = updates.service;
+    if (updates.expectedRevenue !== undefined) {
+      payload.expectedRevenue = Number(updates.expectedRevenue) || 0;
+    }
+
+    if (Object.keys(payload).length) {
+      await apiPut(`/api/v1/leads/${leadId}`, payload, { headers: getAdminCrmHeaders() });
+    }
+    if (updates.stage) {
+      await apiPatch(`/api/v1/leads/${leadId}/stage`, {
+        stage: updates.stage,
+        status: updates.stage,
+      }, { headers: getAdminCrmHeaders() });
+    }
+
+    invalidateCache("/api/v1");
+    setLeads((prev) => prev.map((l) => {
+      if (String(getLeadId(l)) !== String(leadId)) return l;
+      return {
+        ...l,
+        phone: updates.phone !== undefined ? updates.phone : l.phone,
+        email: updates.email !== undefined ? updates.email : l.email,
+        company_name: updates.company !== undefined ? updates.company : l.company_name,
+        city: updates.city !== undefined ? updates.city : l.city,
+        source: updates.source !== undefined ? updates.source : l.source,
+        requirements: updates.service !== undefined ? updates.service : l.requirements,
+        service: updates.service !== undefined ? updates.service : l.service,
+        expected_revenue: updates.expectedRevenue !== undefined
+          ? Number(updates.expectedRevenue) || 0
+          : l.expected_revenue,
+        pipeline_stage: updates.stage !== undefined ? updates.stage : l.pipeline_stage,
+        status: updates.stage !== undefined ? updates.stage : l.status,
+      };
+    }));
+    setDetailLead((prev) => {
+      if (!prev || String(getLeadId(prev)) !== String(leadId)) return prev;
+      return {
+        ...prev,
+        phone: updates.phone !== undefined ? updates.phone : prev.phone,
+        email: updates.email !== undefined ? updates.email : prev.email,
+        company_name: updates.company !== undefined ? updates.company : prev.company_name,
+        city: updates.city !== undefined ? updates.city : prev.city,
+        source: updates.source !== undefined ? updates.source : prev.source,
+        requirements: updates.service !== undefined ? updates.service : prev.requirements,
+        service: updates.service !== undefined ? updates.service : prev.service,
+        expected_revenue: updates.expectedRevenue !== undefined
+          ? Number(updates.expectedRevenue) || 0
+          : prev.expected_revenue,
+        pipeline_stage: updates.stage !== undefined ? updates.stage : prev.pipeline_stage,
+        status: updates.stage !== undefined ? updates.stage : prev.status,
+      };
+    });
+    showToast("Lead details saved");
+  }, []);
+
+  const closeDetailLead = useCallback(() => {
+    setDetailLead(null);
+    if (searchParams.get("leadId")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("leadId");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const workload = useMemo(
     () => computeWorkload(employees, assignState.assignments, leads),
-    [employees, assignState.assignments, leads],
+    [leads, assignState.assignments],
   );
 
   const enrichedLeads = useMemo(
@@ -244,7 +322,7 @@ const showToast = (message, type = "success") => {
         _assignment: getAssignmentForLead(assignState, l),
         _sourceKey: normalizeSource(l.source || l.form_name),
       })),
-    [leads, assignState],
+    [leads, assignState.assignments],
   );
 
   const queueLeads = useMemo(
@@ -252,7 +330,7 @@ const showToast = (message, type = "success") => {
       enrichedLeads.filter(
         (l) => isQueueEligibleLead(l) && isLeadUnassigned(assignState, l) && !isConverted(l),
       ),
-    [enrichedLeads, assignState],
+    [enrichedLeads, assignState.assignments],
   );
 
   const metrics = useMemo(() => {
@@ -395,51 +473,6 @@ const showToast = (message, type = "success") => {
     if (selected.size === filtered.length) setSelected(new Set());
     else setSelected(new Set(filtered.map((l) => String(getLeadId(l)))));
   };
-
-  const sourcePerformance = useMemo(() => {
-    const map = {};
-    for (const l of queueLeads) {
-      const k = l._sourceKey;
-      if (!map[k]) map[k] = { source: SOURCE_LABELS[k]?.label || k, leads: 0, converted: 0 };
-      map[k].leads += 1;
-      if (isConverted(l)) map[k].converted += 1;
-    }
-    return Object.values(map);
-  }, [queueLeads]);
-
-  const employeeChartData = useMemo(
-    () =>
-      employees.map((e) => ({
-        name: (e.name || "").split(" ")[0],
-        assigned: workload[e.id]?.assigned ?? 0,
-        converted: workload[e.id]?.converted ?? 0,
-      })),
-    [employees, workload],
-  );
-
-  const distributionPie = useMemo(() => {
-    const assigned = metrics.assigned;
-    const unassigned = metrics.unassigned;
-    return [
-      { name: "Assigned", value: assigned },
-      { name: "Unassigned", value: unassigned },
-    ].filter((d) => d.value > 0);
-  }, [metrics]);
-
-  const unassignedTrend = useMemo(() => {
-    const days = [];
-    for (let i = 6; i >= 0; i -= 1) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      const count = queueLeads.filter((l) => {
-        const created = (l.created_at || "").slice(0, 10);
-        return created <= key;
-      }).length;
-      days.push({ day: d.toLocaleDateString("en-IN", { weekday: "short" }), unassigned: count });
-    }
-    return days;
-  }, [queueLeads]);
 
   const rrOrder = useMemo(() => {
     const rotatable = employees.filter(
@@ -866,8 +899,10 @@ const showToast = (message, type = "success") => {
 
       <LeadDetailDrawer
         open={!!detailLead}
-        onClose={() => setDetailLead(null)}
+        onClose={closeDetailLead}
         lead={detailLead}
+        editable
+        onSave={(updates) => saveLeadDetails(getLeadId(detailLead), updates)}
       />
 
       <Drawer open={historyOpen} onClose={() => setHistoryOpen(false)} title="Assignment Audit Log">

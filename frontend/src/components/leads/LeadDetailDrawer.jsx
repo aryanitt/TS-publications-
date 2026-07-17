@@ -8,6 +8,8 @@ export default function LeadDetailDrawer({
   onClose,
   lead,
   calls = [],
+  editable = false,
+  onSave,
 }) {
   const liveLead = useMemo(() => normalizeLeadForDetailPanel(lead), [lead]);
 
@@ -19,7 +21,8 @@ export default function LeadDetailDrawer({
         liveLead={liveLead}
         variant="admin"
         showReassignment={false}
-        readOnly
+        readOnly={!editable}
+        onSave={editable ? onSave : undefined}
         onClose={onClose}
         calls={calls}
       />

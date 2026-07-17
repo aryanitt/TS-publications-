@@ -8,7 +8,7 @@ import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { EMP_APP_TODAY, isFollowUpCompleted, isTodayUncontactedAdminLead, isStaleUncontactedAdminLead } from "../../data/employeeMock.js";
-import { dedupePeriodCalls } from "../../lib/callMetrics.js";
+import { dedupePeriodCalls, phonesMatchLoose } from "../../lib/callMetrics.js";
 import { formatIndianPhone } from "../../lib/indianFormat.js";
 import { formatRelativeTime } from "../../lib/leadSync.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
@@ -221,8 +221,12 @@ function FollowUpCard({ item, onCall, onWhatsApp, leads = [] }) {
     notpicked: "bg-slate-100 text-slate-700 border-slate-300",
   }[item.notPicked ? "notpicked" : item.urgency] || "bg-slate-50 text-slate-600 border-slate-200";
 
-  // Find matching lead for phone lookup
-  const lead = leads.find((l) => l.id === item.leadId || l.name === item.name);
+  // Find matching lead for phone lookup (by id or phone — never by name)
+  const lead = leads.find((l) => {
+    if (item.leadId != null && String(l.id) === String(item.leadId)) return true;
+    if (item.phone && phonesMatchLoose(l.phone || l.clientPhone, item.phone)) return true;
+    return false;
+  });
   const phone = lead?.phone || "";
 
   return (

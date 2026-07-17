@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiGet } from "./api.js";
 import { getAdminCrmHeaders, getCrmHeaders } from "./crmContext.js";
-import { callFromApiLite } from "./callFromApiLite.js";
+import { mapCallsFromApiLite } from "./callFromApiLite.js";
 import { apiLeadToPipeline } from "./leadSync.js";
 import { getAssignmentState, getLeadEmployeeName } from "./leadAssignment.js";
-import { dedupePeriodCalls } from "./callMetrics.js";
 import { filterCallsForPeriod } from "./periodFilter.js";
 import { countPipelineCallMetrics } from "./leadKanban.js";
 
 const masterCache = new Map();
-const SYNC_COOLDOWN_MS = 90_000;
+const SYNC_COOLDOWN_MS = 180_000;
 const lastFullSyncAt = new Map();
 const backgroundSyncStarted = new Set();
 const MASTER_PERIOD = "month";
@@ -68,9 +67,7 @@ function normalizeMasterPayload(raw, { mapLeads = true, attachLeads = [] } = {})
     : (data.leads || []);
   const leadsForMapping = attachLeads.length ? attachLeads : apiLeads;
   const callsRaw = data.calls || [];
-  const calls = dedupePeriodCalls(
-    callsRaw.map((c) => callFromApiLite(c, leadsForMapping)),
-  );
+  const calls = mapCallsFromApiLite(callsRaw, leadsForMapping);
   const meetings = (data.meetings || []).map(mapTenantMeeting).filter(Boolean);
   return {
     stats: data.stats ?? statsFromCalls(calls),
@@ -80,6 +77,11 @@ function normalizeMasterPayload(raw, { mapLeads = true, attachLeads = [] } = {})
     meetings,
     syncedAt: raw?.syncedAt || data.syncedAt || null,
   };
+}
+
+function boardSignature(board) {
+  const c = board?.calls || [];
+  return `${c.length}:${c[0]?.id ?? ""}:${c[c.length - 1]?.id ?? ""}:${board?.syncedAt ?? ""}`;
 }
 
 function sliceBoardForPeriod(master, period) {
@@ -156,8 +158,12 @@ export function usePipelineSync({
         mapLeads,
         attachLeads: attachRef.current,
       });
-      masterCache.set(sk, { board: normalized, ts: Date.now() });
-      setMaster(normalized);
+      const prevBoard = masterCache.get(sk)?.board;
+      const unchanged = silent && boardSignature(prevBoard) === boardSignature(normalized);
+      if (!unchanged) {
+        masterCache.set(sk, { board: normalized, ts: Date.now() });
+        setMaster(normalized);
+      }
       if (sync) lastFullSyncAt.set(sk, Date.now());
     } catch {
       if (reqId !== reqIdRef.current) return;
@@ -186,11 +192,10 @@ export function usePipelineSync({
     if (!backgroundSyncStarted.has(sk)) {
       backgroundSyncStarted.add(sk);
       const age = Date.now() - (lastFullSyncAt.get(sk) || 0);
-      const delay = age >= SYNC_COOLDOWN_MS ? 2500 : 1500;
+      const delay = age >= SYNC_COOLDOWN_MS ? 5000 : 3000;
       const timer = window.setTimeout(() => {
-        loadMaster({ silent: true, sync: true }).finally(() => {
-          loadMaster({ silent: true, sync: false });
-        });
+        if (document.hidden) return;
+        loadMaster({ silent: true, sync: true });
       }, delay);
       return () => window.clearTimeout(timer);
     }
@@ -198,10 +203,9 @@ export function usePipelineSync({
     const age = Date.now() - (lastFullSyncAt.get(sk) || 0);
     if (age >= SYNC_COOLDOWN_MS) {
       const timer = window.setTimeout(() => {
-        loadMaster({ silent: true, sync: true }).finally(() => {
-          loadMaster({ silent: true, sync: false });
-        });
-      }, 2500);
+        if (document.hidden) return;
+        loadMaster({ silent: true, sync: true });
+      }, 5000);
       return () => window.clearTimeout(timer);
     }
 
@@ -217,9 +221,7 @@ export function usePipelineSync({
     setMaster((prev) => {
       const remapped = {
         ...prev,
-        calls: dedupePeriodCalls(
-          (prev.callsRaw || []).map((c) => callFromApiLite(c, leads)),
-        ),
+        calls: mapCallsFromApiLite(prev.callsRaw || [], leads),
       };
       remapped.stats = statsFromCalls(remapped.calls);
       masterCache.set(sk, { board: remapped, ts: Date.now() });

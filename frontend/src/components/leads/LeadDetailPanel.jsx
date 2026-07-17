@@ -93,9 +93,12 @@ export default function LeadDetailPanel({
   addActivityRecord,
   startCallyzerCall,
   onTemperatureChange,
+  pipelineView = false,
+  editLeadsHref = null,
 }) {
   const navigate = useNavigate();
   const readOnly = readOnlyProp ?? variant === "admin";
+  const viewOnlyPipeline = pipelineView && readOnly;
   const [draft, setDraft] = useState(() => buildDetailDraft(liveLead));
   const [saving, setSaving] = useState(false);
   const [notesList, setNotesList] = useState([]);
@@ -112,7 +115,7 @@ export default function LeadDetailPanel({
   const crmHeaders = variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders();
 
   useEffect(() => {
-    if (!readOnly || !liveLead?.id) return undefined;
+    if (viewOnlyPipeline || !readOnly || !liveLead?.id) return undefined;
     if (calls?.length) {
       setFetchedCalls([]);
       return undefined;
@@ -136,7 +139,7 @@ export default function LeadDetailPanel({
       }
     })();
     return () => { cancelled = true; };
-  }, [readOnly, liveLead, calls?.length, crmHeaders]);
+  }, [readOnly, liveLead, calls?.length, crmHeaders, viewOnlyPipeline]);
 
   const resolvedCalls = useMemo(
     () => (calls?.length ? calls : fetchedCalls),
@@ -180,8 +183,9 @@ export default function LeadDetailPanel({
   };
 
   useEffect(() => {
-    if (liveLead?.id) fetchNotes();
-  }, [liveLead?.id, variant]);
+    if (viewOnlyPipeline || !liveLead?.id) return undefined;
+    fetchNotes();
+  }, [liveLead?.id, variant, viewOnlyPipeline]);
 
   useEffect(() => {
     if (showReassignment && !teamEmployees.length && refreshTeamEmployees) {
@@ -300,6 +304,25 @@ export default function LeadDetailPanel({
 
   return (
     <div className="space-y-5 animate-fade-in pb-6">
+      {viewOnlyPipeline && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-950">
+          <p className="font-bold">Pipeline view — read only</p>
+          <p className="mt-1 leading-relaxed text-amber-900/90">
+            {variant === "employee"
+              ? "This Callyzer call is view-only on the pipeline. Ask admin to update name, service, and source on the Leads assignment page."
+              : "New or Callyzer-only leads can be edited on the Leads assignment page (name, service, source, budget)."}
+          </p>
+          {editLeadsHref && variant === "admin" && (
+            <button
+              type="button"
+              onClick={() => navigate(editLeadsHref)}
+              className="mt-2.5 inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-500 transition"
+            >
+              Edit on Leads page →
+            </button>
+          )}
+        </div>
+      )}
       <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50/40 via-white to-rose-100/10 p-4 shadow-sm relative overflow-hidden">
         <div className="absolute right-0 top-0 w-20 h-20 bg-rose-500/5 rounded-full blur-xl pointer-events-none" />
         <div className="flex items-start gap-3">
@@ -396,7 +419,7 @@ export default function LeadDetailPanel({
       )}
 
       <CashCollectedPanel
-        leadId={liveLead.id}
+        leadId={liveLead._dbId ?? liveLead.id}
         leadName={liveLead.name}
         employeeId={liveLead.assigneeId || employee?.id}
       />

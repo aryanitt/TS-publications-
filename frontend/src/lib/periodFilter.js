@@ -1,12 +1,9 @@
-/** Period boundaries aligned with backend buildPeriodDateFilter (Monday week, calendar month). */
+/** Period boundaries aligned with backend buildPeriodDateFilter (Monday week, calendar month, IST). */
+
+import { APP_TZ, appDateKey, parseAppDateTime } from "./timezone.js";
 
 export function localDateKey(date) {
-  const d = date instanceof Date ? date : new Date(date);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return appDateKey(date, APP_TZ);
 }
 
 export function weekStartMonday(now = new Date()) {
@@ -54,7 +51,8 @@ export function resolveCallDateKey(call) {
   if (call.callDay) return call.callDay;
   for (const raw of [call.startedAt, call.callAt, call.createdAt, call.endedAt]) {
     if (!raw) continue;
-    const key = localDateKey(new Date(raw));
+    const parsed = parseAppDateTime(raw) || new Date(raw);
+    const key = localDateKey(parsed);
     if (key) return key;
   }
   return null;

@@ -10,11 +10,9 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
-    // Ignore Vercel project env — browser must use /api proxy, not direct Hostinger URL.
-    define: {
-      "import.meta.env.VITE_API_URL": JSON.stringify(""),
-    },
     server: {
+      port: 8080,
+      strictPort: true,
       proxy: {
         "/api": {
           target: "http://localhost:5000",

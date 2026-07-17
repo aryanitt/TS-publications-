@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { apiGet } from "./api.js";
 import { getAdminCrmHeaders } from "./crmContext.js";
 import {
@@ -10,11 +10,10 @@ import {
   buildPipelineChartFromLeads,
   pipelineStageCountsKey,
 } from "../data/employeeMock.js";
-import { useAdminSyncedPeriodCalls } from "./useAdminSyncedPeriodCalls.js";
-import { filterCallsForPeriod } from "./periodFilter.js";
 import { dedupePeriodCalls } from "./callMetrics.js";
 import { useTenantCallyzerStats } from "./useTenantCallyzerStats.js";
 import { usePipelineBoard } from "./usePipelineBoard.js";
+import { usePipelineSync } from "./usePipelineSync.js";
 import { CALL_CONVERSATION_LABEL } from "./callMetrics.js";
 
 function mapTenantMeeting(row) {
@@ -86,27 +85,32 @@ export function useAdminPipelineData({
     load();
   }, [load]);
 
+  const deferredPeriod = useDeferredValue(period);
+
   const filteredLeads = useMemo(() => {
     return rawLeads.filter(
       (l) => leadMatchesService(l, service) && leadMatchesEmployee(l, employee),
     );
   }, [rawLeads, service, employee]);
 
-  const { calls: monthCalls, loading: callsLoading } = useAdminSyncedPeriodCalls(
-    "month",
-    filteredLeads,
-    enabled && !loading,
-  );
+  const { calls: boardCalls, loading: boardCallsLoading } = usePipelineSync({
+    scope: "admin",
+    period: deferredPeriod,
+    enabled: enabled && !loading,
+    mapLeads: false,
+    attachLeads: filteredLeads,
+  });
 
-  const periodCalls = useMemo(() => {
-    const scoped = filterCallsForPeriod(monthCalls || [], period);
-    return dedupePeriodCalls(scoped);
-  }, [monthCalls, period]);
+  const periodCalls = useMemo(
+    () => dedupePeriodCalls(boardCalls || []),
+    [boardCalls],
+  );
+  const callsLoading = boardCallsLoading;
   const { stats: callyzerStats } = useTenantCallyzerStats(period, enabled && !loading);
 
   const board = usePipelineBoard({
     leads: filteredLeads,
-    period,
+    period: deferredPeriod,
     periodCalls,
     callsLoading,
     callyzerStats,

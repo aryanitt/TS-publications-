@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { GlassCard, Badge, Drawer } from "../../components/Primitives.jsx";
 import { EMP_SOP_CHECKLIST, EMP_SOP_SCRIPTS, normalizeCallSop } from "../../data/employeeMock.js";
 import useIsMobile from "../../lib/useIsMobile.js";
+import { phonesMatchLoose } from "../../lib/callMetrics.js";
 import { RoseHero, EmpModal, ChooseLeadPanel, BtnSecondary } from "../components/EmpUI.jsx";
 import { notifyCallStarted } from "../utils/empToast.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
@@ -144,6 +145,7 @@ export default function EmployeeCallAssistant() {
   const isMobile = useIsMobile();
   const urlLead = searchParams.get("lead");
   const urlLeadId = searchParams.get("leadId");
+  const urlPhone = searchParams.get("phone");
   const urlSop = searchParams.get("sop");
   const urlFollowUp = searchParams.get("followUp");
 
@@ -205,10 +207,11 @@ export default function EmployeeCallAssistant() {
       const byId = leads.find((l) => String(l.id) === String(urlLeadId));
       if (byId) return byId;
     }
-    const q = String(leadName || urlLead || "").trim().toLowerCase();
-    if (!q) return null;
-    return leads.find((l) => String(l?.name || "").trim().toLowerCase() === q) || null;
-  }, [leads, leadName, urlLead, urlLeadId]);
+    if (urlPhone) {
+      return leads.find((l) => phonesMatchLoose(l.phone || l.clientPhone, urlPhone)) || null;
+    }
+    return null;
+  }, [leads, urlLeadId, urlPhone]);
 
   const companyName = matchedLead ? matchedLead.company : "TechSales Lead";
 
