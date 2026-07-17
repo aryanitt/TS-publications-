@@ -24,6 +24,8 @@ import { buildPeriodQueryParams } from "../lib/periodQuery.js";
 import { useAdmin } from "../context/AdminContext.jsx";
 import { apiGet, readCachedJson, readStaleCachedJson } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
+import { useTenantCallyzerStats } from "../lib/useTenantCallyzerStats.js";
+import { PercentDisk } from "../components/PercentRing.jsx";
 import { formatINR } from "../lib/indianFormat.js";
 
 // ─── Icon maps ────────────────────────────────────────────────────────────────
@@ -193,7 +195,6 @@ function TooltipPortal({ children, anchorRef, visible }) {
 function MetricCircle({ pct, color, glow, label, shortLabel, info, size = 72, compact = false }) {
   const [pinned, setPinned] = useState(false);
   const safePct = Math.min(100, Math.max(0, Number(pct) || 0));
-  const inner = Math.max(compact ? 8 : 10, Math.round(size * 0.14));
   const showInfo = pinned;
 
   return (
@@ -203,26 +204,10 @@ function MetricCircle({ pct, color, glow, label, shortLabel, info, size = 72, co
         onClick={() => setPinned((v) => !v)}
         onBlur={() => setPinned(false)}
         className="relative rounded-full flex items-center justify-center transition-transform duration-200 hover:scale-[1.06] focus:scale-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-300"
-        style={{
-          width: size,
-          height: size,
-          background: `conic-gradient(${color} 0deg ${safePct * 3.6}deg, #e2e8f0 ${safePct * 3.6}deg 360deg)`,
-          boxShadow: `0 4px 18px ${glow}33`,
-        }}
         aria-label={`${label}: ${safePct}%. ${info}`}
         aria-expanded={showInfo}
       >
-        <div
-          className="absolute rounded-full bg-white flex items-center justify-center border border-slate-100 pointer-events-none"
-          style={{ inset: inner }}
-        >
-          <span
-            className="font-bold text-slate-900 tabular-nums leading-none"
-            style={{ fontSize: compact ? 11 : 15 }}
-          >
-            {safePct}%
-          </span>
-        </div>
+        <PercentDisk value={safePct} color={color} glow={glow} size={size} compact={compact} />
       </button>
 
       <span className={`text-slate-600 font-semibold text-center leading-tight px-0.5 pointer-events-none ${
@@ -1366,14 +1351,19 @@ function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0" }) {
 }
 
 // ─── Imp. Metrics ─────────────────────────────────────────────────────────────
-function ImpMetrics({ metrics, filterKey }) {
+function ImpMetrics({ metrics = {}, filterKey }) {
   const isMobile = useIsMobile();
   const circleSize = isMobile ? 64 : 80;
+  const safe = {
+    pickup: Number(metrics?.pickup) || 0,
+    qualification: Number(metrics?.qualification) || 0,
+    conversion: Number(metrics?.conversion) || 0,
+  };
   const items = [
     {
       label: "Pickup Rate",
       shortLabel: "Pickup",
-      value: metrics.pickup,
+      value: safe.pickup,
       color: "#e11d48",
       glow: "#e11d48",
       info: "Share of calls that connected (duration > 0) vs total calls in this period.",
@@ -1381,7 +1371,7 @@ function ImpMetrics({ metrics, filterKey }) {
     {
       label: "Qualification Rate",
       shortLabel: "Qualify",
-      value: metrics.qualification,
+      value: safe.qualification,
       color: "#6366f1",
       glow: "#6366f1",
       info: "Leads with a 2 min+ conversation or meeting booked, as a share of total leads.",
@@ -1389,7 +1379,7 @@ function ImpMetrics({ metrics, filterKey }) {
     {
       label: "Conversion Rate",
       shortLabel: "Convert",
-      value: metrics.conversion,
+      value: safe.conversion,
       color: "#10b981",
       glow: "#10b981",
       info: "Leads marked converted or won vs total leads in this period.",
@@ -2220,6 +2210,53 @@ export default function Dashboard() {
   const closingsValue = fd.kpis?.find(k => k.label === "Closings")?.value || "0";
   const kpiLoading = (dashboardLoading && !apiFilterData) || (preset === "custom" && customRangeLoading && !customFilterRange);
 
+  const { stats: tenantCallStats } = useTenantCallyzerStats(
+    preset === "custom" ? "month" : filterKey,
+    Boolean(apiFilterData),
+  );
+
+  const parseKpiNumber = (value) => {
+    const n = parseInt(String(value ?? "").replace(/[^\d]/g, ""), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const resolvedMetrics = useMemo(() => {
+    const base = fd?.metrics || { pickup: 0, qualification: 0, conversion: 0 };
+    let pickup = Number(base.pickup) || 0;
+    let qualification = Number(base.qualification) || 0;
+    let conversion = Number(base.conversion) || 0;
+
+    if (!pickup && tenantCallStats?.totalCalls) {
+      pickup = Math.min(
+        100,
+        Math.round((Number(tenantCallStats.connectedCalls) / Number(tenantCallStats.totalCalls)) * 100),
+      );
+    }
+
+    const totalLeads = parseKpiNumber(totalLeadsValue);
+    const qualified = parseKpiNumber(qualifiedLeadsCard.value);
+    const closings = parseKpiNumber(closingsValue);
+
+    if (!qualification && totalLeads > 0 && qualified > 0) {
+      qualification = Math.min(100, Math.round((qualified / totalLeads) * 100));
+    }
+    if (!conversion && totalLeads > 0 && closings > 0) {
+      conversion = Math.min(100, Math.round((closings / totalLeads) * 100));
+    }
+    if (!conversion && pipelineStats?.overallConv) {
+      conversion = Math.min(100, Number(pipelineStats.overallConv) || 0);
+    }
+
+    return { pickup, qualification, conversion };
+  }, [
+    fd?.metrics,
+    tenantCallStats,
+    totalLeadsValue,
+    qualifiedLeadsCard.value,
+    closingsValue,
+    pipelineStats?.overallConv,
+  ]);
+
   const finalKpis = [
     { label: "Total Revenue", value: totalRevenueCard.value, icon: "DollarSign", trendVal: totalRevenueCard.trendVal, sub: totalRevenueCard.sub },
     { label: "Cash Collected", value: cashCollectedCard.value, icon: "DollarSign", trendVal: cashCollectedCard.trendVal, sub: cashCollectedCard.sub },
@@ -2266,7 +2303,7 @@ export default function Dashboard() {
 
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0 w-full">
           <AIInsightsPanel insights={insightItems} filterKey={filterKey} forecastValue={pipelineForecast} />
-          <ImpMetrics metrics={fd.metrics} filterKey={filterKey} />
+          <ImpMetrics metrics={resolvedMetrics} filterKey={filterKey} />
           <RecentActivityPanel items={activityItems} filterKey={filterKey} />
         </div>
       </div>

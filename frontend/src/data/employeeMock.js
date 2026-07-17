@@ -1,5 +1,5 @@
 /** LRMS v7 employee panel mock data — mirrors lrms-v7.html */
-import { CALL_CONVERSATION_MIN_SEC, isMissedCall as isMissedCallMetric, phonesMatchLoose as phonesMatchLooseMetric, parseCallDurationSeconds } from "../lib/callMetrics.js";
+import { CALL_CONVERSATION_MIN_SEC, isConversationCall, isMissedCall as isMissedCallMetric, phonesMatchLoose as phonesMatchLooseMetric, parseCallDurationSeconds } from "../lib/callMetrics.js";
 import { mapStageToId, normalizeStageLabel, isPaymentCompleteStageId, PIPELINE_STAGE_DEFINITIONS } from "../lib/pipelineStages.js";
 import {
   resolveLeadKanbanColumn,
@@ -229,11 +229,16 @@ export function filterCallsForPeriod(calls, period) {
 export function computeCallStatsFromCalls(calls, period = "today") {
   const list = filterCallsForPeriod(calls, period);
   const dials = list.length;
-  const missed = list.filter((c) => isMissedCall(c)).length;
-  const connected = dials - missed;
-  const pickupRate = dials ? Math.round((connected / dials) * 100) : 0;
-  const missRate = dials ? Math.round((missed / dials) * 100) : 0;
-  const durations = list.map((c) => parseDurationToSeconds(c.duration)).filter((s) => s > 0);
+  const connected = list.filter((c) => {
+    const sec = Number.isFinite(c.durationSec) ? c.durationSec : parseCallDurationSeconds(c.duration);
+    return sec > 0 && !isMissedCallMetric(c);
+  }).length;
+  const missed = list.filter((c) => isMissedCallMetric(c)).length;
+  const pickupRate = dials ? Math.min(100, Math.round((connected / dials) * 100)) : 0;
+  const missRate = dials ? Math.min(100, Math.round((missed / dials) * 100)) : 0;
+  const durations = list
+    .map((c) => (Number.isFinite(c.durationSec) ? c.durationSec : parseCallDurationSeconds(c.duration)))
+    .filter((s) => s > 0);
   const avgSecs = durations.length
     ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
     : 0;
@@ -244,11 +249,14 @@ export function computeCallStatsFromCalls(calls, period = "today") {
     : "—";
   const hotLeads = list.filter((c) => /hot|qualified|interested|demo|proposal/i.test(String(c.outcome || ""))).length;
   const callbacks = list.filter((c) => /callback|follow/i.test(String(c.outcome || ""))).length;
+  const conversations = list.filter((c) => {
+    const sec = Number.isFinite(c.durationSec) ? c.durationSec : parseCallDurationSeconds(c.duration);
+    return isConversationCall(sec);
+  }).length;
   const ratings = list.map((c) => c.rating).filter((r) => r > 0);
   const quality = ratings.length
-    ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 20)
-    : pickupRate;
-  const conversations = list.filter((c) => parseDurationToSeconds(c.duration) >= CALL_CONVERSATION_MIN_SEC).length;
+    ? Math.min(100, Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 20))
+    : (dials ? Math.min(100, Math.round((conversations / dials) * 100)) : 0);
   return { dials, connected, missed, callbacks, pickupRate, quality, missRate, avgDuration, hotLeads, totalTalk, conversations };
 }
 

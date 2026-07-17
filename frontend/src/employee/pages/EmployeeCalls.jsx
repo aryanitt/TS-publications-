@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -22,6 +22,7 @@ import {
 } from "../components/EmpUI.jsx";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import { formatCallDisplayDate, formatCallDurationLabel } from "../../lib/callDisplay.js";
+import PercentRing from "../../components/PercentRing.jsx";
 
 const PERIOD_LABEL = { today: "Today", week: "This Week", month: "This Month" };
 
@@ -40,47 +41,14 @@ const ACTIVITY_ICON = {
   proposal: CheckCircle2,
 };
 
-function useRingOffset(pct) {
-  const circ = 100;
-  const [offset, setOffset] = useState(circ);
-  useEffect(() => {
-    const t = setTimeout(() => setOffset(circ * (1 - pct)), 100);
-    return () => clearTimeout(t);
-  }, [pct]);
-  return offset;
+function MetricRingChart({ value, color, sizeClass = "w-10 h-10 sm:w-14 sm:h-14", labelClass = "text-[9px] sm:text-[11px]" }) {
+  return <PercentRing value={value} color={color} sizeClass={sizeClass} labelClass={labelClass} />;
 }
 
-function MetricRingChart({ pct, color, sizeClass = "w-10 h-10 sm:w-14 sm:h-14", labelClass = "text-[9px] sm:text-[11px]" }) {
-  const offset = useRingOffset(pct);
-
-  return (
-    <div className={`relative shrink-0 mx-auto sm:mx-0 ${sizeClass}`}>
-      <svg width="100%" height="100%" viewBox="0 0 56 56" className="-rotate-90">
-        <circle cx="28" cy="28" r="22" fill="none" stroke="#ffe4e6" strokeWidth="5" />
-        <circle
-          cx="28"
-          cy="28"
-          r="22"
-          fill="none"
-          stroke={color}
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeDasharray={100}
-          strokeDashoffset={offset}
-          className="transition-[stroke-dashoffset] duration-[1.2s] ease-out"
-        />
-      </svg>
-      <div className={`absolute inset-0 grid place-items-center font-black ${labelClass}`} style={{ color }}>
-        {Math.round(pct * 100)}%
-      </div>
-    </div>
-  );
-}
-
-function RingMini({ pct, color, label, shortLabel }) {
+function RingMini({ value, color, label, shortLabel }) {
   return (
     <div className="flex flex-col items-center text-center gap-1 sm:flex-row sm:items-center sm:text-left sm:gap-3 min-w-0">
-      <MetricRingChart pct={pct} color={color} />
+      <MetricRingChart value={value} color={color} />
       <div className="min-w-0 w-full">
         <p className="text-[8px] sm:text-xs font-bold text-slate-900 leading-tight">
           <span className="sm:hidden">{shortLabel || label}</span>
@@ -92,12 +60,12 @@ function RingMini({ pct, color, label, shortLabel }) {
   );
 }
 
-function CallMetricCard({ pct, color, label, shortLabel, footer, accentRgb }) {
+function CallMetricCard({ value, color, label, shortLabel, footer, accentRgb }) {
   return (
     <GlassCard className="p-2 sm:p-4 min-w-0 lg:p-0 lg:overflow-hidden lg:relative lg:flex lg:flex-col">
       {/* Mobile / tablet — unchanged compact layout */}
       <div className="lg:hidden">
-        <RingMini pct={pct} color={color} label={label} shortLabel={shortLabel} />
+        <RingMini value={value} color={color} label={label} shortLabel={shortLabel} />
         <p className="hidden sm:block text-[10px] text-slate-500 mt-3 font-medium">{footer}</p>
       </div>
 
@@ -110,7 +78,7 @@ function CallMetricCard({ pct, color, label, shortLabel, footer, accentRgb }) {
           }}
         />
         <div className="relative flex items-center gap-3.5 px-4 pt-3.5 pb-3 flex-1 min-h-0">
-          <MetricRingChart pct={pct} color={color} sizeClass="w-[62px] h-[62px]" labelClass="text-sm" />
+          <MetricRingChart value={value} color={color} sizeClass="w-[62px] h-[62px]" labelClass="text-sm" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-slate-900 leading-tight">{label}</p>
             <p className="text-[11px] text-slate-500 mt-0.5">Target benchmark</p>
@@ -309,7 +277,7 @@ export default function EmployeeCalls() {
 
       <div className="grid grid-cols-3 gap-1.5 sm:gap-3 lg:gap-4 lg:items-stretch">
         <CallMetricCard
-          pct={stats.pickupRate / 100}
+          value={stats.pickupRate}
           color="#e11d48"
           label="Pickup Rate"
           shortLabel="Pickup"
@@ -317,15 +285,15 @@ export default function EmployeeCalls() {
           footer={`${stats.connected} picked / ${stats.dials} dialed · ${PERIOD_LABEL[period]}`}
         />
         <CallMetricCard
-          pct={stats.quality / 100}
+          value={stats.quality}
           color="#10b981"
           label="Quality Score"
           shortLabel="Quality"
           accentRgb="16,185,129"
-          footer={`Avg ${stats.avgDuration} · ${stats.quality}% quality`}
+          footer={`Avg ${stats.avgDuration} · ${stats.conversations} conversations ${CALL_CONVERSATION_LABEL}`}
         />
         <CallMetricCard
-          pct={stats.missRate / 100}
+          value={stats.missRate}
           color="#f59e0b"
           label="Miss Rate"
           shortLabel="Miss"

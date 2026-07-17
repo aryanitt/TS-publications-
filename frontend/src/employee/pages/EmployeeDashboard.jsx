@@ -138,6 +138,8 @@ export default function EmployeeDashboard() {
   const callsToday = callyzerStats?.totalCalls ?? filterCallsForPeriod(calls || [], "today").length;
   const callsTarget = employee?.callsTarget || 60;
   const callPct = callsTarget ? Math.min(100, Math.round((callsToday / callsTarget) * 100)) : 0;
+  const callRingDash = (callPct / 100) * (2 * Math.PI * 15.5);
+  const callRingCirc = 2 * Math.PI * 15.5;
 
   const conversations5MinPlus = useMemo(() => {
     if (callyzerStats?.conversations5MinPlus != null) {
@@ -504,7 +506,7 @@ export default function EmployeeDashboard() {
                   <circle
                     cx="18" cy="18" r="15.5" fill="none" stroke="#f43f5e" strokeWidth="3"
                     strokeLinecap="round"
-                    strokeDasharray={`${callPct} 100`}
+                    strokeDasharray={`${callRingDash} ${callRingCirc}`}
                     className="transition-all duration-700"
                   />
                 </svg>
