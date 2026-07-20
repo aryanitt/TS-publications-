@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   BadgeCheck,
   Briefcase,
@@ -27,6 +27,8 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { filterCallsForPeriod } from "../../data/employeeMock.js";
 import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callMetrics.js";
+import { apiDelete, apiGet } from "../../lib/api.js";
+import { getCrmHeaders } from "../../lib/crmContext.js";
 import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
 import EmployeeProfileHeader, { DashboardScrollbarStyles } from "../components/EmployeeProfileHeader.jsx";
 
@@ -47,15 +49,95 @@ export default function EmployeeProfile() {
   const { employee, leads, calls, followUps, loading } = useEmployee();
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("profile");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "profile");
   const [prefsDirty, setPrefsDirty] = useState(false);
   const [displayName, setDisplayName] = useState(employee?.name || "");
   const [reminderHrs, setReminderHrs] = useState(24);
   const [meetingPlatform, setMeetingPlatform] = useState("google_meet");
+  const [googleStatus, setGoogleStatus] = useState({
+    configured: false,
+    connected: false,
+    googleEmail: null,
+  });
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  const refreshGoogleStatus = async () => {
+    try {
+      const res = await apiGet("/api/v1/employee/google/status", {
+        headers: getCrmHeaders(),
+        skipCache: true,
+        cacheTtl: 0,
+      });
+      setGoogleStatus({
+        configured: res?.configured !== false,
+        connected: Boolean(res?.connected),
+        googleEmail: res?.googleEmail || null,
+      });
+    } catch {
+      setGoogleStatus({ configured: false, connected: false, googleEmail: null });
+    }
+  };
+
+  useEffect(() => {
+    refreshGoogleStatus();
+  }, [employee?.id]);
+
+  useEffect(() => {
+    const result = searchParams.get("google");
+    if (result === "connected") {
+      toast.success("Google account connected");
+      refreshGoogleStatus();
+      setSearchParams({}, { replace: true });
+    } else if (result === "error") {
+      toast.error(searchParams.get("reason") || "Google connection failed");
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  const handleConnectGoogle = async () => {
+    setGoogleBusy(true);
+    try {
+      const res = await apiGet("/api/v1/employee/google/connect-url", {
+        headers: getCrmHeaders(),
+        skipCache: true,
+        cacheTtl: 0,
+      });
+      if (res?.url) {
+        window.location.href = res.url;
+        return;
+      }
+      toast.error(res?.message || "Could not start Google sign-in");
+    } catch (err) {
+      toast.error(err.message || "Could not start Google sign-in");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    setGoogleBusy(true);
+    try {
+      await apiDelete("/api/v1/employee/google/disconnect", { headers: getCrmHeaders() });
+      setGoogleStatus((prev) => ({ ...prev, connected: false, googleEmail: null }));
+      toast.success("Google account disconnected");
+    } catch (err) {
+      toast.error(err.message || "Could not disconnect Google");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (employee?.name) setDisplayName(employee.name);
   }, [employee?.name]);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "preferences" || tab === "profile" || tab === "performance") {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   const { stats: callyzerStats } = useCallyzerStats(employee?.id, "This Month", Boolean(employee?.id));
 
@@ -340,6 +422,51 @@ export default function EmployeeProfile() {
                       <Video className="w-3 h-3" />
                       Used when booking meetings from Follow-ups or Leads
                     </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 border border-slate-200 rounded-2xl bg-slate-50/50">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-slate-800 uppercase">Connect with Google</p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Link your Google account to auto-generate Meet links from your calendar when booking meetings.
+                    </p>
+                    {googleStatus.connected && googleStatus.googleEmail && (
+                      <p className="text-[11px] text-emerald-700 mt-2 font-medium truncate">
+                        Connected as {googleStatus.googleEmail}
+                      </p>
+                    )}
+                    {!googleStatus.configured && (
+                      <p className="text-[11px] text-amber-700 mt-2">
+                        Google integration is not configured on the server yet.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    {googleStatus.connected ? (
+                      <>
+                        <Badge tone="success">Connected</Badge>
+                        <button
+                          type="button"
+                          onClick={handleDisconnectGoogle}
+                          disabled={googleBusy}
+                          className="inline-flex items-center justify-center px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 disabled:opacity-60"
+                        >
+                          Disconnect
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleConnectGoogle}
+                        disabled={googleBusy || !googleStatus.configured}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#be123c] hover:bg-[#a20f32] disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+                      >
+                        {googleBusy ? "Opening Google…" : "Connect with Google"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

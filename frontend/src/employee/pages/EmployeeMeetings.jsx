@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Calendar, CalendarClock, CheckCircle2, Copy, ExternalLink, History, Link2, Plus,
   Search, Sparkles, Trash2, Video, X,
@@ -10,9 +10,10 @@ import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { formatIndianPhone } from "../../lib/indianFormat.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
+import { apiGet, apiPost } from "../../lib/api.js";
+import { getCrmHeaders } from "../../lib/crmContext.js";
 import {
   MEETING_PLATFORMS,
-  generateGoogleMeetLink,
   getEmpAppToday,
 } from "../../data/employeeMock.js";
 import {
@@ -59,10 +60,14 @@ function BookMeetingDrawer({
   leadOptions,
   employee,
   selectedPlatform,
+  googleConnected,
+  googleConfigured,
+  generatingLink,
   onClose,
   onCreate,
   onGenerateLink,
   onCopyLink,
+  onConnectGoogle,
 }) {
   return (
     <Drawer open={open} onClose={onClose} title="Book a Meeting" width="drawer-panel">
@@ -148,10 +153,11 @@ function BookMeetingDrawer({
               <button
                 type="button"
                 onClick={onGenerateLink}
-                className="h-10 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition shrink-0 inline-flex items-center gap-1.5"
+                disabled={!googleConfigured || !googleConnected || generatingLink}
+                className="h-10 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition shrink-0 inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                Generate
+                {generatingLink ? "Generating…" : "Generate"}
               </button>
             )}
             {form.meetLink && (
@@ -165,6 +171,14 @@ function BookMeetingDrawer({
               </button>
             )}
           </div>
+          {form.platform === "google_meet" && googleConfigured && !googleConnected && (
+            <p className="text-[10px] text-amber-700 mt-1.5">
+              Connect Google in Profile → Preferences to generate Meet links from your account.{" "}
+              <button type="button" onClick={onConnectGoogle} className="font-bold underline">
+                Connect now
+              </button>
+            </p>
+          )}
         </Field>
 
         <Field label="Agenda">
@@ -345,12 +359,40 @@ export default function EmployeeMeetings() {
     refreshMeetings,
     usingApi,
   } = useEmployee();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState("upcoming");
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
   const [drawerOpen, setDrawerOpen] = useState(searchParams.get("action") === "add");
   const [submitting, setSubmitting] = useState(false);
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState({
+    configured: false,
+    connected: false,
+    googleEmail: null,
+  });
+
+  const loadGoogleStatus = async () => {
+    try {
+      const res = await apiGet("/api/v1/employee/google/status", {
+        headers: getCrmHeaders(),
+        skipCache: true,
+        cacheTtl: 0,
+      });
+      setGoogleStatus({
+        configured: res?.configured !== false,
+        connected: Boolean(res?.connected),
+        googleEmail: res?.googleEmail || null,
+      });
+    } catch {
+      setGoogleStatus({ configured: false, connected: false, googleEmail: null });
+    }
+  };
+
+  useEffect(() => {
+    if (drawerOpen) loadGoogleStatus();
+  }, [drawerOpen]);
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setDrawerOpen(true);
@@ -406,10 +448,36 @@ export default function EmployeeMeetings() {
     if (searchParams.get("action") === "add") setSearchParams({}, { replace: true });
   };
 
-  const handleGenerateMeetLink = () => {
-    const link = generateGoogleMeetLink();
-    setForm((f) => ({ ...f, meetLink: link, platform: "google_meet" }));
-    toast.success("Google Meet link generated");
+  const handleGenerateMeetLink = async () => {
+    if (!form.title.trim()) {
+      toast.error("Enter a meeting title first");
+      return;
+    }
+    if (!googleStatus.connected) {
+      toast.error("Connect Google in Profile → Preferences first");
+      return;
+    }
+    setGeneratingLink(true);
+    try {
+      const res = await apiPost(
+        "/api/v1/employee/meetings/generate-meet-link",
+        {
+          title: form.title.trim(),
+          date: form.date,
+          time: form.time,
+          durationMin: 30,
+        },
+        { headers: getCrmHeaders() },
+      );
+      const meetLink = res?.meetLink;
+      if (!meetLink) throw new Error(res?.message || "No Meet link returned");
+      setForm((f) => ({ ...f, meetLink, platform: "google_meet" }));
+      toast.success("Google Meet link generated");
+    } catch (err) {
+      toast.error(err.message || "Could not generate Google Meet link");
+    } finally {
+      setGeneratingLink(false);
+    }
   };
 
   const handleCopyLink = (link) => {
@@ -572,10 +640,14 @@ export default function EmployeeMeetings() {
         leadOptions={leadOptions}
         employee={employee}
         selectedPlatform={selectedPlatform}
+        googleConnected={googleStatus.connected}
+        googleConfigured={googleStatus.configured}
+        generatingLink={generatingLink}
         onClose={closeDrawer}
         onCreate={handleCreate}
         onGenerateLink={handleGenerateMeetLink}
         onCopyLink={handleCopyLink}
+        onConnectGoogle={() => navigate("/employee/profile?tab=preferences")}
       />
     </div>
   );

@@ -21,7 +21,6 @@ import {
   meetingToApiPayload,
   meetingFromApi,
   partitionMeetings,
-  generateGoogleMeetLink,
   extractApiSopList,
   readCachedEmployeeSops,
   persistEmployeeSops,
@@ -1470,7 +1469,7 @@ export function EmployeeProvider({ children }) {
     const platformLabel = { google_meet: "Google Meet", zoom: "Zoom", teams: "Teams" }[form.platform]
       || form.platform
       || "Google Meet";
-    const meetLink = form.meetLink || (form.platform === "google_meet" ? generateGoogleMeetLink() : "");
+    const meetLink = String(form.meetLink || "").trim();
     const tempId = Date.now();
     const optimistic = {
       id: tempId,
