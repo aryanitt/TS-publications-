@@ -383,7 +383,7 @@ export default function Topbar({ onMenu }) {
           )}
 
           {isLeadsPage && (
-            <div className="relative inline-flex w-auto shrink-0">
+            <div className="relative hidden sm:inline-flex w-auto shrink-0">
               <select
                 value={selectedService}
                 onChange={(e) => setSelectedService(e.target.value)}
@@ -403,7 +403,7 @@ export default function Topbar({ onMenu }) {
             <button
               type="button"
               onClick={() => navigate(meta.ctaTo)}
-              className="inline-flex items-center gap-1 bg-rose-700 hover:bg-rose-800 text-white
+              className="hidden sm:inline-flex items-center gap-1 bg-rose-700 hover:bg-rose-800 text-white
                 h-9 md:h-10 px-3 md:px-4 rounded-full text-[11px] md:text-xs font-bold shadow-md transition shrink-0"
             >
               <Plus className="w-4 h-4 shrink-0" />
@@ -444,7 +444,8 @@ export default function Topbar({ onMenu }) {
             )}
           </div>
 
-          {/* Activity */}
+          {/* Activity — hide on narrow mobile to prevent header overflow */}
+          <div className="hidden sm:block">
           <Popover
             open={openMenu === "activity"}
             onToggle={() => {
@@ -482,6 +483,7 @@ export default function Topbar({ onMenu }) {
               </div>
             </div>
           </Popover>
+          </div>
 
           {/* Notifications */}
           <Popover
@@ -561,6 +563,13 @@ export default function Topbar({ onMenu }) {
         </div>
       </div>
 
+      {!isDenseToolbar && !isPipelinePage && (
+        <div className="md:hidden px-3 py-2 border-t border-[#F3F4F6] bg-white/90">
+          <h1 className="text-sm font-semibold text-[#111827] truncate">{meta.title}</h1>
+          {meta.sub && <p className="text-[10px] text-slate-500 truncate mt-0.5">{meta.sub}</p>}
+        </div>
+      )}
+
       {isPipelinePage && (
         <div className="sm:hidden px-3 pb-2 pt-0 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
           <div className="flex items-center gap-2">
@@ -591,6 +600,23 @@ export default function Topbar({ onMenu }) {
               ))}
             </select>
           </div>
+        </div>
+      )}
+
+      {isLeadsPage && !isPipelinePage && (
+        <div className="sm:hidden px-3 pb-2 pt-1 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+          <select
+            value={selectedService}
+            onChange={(e) => setSelectedService(e.target.value)}
+            className="w-full bg-white border border-[#FFD6E5] text-[11px] font-semibold text-[#111827] h-9 px-2.5 rounded-xl outline-none appearance-none pr-8 truncate"
+            style={{
+              background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
+            }}
+          >
+            {CANONICAL_SERVICES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
       )}
 

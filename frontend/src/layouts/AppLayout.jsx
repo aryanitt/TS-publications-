@@ -71,7 +71,7 @@ export default function AppLayout() {
       <div className="flex-1 min-w-0 flex flex-col max-w-full overflow-x-clip">
         <Topbar onMenu={() => setOpen(true)} />
 
-        <main className="flex-1 bg-white text-slate-900 p-3 sm:p-4 md:p-6 lg:p-8 xl:px-10 pb-28 lg:pb-8 page-shell overflow-x-clip relative">
+        <main className="flex-1 bg-white text-slate-900 p-3 sm:p-4 md:p-6 lg:p-8 xl:px-10 pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))] lg:pb-8 page-shell overflow-x-clip relative">
           <Outlet />
         </main>
 
@@ -81,7 +81,7 @@ export default function AppLayout() {
         <div className="relative">
           <button
             onClick={() => setFabOpen(!fabOpen)}
-            className="lg:hidden fixed bottom-[4.25rem] right-3 sm:right-4 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full
+            className="lg:hidden fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] right-3 sm:right-4 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full
                        gradient-primary text-primary-foreground shadow-glow
                        grid place-items-center hover:opacity-90 transition"
           >
@@ -90,7 +90,7 @@ export default function AppLayout() {
 
           {fabOpen && (
             <div
-              className="lg:hidden fixed bottom-[7.5rem] sm:bottom-32 right-3 sm:right-4 z-40 w-52 sm:w-56
+              className="lg:hidden fixed bottom-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:bottom-32 right-3 sm:right-4 z-40 w-52 sm:w-56
                          glass-strong rounded-xl border border-border
                          shadow-elegant p-1 space-y-0.5 animate-fade-in"
             >

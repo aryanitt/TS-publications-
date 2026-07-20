@@ -179,7 +179,7 @@ export default function EmployeeTopbar({ onMenu }) {
 
           <div className="flex items-center gap-1 sm:gap-1.5 justify-end shrink-0">
             {(isPipelinePage) && (
-              <div className="relative inline-flex w-auto shrink-0 mr-1">
+              <div className="relative hidden sm:inline-flex w-auto shrink-0 mr-1">
                 <select
                   value={selectedService}
                   onChange={(e) => setSelectedService(e.target.value)}
@@ -274,21 +274,44 @@ export default function EmployeeTopbar({ onMenu }) {
         </div>
 
         {showPeriodFilter && (
-          <div className="sm:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
-            <div className={`${SEGMENT_WRAP} w-full`}>
-              {CALL_PERIODS.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setPeriod(id)}
-                  className={`flex-1 ${SEGMENT_BTN} ${
-                    currentPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
-                  }`}
+          <div className="sm:hidden px-2.5 pb-2 pt-1 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className={`${SEGMENT_WRAP} flex-1 min-w-0`}>
+                {CALL_PERIODS.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setPeriod(id)}
+                    className={`flex-1 ${SEGMENT_BTN} ${
+                      currentPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {isPipelinePage && (
+                <select
+                  value={selectedService}
+                  onChange={(e) => setSelectedService(e.target.value)}
+                  className="bg-white border border-[#FFD6E5] text-[11px] font-semibold text-[#111827] h-9 px-2.5 rounded-xl outline-none appearance-none pr-7 w-[7.25rem] shrink-0 truncate"
+                  style={{
+                    background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
+                  }}
                 >
-                  {label}
-                </button>
-              ))}
+                  {CANONICAL_SERVICES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              )}
             </div>
+          </div>
+        )}
+
+        {!showPeriodFilter && (
+          <div className="md:hidden px-3 py-2 border-t border-[#F3F4F6] bg-white/90">
+            <h1 className="text-sm font-semibold text-[#111827] truncate">{meta.title}</h1>
+            {meta.sub && <p className="text-[10px] text-slate-500 truncate mt-0.5">{meta.sub}</p>}
           </div>
         )}
       </header>

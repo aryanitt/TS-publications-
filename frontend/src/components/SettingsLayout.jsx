@@ -1,9 +1,15 @@
 import { GlassCard } from "./Primitives.jsx";
 
 export function SettingsMobileTabs({ tabs, activeTab, onTabChange, tabExtra }) {
+  const colClass = tabs.length === 3
+    ? "grid-cols-3"
+    : tabs.length <= 2
+      ? "grid-cols-2"
+      : "grid-cols-2 sm:grid-cols-4";
+
   return (
-    <div className="lg:hidden min-w-0">
-      <div className="grid grid-cols-2 gap-2">
+    <div className="lg:hidden min-w-0 col-span-full">
+      <div className={`grid ${colClass} gap-2`}>
         {tabs.map((t) => {
           const Icon = t.icon;
           const isActive = activeTab === t.id;
@@ -12,14 +18,14 @@ export function SettingsMobileTabs({ tabs, activeTab, onTabChange, tabExtra }) {
               key={t.id}
               type="button"
               onClick={() => onTabChange(t.id)}
-              className={`relative flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[10px] font-bold transition-all min-w-0 ${
+              className={`relative flex flex-col items-center justify-center gap-1 px-1.5 py-2 rounded-xl text-[10px] font-bold transition-all min-w-0 min-h-[44px] ${
                 isActive
                   ? "bg-[#be123c] text-white shadow-sm"
                   : "bg-white border border-rose-100 text-slate-700 hover:bg-rose-50/70"
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-white" : "text-rose-600/80"}`} />
-              <span className="text-left leading-tight line-clamp-2">{t.label}</span>
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-white" : "text-rose-600/80"}`} />
+              <span className="text-center leading-tight line-clamp-2">{t.label}</span>
               {tabExtra?.(t, isActive)}
             </button>
           );
