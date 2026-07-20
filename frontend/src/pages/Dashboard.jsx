@@ -395,6 +395,7 @@ function KPICardsRow({ kpiData, filterKey }) {
   ];
 
   const tones = ["success", "purple", "warning", "info", "primary", "indigo", "success"];
+  const oddCount = kpiData.length % 2 === 1;
 
   return (
     <AnimatePresence mode="wait">
@@ -412,13 +413,14 @@ function KPICardsRow({ kpiData, filterKey }) {
           const change = k.trendVal || defaultVal.change;
           const subText = k.sub || defaultVal.sub;
           const tone = tones[i % tones.length];
+          const spanClass = oddCount && i === 0 ? "col-span-2 sm:col-span-1" : "col-span-1";
 
           return (
             <motion.div
               key={k.label}
               variants={fadeUp}
               custom={i}
-              className="col-span-1 min-w-0 flex flex-col"
+              className={`${spanClass} min-w-0 flex flex-col`}
             >
               <StatCard
                 label={k.label}
