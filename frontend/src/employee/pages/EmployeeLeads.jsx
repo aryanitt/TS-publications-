@@ -383,10 +383,14 @@ export default function EmployeeLeads() {
 
   const getStagePillCount = (stageId, columnLeads) => getPipelineStagePillCount(stageId, { grouped }) || columnLeads.length;
 
+  const oddLeadStats = 5 % 2 === 1;
+  const leadStatSpan = (index) => (oddLeadStats && index === 0 ? "col-span-2 sm:col-span-1" : "col-span-1");
+
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">
       <GlassCard className="p-3 sm:p-4 space-y-3 sm:space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-2.5">
+          <div className={`min-w-0 ${leadStatSpan(0)}`}>
           <StatCard
             label="Pipeline Value"
             value={formatEmpPipelineValue(summary.value)}
@@ -396,6 +400,8 @@ export default function EmployeeLeads() {
             change={periodLabel}
             sub=""
           />
+          </div>
+          <div className={`min-w-0 ${leadStatSpan(1)}`}>
           <StatCard
             label="Total Leads"
             value={String(summary.total)}
@@ -405,6 +411,8 @@ export default function EmployeeLeads() {
             change={`${summary.active} active`}
             sub=""
           />
+          </div>
+          <div className={`min-w-0 ${leadStatSpan(2)}`}>
           <StatCard
             label="Hot Leads"
             value={String(summary.hot)}
@@ -414,6 +422,8 @@ export default function EmployeeLeads() {
             change={summary.hot ? "High intent" : "None"}
             sub=""
           />
+          </div>
+          <div className={`min-w-0 ${leadStatSpan(3)}`}>
           <StatCard
             label="Not Interested"
             value={String(summary.notInterested)}
@@ -423,6 +433,8 @@ export default function EmployeeLeads() {
             change="Closed lost"
             sub=""
           />
+          </div>
+          <div className={`min-w-0 ${leadStatSpan(4)}`}>
           <StatCard
             label="Total Cash Collected"
             value={formatCashCard(totalCash)}
@@ -432,6 +444,7 @@ export default function EmployeeLeads() {
             change={period === "today" ? "Today" : period === "week" ? "This week" : "This month"}
             sub=""
           />
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2.5 pt-1 border-t border-rose-50">

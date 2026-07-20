@@ -195,6 +195,8 @@ export default function EmployeeDashboard() {
     },
   ], [summary, leads, tasksDue, tasksDone, conversations5MinPlus, callyzerStats]);
 
+  const oddStatCount = statCards.length % 2 === 1;
+
   const filteredPipeLeads = useMemo(() => {
     if (pipeFilter === "all") return null;
     return leads.filter((l) => l.status === pipeFilter);
@@ -284,7 +286,7 @@ export default function EmployeeDashboard() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
-        {statCards.map((s) => (
+        {statCards.map((s, i) => (
           <button
             key={s.label}
             type="button"
@@ -292,7 +294,7 @@ export default function EmployeeDashboard() {
               if (s.link) navigate(s.link);
               else if (s.filter) setPipeFilter(s.filter);
             }}
-            className="text-left w-full min-w-0"
+            className={`text-left w-full min-w-0 ${oddStatCount && i === 0 ? "col-span-2 sm:col-span-1" : "col-span-1"}`}
           >
             <StatCard
               label={s.label}
