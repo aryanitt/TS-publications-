@@ -7,7 +7,7 @@ import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { EMP_APP_TODAY, isFollowUpCompleted, isTodayUncontactedAdminLead, isStaleUncontactedAdminLead } from "../../data/employeeMock.js";
+import { EMP_APP_TODAY, isFollowUpCompleted, isTodayUncontactedNewLead, isStaleUncontactedAdminLead } from "../../data/employeeMock.js";
 import { dedupePeriodCalls, phonesMatchLoose } from "../../lib/callMetrics.js";
 import { formatIndianPhone } from "../../lib/indianFormat.js";
 import { formatRelativeTime } from "../../lib/leadSync.js";
@@ -125,7 +125,7 @@ function NewLeadCard({ lead, onLiveCall, onWhatsApp }) {
       <div className="flex items-start justify-between gap-2 mt-0.5">
         <div className="min-w-0 flex-1">
           <p className="text-[10px] sm:text-xs text-slate-600 leading-snug">
-            Assigned from admin · {lead.service && lead.service !== "—" ? lead.service : lead.source || "New lead"}
+            New lead · {lead.service && lead.service !== "—" ? lead.service : lead.source || "First contact pending"}
           </p>
           {phone ? (
             <p className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 tabular-nums">{formatIndianPhone(phone)}</p>
@@ -357,7 +357,7 @@ export default function EmployeeFollowUps() {
   const allCalls = useMemo(() => dedupePeriodCalls(calls || []), [calls]);
 
   const newAssignedLeads = useMemo(() => {
-    let list = leads.filter((l) => isTodayUncontactedAdminLead(l, allCalls, employee?.id));
+    let list = leads.filter((l) => isTodayUncontactedNewLead(l, allCalls, employee?.id));
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -645,8 +645,8 @@ export default function EmployeeFollowUps() {
           <GlassCard className="py-4">
             <EmpEmptyState
               icon=""
-              title={search ? "No new leads match your search" : "No new admin assignments"}
-              subtitle={search ? "Try a different keyword" : "Today's admin assignments appear here; older uncontacted leads show under Overdue"}
+              title={search ? "No new leads match your search" : "No new leads today"}
+              subtitle={search ? "Try a different keyword" : "Leads you add or receive today appear here until first outbound call"}
             />
           </GlassCard>
         ) : (
@@ -663,7 +663,7 @@ export default function EmployeeFollowUps() {
                   </span>
                 </div>
                 <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
-                  Assigned today from admin — call or WhatsApp now
+                  Added or assigned today — call or WhatsApp now
                 </p>
               </div>
             </div>
@@ -737,7 +737,7 @@ export default function EmployeeFollowUps() {
                     </span>
                   </div>
                   <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
-                    Assigned today from admin — also in Pipeline → Lead (Today)
+                    Added or assigned today — also in Pipeline → Lead (Today)
                   </p>
                 </div>
               </div>

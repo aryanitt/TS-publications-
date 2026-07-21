@@ -8,6 +8,7 @@ import {
 } from "./callMetrics.js";
 import { mapStageToId, PIPELINE_STAGE_DEFINITIONS } from "./pipelineStages.js";
 import { isDateKeyInPeriod, localDateKey } from "./periodFilter.js";
+import { parseAppDateTime } from "./timezone.js";
 import { formatCallDisplayDate } from "./callDisplay.js";
 
 /** Stages set manually by rep — not auto-routed from Callyzer calls. */
@@ -56,7 +57,9 @@ export function isLeadAssignedInPeriod(lead, period = "month", now = new Date(),
     ? (lead?.assignedAt || lead?.assigned_at)
     : (lead?.assignedAt || lead?.assigned_at || lead?.createdAt || lead?.created_at);
   if (!raw) return false;
-  const key = localDateKey(new Date(raw));
+  const parsed = parseAppDateTime(raw) || new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const key = localDateKey(parsed);
   return isDateKeyInPeriod(key, period, now);
 }
 
@@ -104,6 +107,18 @@ export function isTodayUncontactedAdminLead(lead, periodCalls = [], employeeId =
     sinceAssignment: true,
   })) return false;
   return isLeadAssignedInPeriod(lead, "today", now, { assignedOnly: true });
+}
+
+/** Today: any new assignment (admin or self-added), no outbound dial yet. */
+export function isTodayUncontactedNewLead(lead, periodCalls = [], employeeId = null, now = new Date()) {
+  if (!isEmployeeNewAssignedLead(lead)) return false;
+  if (leadHasOutboundCalls(lead, periodCalls, {
+    outboundOnly: true,
+    scopeByAssignee: true,
+    sinceAssignment: true,
+  })) return false;
+  if (isLeadAssignedInPeriod(lead, "today", now, { assignedOnly: true })) return true;
+  return isLeadAssignedInPeriod(lead, "today", now, { assignedOnly: false });
 }
 
 /** Before today: still uncontacted — surfaces in overdue due section. */

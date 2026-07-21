@@ -13,6 +13,7 @@ import {
   isLeadAssignedInPeriod,
   isAdminPanelAssignedLead,
   isTodayUncontactedAdminLead,
+  isTodayUncontactedNewLead,
   isStaleUncontactedAdminLead,
 } from "../lib/leadKanban.js";
 import { isDateKeyInPeriod, localDateKey as periodLocalDateKey } from "../lib/periodFilter.js";
@@ -28,6 +29,7 @@ export {
   isLeadAssignedInPeriod,
   isAdminPanelAssignedLead,
   isTodayUncontactedAdminLead,
+  isTodayUncontactedNewLead,
   isStaleUncontactedAdminLead,
 };
 
