@@ -296,11 +296,12 @@ function LeadStatusDetailDrawer({ open, onClose, lead, monthLabel }) {
   );
 }
 
-const DEFAULT_KRA_ROWS = [
-  { key: "calls", label: `Call Conversations (${CALL_CONVERSATION_LABEL})`, weight: 25 },
-  { key: "qualified", label: "Qualified Leads", weight: 25 },
-  { key: "meetings", label: "Meetings Scheduled", weight: 25 },
+const DEFAULT_INCENTIVE_METRICS = [
+  { key: "calls", label: `Call Conversations (${CALL_CONVERSATION_LABEL})`, weight: 20 },
+  { key: "qualified", label: "Qualified Leads", weight: 20 },
+  { key: "meetings", label: "Meetings Scheduled", weight: 20 },
   { key: "cash", label: "Cash Collection", weight: 25 },
+  { key: "conversion", label: "Call Conversion (%)", weight: 15 },
 ];
 
 function getSafeNum(val) {
@@ -346,12 +347,18 @@ function getInsightValues(emp, key) {
     case "qualified": return { actual: emp.qualifiedLeads, target: emp.qualifiedTarget };
     case "meetings": return { actual: emp.meetingsScheduled, target: emp.meetingsTarget };
     case "cash": return { actual: emp.cashCollected, target: emp.cashTarget };
+    case "conversion":
+      return {
+        actual: getSafeNum(emp.conversionRate),
+        target: getSafeNum(emp.conversionTarget) || 100,
+      };
     default: return { actual: 0, target: 1 };
   }
 }
 
 function formatTargetDisplay(key, actual, target) {
   if (key === "cash") return `${formatCash(actual)}/${formatCash(target)}`;
+  if (key === "conversion") return `${actual}%/${target}%`;
   return `${actual}/${target}`;
 }
 
@@ -438,7 +445,7 @@ function MetricTile({ label, value, score, icon: Icon, suffix = "%" }) {
   );
 }
 
-function KraInsightRow({ row, onWeightChange }) {
+function IncentiveMetricRow({ row, onWeightChange }) {
   const achievement = row.weight ? Math.min(100, Math.round((row.earned / row.weight) * 1000) / 10) : 0;
 
   return (
@@ -488,7 +495,10 @@ function buildDraftFromEmployee(emp) {
     meetingsTarget: emp.meetingsTarget,
     cashCollected: emp.cashCollected,
     cashTarget: emp.cashTarget,
+    conversionRate: emp.conversionRate ?? 0,
+    conversionTarget: emp.conversionTarget ?? 25,
     incRate: emp.incRate,
+    manualIncentive: "",
     incBonus: emp.incBonus,
     penaltyDeduction: emp.penaltyDeduction,
   };
@@ -510,7 +520,10 @@ function buildBlankTeammate(emp) {
     meetingsTarget: emp.meeting_target || 15,
     cashCollected: 0,
     cashTarget: emp.cash_target || 100000,
+    conversionRate: 0,
+    conversionTarget: 25,
     incRate: 3.0,
+    manualIncentive: "",
     incBonus: 0,
     penaltyDeduction: 0,
     responseTimeMin: 0,
@@ -545,7 +558,7 @@ export default function Incentives() {
   const [kraPeriod, setKraPeriod] = useState("month");
   const [leadTab, setLeadTab] = useState("Converted");
   const [activeLead, setActiveLead] = useState(null);
-  const [kraRows, setKraRows] = useState(DEFAULT_KRA_ROWS.map((r) => ({ ...r })));
+  const [kraRows, setKraRows] = useState(DEFAULT_INCENTIVE_METRICS.map((r) => ({ ...r })));
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcDraft, setCalcDraft] = useState(null);
   const [calcResult, setCalcResult] = useState(null);
@@ -882,7 +895,7 @@ export default function Incentives() {
   const handleRunCalculation = () => {
     if (!calcDraft) return;
     if (totalKraWeight !== 100) {
-      toast.error("KRA weights must total 100%");
+      toast.error("Incentive metric weights must total 100%");
       return;
     }
     const performance = computeWeightedScore({ ...selected, ...calcDraft }, kraRows);
@@ -923,6 +936,10 @@ export default function Incentives() {
   };
 
   const updateDraft = (field, val) => {
+    if (field === "manualIncentive") {
+      setCalcDraft((prev) => ({ ...prev, manualIncentive: val }));
+      return;
+    }
     setCalcDraft((prev) => ({ ...prev, [field]: val === "" ? "" : getSafeNum(val) || val }));
   };
 
@@ -1114,14 +1131,14 @@ export default function Incentives() {
 
           <div className="flex-1 flex flex-col justify-evenly gap-2 min-h-0">
             {insightRows.map((row) => (
-              <KraInsightRow key={row.key} row={row} onWeightChange={updateKraWeight} />
+              <IncentiveMetricRow key={row.key} row={row} onWeightChange={updateKraWeight} />
             ))}
           </div>
 
           <div className="mt-auto pt-3 border-t border-rose-50 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-4">
               <div>
-                <p className="text-[9px] font-bold text-slate-400 uppercase">KRA Weight</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase">Metric Weight</p>
                 <p className={`text-sm font-black tabular-nums ${totalKraWeight === 100 ? "text-emerald-600" : "text-rose-600"}`}>
                   {totalKraWeight}%
                 </p>
@@ -1427,6 +1444,11 @@ export default function Incentives() {
                     left: { field: "cashCollected", label: "Cash Collected (₹)" },
                     right: { field: "cashTarget", label: "Cash Target (₹)" },
                   },
+                  {
+                    label: "Conversion",
+                    left: { field: "conversionRate", label: "Conversion Rate (%)" },
+                    right: { field: "conversionTarget", label: "Conversion Target (%)" },
+                  },
                 ].map(({ label, left, right }) => (
                   <div key={label} className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
                     <p className="text-[9px] font-bold text-rose-700 uppercase tracking-wide mb-2">{label}</p>
@@ -1453,24 +1475,29 @@ export default function Incentives() {
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { field: "incRate", label: "Cash Commission Rate (%)" },
-                  { field: "incBonus", label: "Bonus ($)" },
-                  { field: "penaltyDeduction", label: "Penalty ($)" },
-                ].map(({ field, label }) => (
-                  <div key={field}>
+                  { field: "manualIncentive", label: "Manual Incentive (₹)", text: true, placeholder: "Auto-calculated if empty" },
+                  { field: "incBonus", label: "Bonus (₹)" },
+                  { field: "penaltyDeduction", label: "Penalty (₹)" },
+                ].map(({ field, label, text, placeholder }) => (
+                  <div key={field} className={field === "manualIncentive" ? "col-span-2" : ""}>
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block mb-1">{label}</label>
                     <input
-                      type="number"
-                      value={calcDraft[field]}
+                      type={text ? "text" : "number"}
+                      placeholder={placeholder}
+                      value={calcDraft[field] ?? ""}
                       onChange={(e) => updateDraft(field, e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 text-slate-800 text-xs font-bold outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400"
                     />
                   </div>
                 ))}
               </div>
+              <p className="text-[10px] text-slate-500 mt-2 leading-snug">
+                Incentive is calculated from performance score, cash collection, and conversion metrics. Enter a manual amount to override.
+              </p>
             </div>
 
             <div className="rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-3 py-2 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase">KRA Weights (from table)</div>
+              <div className="px-3 py-2 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase">Incentive Metrics</div>
               {kraRows.map((row) => {
                 const { actual, target } = getInsightValues({ ...selected, ...calcDraft }, row.key);
                 const earned = computeKraEarned(actual, target, row.weight);
@@ -1502,16 +1529,28 @@ export default function Incentives() {
                   </div>
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-600">
-                      KRA Incentive ({remunerationPreview.kraScore}% × {remunerationPreview.baselineRate}% of salary)
+                      Incentive
+                      {remunerationPreview.manualIncentiveOverride ? (
+                        " (manual)"
+                      ) : (
+                        <>
+                          {" "}
+                          ({remunerationPreview.performanceScore ?? remunerationPreview.kraScore}% performance
+                          {calcDraft?.incRate ? ` · ${calcDraft.incRate}% on cash` : ""})
+                        </>
+                      )}
                     </span>
-                    <span className="font-bold text-rose-700 tabular-nums">{formatCash(remunerationPreview.kraIncentive)}</span>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <span className="text-slate-600">
-                      Cash Commission{calcDraft?.incRate ? ` (${calcDraft.incRate}% on cash)` : ""}
+                    <span className="font-bold text-rose-700 tabular-nums">
+                      {formatCash(remunerationPreview.incentiveCore ?? remunerationPreview.commission)}
                     </span>
-                    <span className="font-bold text-rose-700 tabular-nums">{formatCash(remunerationPreview.cashCommission)}</span>
                   </div>
+                  {!remunerationPreview.manualIncentiveOverride && (
+                    <p className="text-[10px] text-slate-500 pl-0.5">
+                      Performance {formatCash(remunerationPreview.performanceIncentive)}
+                      {" + "}
+                      Cash {formatCash(remunerationPreview.cashCommission)}
+                    </p>
+                  )}
                   {(remunerationPreview.bonus > 0 || remunerationPreview.autoTargetBonus > 0) && (
                     <div className="flex justify-between gap-3">
                       <span className="text-slate-600">
@@ -1570,12 +1609,15 @@ export default function Incentives() {
                   <span className="font-bold">{formatCash(calcResult.baseSalary)}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">KRA Incentive ({calcResult.kraScore}% performance)</span>
-                  <span className="font-bold text-rose-700">{formatCash(calcResult.kraIncentive)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Cash Commission ({calcDraft.incRate}% on cash)</span>
-                  <span className="font-bold text-rose-700">{formatCash(calcResult.cashCommission)}</span>
+                  <span className="text-slate-500">
+                    Incentive
+                    {calcResult.manualIncentiveOverride
+                      ? " (manual)"
+                      : ` (${calcResult.performance ?? calcResult.performanceScore}% performance · ${calcDraft.incRate}% cash)`}
+                  </span>
+                  <span className="font-bold text-rose-700">
+                    {formatCash(calcResult.incentiveCore ?? calcResult.commission)}
+                  </span>
                 </div>
                 {calcResult.bonus > 0 && (
                   <div className="flex justify-between text-xs">
@@ -1590,8 +1632,8 @@ export default function Incentives() {
                   </div>
                 )}
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">KRA Performance</span>
-                  <span className="font-bold">{calcResult.performance}%</span>
+                  <span className="text-slate-500">Performance Score</span>
+                  <span className="font-bold">{calcResult.performance ?? calcResult.performanceScore}%</span>
                 </div>
                 <div className="border-t border-rose-100 pt-3 flex justify-between items-center">
                   <span className="text-sm font-semibold text-slate-700">Total Money</span>

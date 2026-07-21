@@ -97,12 +97,16 @@ export function buildEmployeeIncentiveReport({
       baseSalary: breakdown.baseSalary ?? draft.baseSalary ?? employee?.baseSalary ?? 0,
       incentiveRate: draft.incRate ?? employee?.incRate ?? breakdown.slabRate ?? 0,
       baselineRate: breakdown.baselineRate ?? incentiveSettings.baseIncentiveRate,
-      kraScore: breakdown.kraScore ?? weightedPerformance,
-      kraIncentive: breakdown.kraIncentive ?? 0,
+      performanceScore: breakdown.performanceScore ?? breakdown.kraScore ?? weightedPerformance,
+      kraScore: breakdown.performanceScore ?? breakdown.kraScore ?? weightedPerformance,
+      incentiveAmount: breakdown.incentiveCore ?? breakdown.commission ?? 0,
+      performanceIncentive: breakdown.performanceIncentive ?? 0,
       cashCollected: draft.cashCollected ?? employee?.cashCollected ?? 0,
       cashTarget: draft.cashTarget ?? employee?.cashTarget ?? 0,
       cashCommission: breakdown.cashCommission ?? 0,
-      commission: breakdown.commission ?? 0,
+      manualIncentiveOverride: breakdown.manualIncentiveOverride ?? false,
+      kraIncentive: 0,
+      commission: breakdown.incentiveCore ?? breakdown.commission ?? 0,
       bonus: breakdown.bonus ?? 0,
       autoTargetBonus: breakdown.autoTargetBonus ?? 0,
       manualBonus: breakdown.manualBonus ?? 0,
@@ -148,7 +152,7 @@ export function downloadIncentiveReportCsv(report) {
   push("Team", report.employee.team);
   push("Status", report.employee.status);
   push("Month", report.period.monthLabel);
-  push("KRA Period", report.period.kraPeriodLabel);
+  push("Period", report.period.kraPeriodLabel);
   blank();
 
   push("Call Statistics");
@@ -160,12 +164,12 @@ export function downloadIncentiveReportCsv(report) {
   push("Converted Leads", report.calls.convertedLeads);
   blank();
 
-  push("KRA Performance");
+  push("Incentive Metrics");
   push("Metric", "Completed", "Target", "Weight %", "Earned %", "Achievement");
   report.kraPerformance.forEach((row) => {
     push(row.label, row.actual, row.target, row.weight, row.earned, row.display);
   });
-  push("Overall KRA Score (%)", report.kraScore);
+  push("Overall Performance Score (%)", report.kraScore);
   blank();
 
   push("Service Metrics");
@@ -180,8 +184,9 @@ export function downloadIncentiveReportCsv(report) {
 
   push("Remuneration");
   push("Base Salary (INR)", plainMoney(report.remuneration.baseSalary));
-  push("KRA Score (%)", report.remuneration.kraScore);
-  push("KRA Incentive (INR)", plainMoney(report.remuneration.kraIncentive));
+  push("Performance Score (%)", report.remuneration.performanceScore ?? report.remuneration.kraScore);
+  push("Incentive (INR)", plainMoney(report.remuneration.incentiveAmount));
+  push("Performance Component (INR)", plainMoney(report.remuneration.performanceIncentive));
   push("Cash Collected (INR)", plainMoney(report.remuneration.cashCollected));
   push("Cash Target (INR)", plainMoney(report.remuneration.cashTarget));
   push("Cash Commission Rate (%)", report.remuneration.incentiveRate);
@@ -266,19 +271,16 @@ export function downloadIncentiveReportHtml(report) {
   const moneyRows = [
     ["Base Salary", money(report.remuneration.baseSalary), ""],
     [
-      "KRA Incentive",
-      money(report.remuneration.kraIncentive),
-      `${report.remuneration.kraScore}% performance · ${report.remuneration.baselineRate}% of salary`,
-    ],
-    [
-      "Cash Commission",
-      money(report.remuneration.cashCommission),
-      `${report.remuneration.incentiveRate}% on ${money(report.remuneration.cashCollected)} collected`,
+      "Incentive",
+      money(report.remuneration.incentiveAmount),
+      report.remuneration.manualIncentiveOverride
+        ? "Manual override"
+        : `${report.remuneration.performanceScore ?? report.remuneration.kraScore}% performance · ${report.remuneration.incentiveRate}% on ${money(report.remuneration.cashCollected)} collected`,
     ],
   ];
 
   if (report.remuneration.autoTargetBonus > 0) {
-    moneyRows.push(["Target Bonus", money(report.remuneration.autoTargetBonus), "KRA target reached"]);
+    moneyRows.push(["Target Bonus", money(report.remuneration.autoTargetBonus), "Performance target reached"]);
   }
   if (report.remuneration.manualBonus > 0 || (report.remuneration.bonus > report.remuneration.autoTargetBonus)) {
     const manual = report.remuneration.bonus - (report.remuneration.autoTargetBonus || 0);
@@ -539,7 +541,7 @@ export function downloadIncentiveReportHtml(report) {
         </div>
       </div>
       <div class="score-banner">
-        <div class="label">KRA Score</div>
+        <div class="label">Performance Score</div>
         <div class="value">${esc(report.kraScore)}%</div>
       </div>
     </div>
@@ -563,7 +565,7 @@ export function downloadIncentiveReportHtml(report) {
   </div>
 
   <section>
-    <h2>KRA Performance</h2>
+    <h2>Incentive Metrics</h2>
     <table>
       <tr>
         <th>Metric</th>
