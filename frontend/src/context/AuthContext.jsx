@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost, invalidateCache } from "../lib/api.js";
 import {
   clearAuthStorage,
@@ -107,12 +107,14 @@ export function AuthProvider({ children }) {
       }
     } catch {
       // Keep the stored session — /me can fail briefly during deploy or cold start.
-      if (storedUser) {
-        setUser(storedUser);
-      } else {
-        clearAuthStorage();
-        setUser(null);
-      }
+      startTransition(() => {
+        if (storedUser) {
+          setUser(storedUser);
+        } else {
+          clearAuthStorage();
+          setUser(null);
+        }
+      });
     } finally {
       setLoading(false);
     }

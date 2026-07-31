@@ -11,13 +11,10 @@ import {
   formatEmpPipelineValue,
   getEmpPipelineSummary,
   getEmpStageMeta,
-  isAdminPanelAssignedLead,
-  isLeadAssignedInPeriod,
 } from "../../data/employeeMock.js";
-import { leadHasOutboundCalls } from "../../lib/leadKanban.js";
-import { resolveLeadKanbanColumn, getPipelineStagePillCount } from "../../lib/leadKanban.js";
+import { leadHasOutboundCalls, resolveLeadKanbanColumn, getPipelineStagePillCount, isAdminPanelAssignedLead, isLeadAssignedInPeriod } from "../../lib/leadKanban.js";
 import { buildLeadActivityLabelMap } from "../../lib/callDisplay.js";
-import { CALL_CONVERSATION_LABEL } from "../../lib/callMetrics.js";
+import { CALL_CONVERSATION_LABEL, CALL_SHORT_LABEL } from "../../lib/callMetrics.js";
 import { usePipelineBoard, visibleKanbanColumnLeads, hiddenKanbanColumnCount } from "../../lib/usePipelineBoard.js";
 import { usePipelineSync } from "../../lib/usePipelineSync.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
@@ -270,8 +267,10 @@ export default function EmployeeLeads() {
     grouped,
     stageDisplayCounts,
     syncedConversationCalls,
+    syncedShortCalls,
     syncedNotPickupCalls,
     periodMeetings,
+    moveLeadLocally,
   } = usePipelineBoard({
     leads,
     period: deferredPeriod,
@@ -348,7 +347,9 @@ export default function EmployeeLeads() {
       return;
     }
     updateLeadStage(lead.id, target.label, { fromNewAssigned: isPipelineNewAssigned(lead) });
-    setGroupRev((v) => v + 1);
+    if (moveLeadLocally) {
+      moveLeadLocally(lead.id, stageId);
+    }
     if (scroll) scrollToStage(stageId);
     toast.success(
       isPipelineNewAssigned(lead)
@@ -476,6 +477,8 @@ export default function EmployeeLeads() {
             let callHint = null;
             if (stage.id === "conversation_2min") {
               callHint = `${syncedConversationCalls} calls ${CALL_CONVERSATION_LABEL} · ${columnLeads.length} leads with 2 min+`;
+            } else if (stage.id === "short_call") {
+              callHint = `${syncedShortCalls} connected calls ${CALL_SHORT_LABEL} · ${columnLeads.length} leads in Short Call`;
             } else if (stage.id === "not_pick") {
               callHint = `${syncedNotPickupCalls} client no pickup · ${columnLeads.length} leads in Not Pick`;
             } else if (stage.id === "meeting_booked") {
@@ -501,7 +504,7 @@ export default function EmployeeLeads() {
           })}
         </div>
         <p className="text-[10px] text-slate-400 px-0.5">
-          {periodLabel} · Callyzer synced · {syncedConversationCalls} calls {CALL_CONVERSATION_LABEL} ({grouped.conversation_2min?.length || 0} leads) · {syncedNotPickupCalls} client no pickup ({grouped.not_pick?.length || 0} leads) · {periodMeetings.length} meetings
+          {periodLabel} · Callyzer synced · {syncedShortCalls} short calls {CALL_SHORT_LABEL} ({grouped.short_call?.length || 0} leads) · {syncedConversationCalls} calls {CALL_CONVERSATION_LABEL} ({grouped.conversation_2min?.length || 0} leads) · {syncedNotPickupCalls} client no pickup ({grouped.not_pick?.length || 0} leads) · {periodMeetings.length} meetings
           {(boardSyncing) ? " · syncing in background…" : ""}
         </p>
       </GlassCard>
@@ -568,15 +571,15 @@ export default function EmployeeLeads() {
                           ? "New admin assignments appear here"
                           : stage.id === "not_pick"
                             ? "Leads with not-picked calls"
-                            : stage.id === "conversation_2min"
-                              ? "Leads with 2 min+ connected calls"
+                            : stage.id === "short_call"
+                              ? "Leads with connected calls under 2 min"
+                              : stage.id === "conversation_2min"
+                                ? "Leads with 2 min+ connected calls"
                               : stage.id === "meeting_booked"
                                 ? "Meetings scheduled this period"
                                 : stage.id === "meeting_done"
                                   ? "Meetings completed this period"
-                                  : stage.id === "lead"
-                                    ? "New leads & short calls"
-                                    : "No leads here"}
+                                  : "No leads here"}
                       </p>
                     </div>
                   ) : (
@@ -663,8 +666,10 @@ export default function EmployeeLeads() {
                             ? "New leads appear here"
                             : stage.id === "not_pick"
                               ? "Leads with not-picked calls"
-                              : stage.id === "conversation_2min"
-                                ? "Leads with 2 min+ connected calls"
+                              : stage.id === "short_call"
+                                ? "Leads with connected calls under 2 min"
+                                : stage.id === "conversation_2min"
+                                  ? "Leads with 2 min+ connected calls"
                                 : stage.id === "meeting_booked"
                                   ? "Meetings scheduled this period"
                                   : stage.id === "meeting_done"

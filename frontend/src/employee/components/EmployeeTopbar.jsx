@@ -42,8 +42,8 @@ const CANONICAL_SERVICES = [
 
 const CALL_PERIODS = [
   { id: "today", label: "Today" },
-  { id: "week", label: "Week" },
-  { id: "month", label: "Month" },
+  { id: "week", label: "This Week" },
+  { id: "month", label: "This Month" },
 ];
 
 export default function EmployeeTopbar({ onMenu }) {
@@ -158,28 +158,31 @@ export default function EmployeeTopbar({ onMenu }) {
             />
           </div>
 
-          <div className="hidden md:block flex-grow min-w-0" />
-
+          {/* Web Period Filter — in top navbar for desktop/tablet */}
           {showPeriodFilter && (
-            <div className={`${SEGMENT_WRAP} hidden sm:inline-flex mr-1 shrink-0`}>
-              {CALL_PERIODS.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setPeriod(id)}
-                  className={`${SEGMENT_BTN} ${
-                    currentPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="hidden md:inline-flex items-center mx-2 shrink-0">
+              <div className={SEGMENT_WRAP}>
+                {CALL_PERIODS.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setPeriod(id)}
+                    className={`${SEGMENT_BTN} ${
+                      currentPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
+          <div className="hidden md:block flex-grow min-w-0" />
+
           <div className="flex items-center gap-1 sm:gap-1.5 justify-end shrink-0">
             {(isPipelinePage) && (
-              <div className="relative hidden sm:inline-flex w-auto shrink-0 mr-1">
+              <div className="relative hidden md:inline-flex w-auto shrink-0 mr-1">
                 <select
                   value={selectedService}
                   onChange={(e) => setSelectedService(e.target.value)}
@@ -274,7 +277,7 @@ export default function EmployeeTopbar({ onMenu }) {
         </div>
 
         {showPeriodFilter && (
-          <div className="sm:hidden px-2.5 pb-2 pt-1 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+          <div className="md:hidden px-2.5 pb-2 pt-1 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
             <div className="flex items-center gap-2 min-w-0">
               <div className={`${SEGMENT_WRAP} flex-1 min-w-0`}>
                 {CALL_PERIODS.map(({ id, label }) => (

@@ -18,6 +18,7 @@ import {
   priorityTone, stageTone, Avatar, StatCard,
 } from "../components/Primitives.jsx";
 import { formatIndianNumber } from "../lib/indianFormat.js";
+import { formatTelUrl } from "../lib/phoneUtils.js";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import { useAdmin } from "../context/AdminContext.jsx";
 import { useDateRange } from "../context/DateRangeContext.jsx";
@@ -1299,7 +1300,11 @@ function SalesLeadDetail({ lead, onDelete, onUpdate }) {
   };
 
   const setEdit = (key, val) => setEditData(prev => ({ ...prev, [key]: val }));
-  const handleCall = () => { window.location.href = `tel:${lead.phone}`; };
+  const handleCall = () => {
+    if (!lead?.phone) return;
+    const url = formatTelUrl(lead.phone);
+    if (url) window.location.href = url;
+  };
 
   const handleScheduleSave = () => {
     if (!scheduleDate) return;

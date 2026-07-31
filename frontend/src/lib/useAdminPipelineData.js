@@ -14,7 +14,7 @@ import { dedupePeriodCalls } from "./callMetrics.js";
 import { useTenantCallyzerStats } from "./useTenantCallyzerStats.js";
 import { usePipelineBoard } from "./usePipelineBoard.js";
 import { usePipelineSync } from "./usePipelineSync.js";
-import { CALL_CONVERSATION_LABEL } from "./callMetrics.js";
+import { CALL_CONVERSATION_LABEL, CALL_SHORT_LABEL } from "./callMetrics.js";
 
 function mapTenantMeeting(row) {
   if (!row) return null;
@@ -142,7 +142,7 @@ export function useAdminPipelineData({
   );
 
   const periodLabel = period === "today" ? "Today" : period === "week" ? "This Week" : "This Month";
-  const callSummary = `${periodLabel} · ${board.syncedConversationCalls} calls ${CALL_CONVERSATION_LABEL} · ${board.syncedNotPickupCalls} client no pickup`;
+  const callSummary = `${periodLabel} · ${board.syncedShortCalls} short calls ${CALL_SHORT_LABEL} · ${board.syncedConversationCalls} calls ${CALL_CONVERSATION_LABEL} · ${board.syncedNotPickupCalls} client no pickup`;
 
   const tempTotals = useMemo(() => {
     const totals = { Hot: 0, Warm: 0, Cold: 0 };

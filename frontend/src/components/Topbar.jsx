@@ -358,7 +358,11 @@ export default function Topbar({ onMenu }) {
           )}
         </div>
 
-        {showDateRange && <DateRangeFilter className="hidden xl:flex shrink-0" />}
+        {showDateRange && (
+          <div className="hidden md:flex shrink-0">
+            <DateRangeFilter />
+          </div>
+        )}
 
         {!isDenseToolbar && <div className="hidden md:block flex-grow min-w-0" />}
 
@@ -366,24 +370,26 @@ export default function Topbar({ onMenu }) {
         <div className="flex items-center gap-1 sm:gap-1.5 justify-end shrink-0 min-w-0">
 
           {isPipelinePage && (
-            <div className={`${SEGMENT_WRAP} hidden sm:inline-flex shrink-0`}>
-              {PIPELINE_PERIODS.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setPipelinePeriod(id)}
-                  className={`${SEGMENT_BTN} ${
-                    pipelinePeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="hidden md:inline-flex items-center shrink-0">
+              <div className={SEGMENT_WRAP}>
+                {PIPELINE_PERIODS.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setPipelinePeriod(id)}
+                    className={`${SEGMENT_BTN} ${
+                      pipelinePeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {isLeadsPage && (
-            <div className="relative hidden sm:inline-flex w-auto shrink-0">
+            <div className="relative hidden md:inline-flex w-auto shrink-0">
               <select
                 value={selectedService}
                 onChange={(e) => setSelectedService(e.target.value)}
@@ -571,7 +577,7 @@ export default function Topbar({ onMenu }) {
       )}
 
       {isPipelinePage && (
-        <div className="sm:hidden px-3 pb-2 pt-0 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+        <div className="md:hidden px-3 pb-2 pt-0 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
           <div className="flex items-center gap-2">
             <div className={`${SEGMENT_WRAP} inline-flex flex-1 min-w-0`}>
               {PIPELINE_PERIODS.map(({ id, label }) => (
@@ -604,7 +610,7 @@ export default function Topbar({ onMenu }) {
       )}
 
       {isLeadsPage && !isPipelinePage && (
-        <div className="sm:hidden px-3 pb-2 pt-1 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+        <div className="md:hidden px-3 pb-2 pt-1 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
           <select
             value={selectedService}
             onChange={(e) => setSelectedService(e.target.value)}
@@ -621,7 +627,7 @@ export default function Topbar({ onMenu }) {
       )}
 
       {showDateRange && (
-        <div className="xl:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
+        <div className="md:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
           <DateRangeFilter compact className="w-full" />
         </div>
       )}

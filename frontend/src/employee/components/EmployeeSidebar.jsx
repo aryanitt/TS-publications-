@@ -59,7 +59,7 @@ export default function EmployeeSidebar({ open, onClose, collapsed, onToggleColl
             to="/employee"
             onNavigate={onClose}
             isExpanded={isExpanded}
-            logo={<EmployeePanelDoodleLogo size={36} />}
+            logo={<EmployeePanelDoodleLogo size={36} showBackground={false} />}
             title="Employee Panel"
             subtitle="LRMS · Sales workspace"
           />

@@ -530,7 +530,6 @@ function buildBlankTeammate(emp) {
     pickupRate: 0,
     qualificationRate: 0,
     objectionHandling: 0,
-    conversionRate: 0,
     followUpQuality: 0,
     leadStatus: { Converted: 0, Qualified: 0, "Un-Qualified": 0, "Not Interested": 0 },
     weeklyLeads: {
@@ -1094,38 +1093,39 @@ export default function Incentives() {
 
       {/* ── Top row: Performance + Service Metrics ── */}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 xl:items-stretch min-h-0">
-        {/* Performance & Incentive */}
         <GlassCard className="p-4 xl:col-span-3 flex flex-col h-full min-w-0">
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="min-w-0">
-              <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-                Performance & Incentive
-              </h3>
-              <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                {selected.name} · {kraPeriod === "month" ? monthLabel : kraPeriodLabel(kraPeriod)}
-              </p>
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3 border-b border-rose-50 pb-2">
+            <div className="flex items-start justify-between gap-3 w-full">
+              <div className="min-w-0">
+                <h3 className="text-[13px] font-black text-slate-800 uppercase tracking-wide">
+                  Performance & Incentive
+                </h3>
+                <p className="text-[11px] font-semibold text-slate-550 mt-0.5 truncate">
+                  {selected.name} · {kraPeriod === "month" ? monthLabel : kraPeriodLabel(kraPeriod)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-rose-50 border border-[#FFE4E1] px-2.5 py-1.5 text-center shrink-0">
+                <p className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Score</p>
+                <p className="text-sm font-black text-rose-700 tabular-nums leading-none mt-0.5">
+                  {calcResult ? calcResult.performance : weightedPerformance}%
+                </p>
+              </div>
             </div>
-            <div className="flex gap-1 shrink-0">
+            <div className="flex gap-1 shrink-0 w-full sm:w-auto">
               {KRA_PERIODS.map((p) => (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => setKraPeriod(p.id)}
-                  className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition ${
+                  className={`flex-1 sm:flex-none px-2.5 py-1.5 sm:py-1 rounded-lg text-[10px] font-black border transition-all ${
                     kraPeriod === p.id
-                      ? "bg-rose-50 border-rose-200 text-rose-700"
-                      : "bg-white border-slate-200 text-slate-500 hover:border-rose-200"
+                      ? "bg-rose-50 border-rose-250 text-rose-700 font-black shadow-sm"
+                      : "bg-white border-slate-200/80 text-slate-555 hover:border-rose-200"
                   }`}
                 >
                   {p.label}
                 </button>
               ))}
-            </div>
-            <div className="rounded-xl bg-rose-50 border border-rose-100 px-2.5 py-1.5 text-center shrink-0">
-              <p className="text-[8px] font-bold text-slate-400 uppercase">Score</p>
-              <p className="text-sm font-black text-rose-700 tabular-nums leading-none mt-0.5">
-                {calcResult ? calcResult.performance : weightedPerformance}%
-              </p>
             </div>
           </div>
 

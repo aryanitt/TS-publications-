@@ -236,6 +236,7 @@ export function apiLeadToAdmin(lead) {
     assignee_name: employeeName,
     employeeName,
     assignment_status: lead.assignmentStatus || lead.assignment_status,
+    is_bulk_uploaded: lead.sourceMeta?.integration === "bulk_upload" || lead.source_meta?.integration === "bulk_upload" || false,
   };
 }
 
@@ -258,6 +259,20 @@ export function apiEmployeeToAdmin(emp) {
     department: emp.department,
     status: emp.status,
   };
+}
+
+/** Active employees only — excludes inactive/demo rows not shown on Team page. */
+export function filterAssignableEmployees(employees = []) {
+  const seen = new Set();
+  return (Array.isArray(employees) ? employees : []).filter((emp) => {
+    if (!emp?.id) return false;
+    const status = String(emp.status || "active").trim().toLowerCase();
+    if (status === "inactive") return false;
+    const key = String(emp.id);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Fetch all leads from paginated /api/v1/leads (admin lists were capped at 200). */

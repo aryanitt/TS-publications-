@@ -52,7 +52,11 @@ export default function ChangePassword() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">
-            <TSPublicationDoodleLogo size={56} />
+            <TSPublicationDoodleLogo
+              size={60}
+              shape="rounded"
+              className="shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+            />
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Set a new password</h1>
           <p className="text-sm text-slate-500 mt-1">

@@ -8,7 +8,7 @@ export default function BottomNavShell({ label, children }) {
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label={label}
     >
-      <div className="flex items-stretch justify-around gap-0.5 h-[4.25rem] max-w-[100vw] px-1">
+      <div className="flex items-center justify-around h-16 max-w-[100vw] px-2">
         {children}
       </div>
     </nav>
@@ -21,15 +21,25 @@ export function BottomNavItem({ to, end, label, icon: Icon }) {
       to={to}
       end={end}
       className={({ isActive }) =>
-        `flex flex-1 flex-col items-center justify-center gap-0.5 min-w-0 max-w-[5.5rem] px-1 py-1.5 rounded-xl text-[10px] font-semibold leading-tight transition-colors ${
-          isActive
-            ? "text-[#be123c] bg-rose-50"
-            : "text-slate-500 hover:text-slate-700"
+        `flex flex-1 flex-col items-center justify-center min-w-0 max-w-[5.5rem] py-1 text-[9.5px] font-extrabold leading-tight transition-all duration-200 ${
+          isActive ? "text-[#DC143C]" : "text-[#4B5563] hover:text-[#111827]"
         }`
       }
     >
-      <Icon className="w-5 h-5 shrink-0" strokeWidth={2} aria-hidden />
-      <span className="truncate max-w-full text-center">{label}</span>
+      {({ isActive }) => (
+        <>
+          <div
+            className={`flex items-center justify-center px-4 py-1.5 rounded-full transition-all duration-300 ${
+              isActive
+                ? "bg-[#FFF0F5] text-[#DC143C] scale-105 shadow-[0_2px_8px_rgba(220,20,60,0.08)] border border-[#FFD6E5]"
+                : "text-[#4B5563]"
+            }`}
+          >
+            <Icon className="w-5 h-5 shrink-0" strokeWidth={2} aria-hidden />
+          </div>
+          <span className="truncate max-w-full text-center mt-1 font-bold">{label}</span>
+        </>
+      )}
     </NavLink>
   );
 }

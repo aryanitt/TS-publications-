@@ -12,6 +12,8 @@ import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
 import { useEmployeeKraMetrics } from "../lib/useEmployeeKraMetrics.js";
 import { KRA_PERIODS, kraPeriodLabel } from "../lib/kraPeriod.js";
 import { getPipelineQualifiedCount } from "../lib/leadSync.js";
+import useIsMobile from "../lib/useIsMobile.js";
+
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
   const s = document.createElement("style");
@@ -391,13 +393,13 @@ const INSIGHT_CARD_SUB = {
 };
 
 function useEmployeeLeads(emp) {
-  const [leads,        setLeads]        = useState([]);
-  const [stats,        setStats]        = useState(null);
-  const [activity,     setActivity]     = useState([]);
-  const [funnel,       setFunnel]       = useState([]);
+  const [leads, setLeads] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [funnel, setFunnel] = useState([]);
   const [stageBreakdown, setStageBreakdown] = useState([]);
-  const [loading,      setLoading]      = useState(false);
-  const [lastRefreshed,setLastRefreshed]= useState(null);
+  const [loading, setLoading] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
 
   const fetchLeads = useCallback((showLoader = true) => {
     if (!emp?.id && !emp?.name) return;
@@ -413,10 +415,10 @@ function useEmployeeLeads(emp) {
     )
       .then((data) => {
         if (data.success) {
-          setLeads(data.leads    || []);
-          setStats(data.stats    || null);
+          setLeads(data.leads || []);
+          setStats(data.stats || null);
           setActivity(data.activity || []);
-          setFunnel(data.funnel  || []);
+          setFunnel(data.funnel || []);
           setStageBreakdown(data.stageBreakdown || []);
           setLastRefreshed(new Date());
         }
@@ -437,9 +439,9 @@ function useEmployeeLeads(emp) {
     return () => clearInterval(timer);
   }, [emp?.id, emp?.name, fetchLeads]);
 
-  return { 
+  return {
     leads, stats, activity, funnel, stageBreakdown,
-    loading, refresh: () => fetchLeads(true), lastRefreshed 
+    loading, refresh: () => fetchLeads(true), lastRefreshed
   };
 }
 
@@ -667,39 +669,49 @@ function DatePicker({ onApply, onClose }) {
   const [e, setE] = useState("");
   return (
     <motion.div
-      initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}
-      style={{ position:"absolute", top:"calc(100% + 6px)", left:0, zIndex:40,
-               borderRadius:14, border:"1px solid #fecdd3", padding:16, width:255, background:"#fff", boxShadow:"0 16px 48px rgba(0,0,0,.08)" }}
+      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+      style={{
+        position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
+        borderRadius: 14, border: "1px solid #fecdd3", padding: 16, width: 255, background: "#fff", boxShadow: "0 16px 48px rgba(0,0,0,.08)"
+      }}
     >
-      <p style={{ fontSize:10, textTransform:"uppercase", letterSpacing:".1em",
-                  color:"#be123c", marginBottom:12 }}>
+      <p style={{
+        fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em",
+        color: "#be123c", marginBottom: 12
+      }}>
         Custom Range
       </p>
       {[["From", s, setS], ["To", e, setE]].map(([lbl, val, fn]) => (
-        <div key={lbl} style={{ marginBottom:10 }}>
-          <label style={{ fontSize:11, color:"#be123c", display:"block", marginBottom:4 }}>
+        <div key={lbl} style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "#be123c", display: "block", marginBottom: 4 }}>
             {lbl}
           </label>
           <input type="date" value={val} onChange={ev => fn(ev.target.value)}
-            style={{ width:"100%", padding:"7px 10px", borderRadius:8,
-                     background:"#f8fafc", border:"1px solid #e2e8f0",
-                     fontSize:12, color:"inherit", outline:"none",
-                     boxSizing:"border-box" }}/>
+            style={{
+              width: "100%", padding: "7px 10px", borderRadius: 8,
+              background: "#f8fafc", border: "1px solid #e2e8f0",
+              fontSize: 12, color: "inherit", outline: "none",
+              boxSizing: "border-box"
+            }} />
         </div>
       ))}
-      <div style={{ display:"flex", gap:8, marginTop:4 }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
         <button onClick={onClose}
-          style={{ flex:1, padding:"7px", borderRadius:8,
-                   border:"1px solid #e2e8f0", fontSize:12, color:"#475569", background:"transparent",
-                   cursor:"pointer" }}>
+          style={{
+            flex: 1, padding: "7px", borderRadius: 8,
+            border: "1px solid #e2e8f0", fontSize: 12, color: "#475569", background: "transparent",
+            cursor: "pointer"
+          }}>
           Cancel
         </button>
         <button
           disabled={!s || !e}
           onClick={() => { if (s && e) { onApply({ s, e }); onClose(); } }}
-          style={{ flex:1, padding:"7px", borderRadius:8,
-                   background: s && e ? "oklch(0.50 0.22 18)" : "#e2e8f0",
-                   fontSize:12, fontWeight:500, color: s && e ? "#fff" : "#94a3b8", border:"none", cursor: s && e ? "pointer" : "not-allowed" }}>
+          style={{
+            flex: 1, padding: "7px", borderRadius: 8,
+            background: s && e ? "oklch(0.50 0.22 18)" : "#e2e8f0",
+            fontSize: 12, fontWeight: 500, color: s && e ? "#fff" : "#94a3b8", border: "none", cursor: s && e ? "pointer" : "not-allowed"
+          }}>
           Apply
         </button>
       </div>
@@ -892,7 +904,8 @@ function FSec({ title, children }) {
             textTransform: "uppercase",
             letterSpacing: ".13em",
             fontWeight: 600,
-            color: "#be123c", whiteSpace: "nowrap", }}>{title}</span><div style={{ flex: 1, height: 1, background: "#fecdd3" }} />
+            color: "#be123c", whiteSpace: "nowrap",
+          }}>{title}</span><div style={{ flex: 1, height: 1, background: "#fecdd3" }} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>{children}</div>
     </div>
@@ -1791,15 +1804,17 @@ function DeleteModal({ open, emp, onConfirm, onCancel, busy }) {
               maxWidth: 360,
               borderRadius: 18,
               padding: 22,
-              background: "#fff", border: "1px solid #fecdd3", }}><div style={{ display: "flex", gap: 12, marginBottom: 14 }}><div style={{ width: 38, height: 38, borderRadius: 10, background: "#fff1f2",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <AlertTriangle style={{ width: 18, height: 18, color: C.red }} />
-              </div>
+              background: "#fff", border: "1px solid #fecdd3",
+            }}><div style={{ display: "flex", gap: 12, marginBottom: 14 }}><div style={{
+              width: 38, height: 38, borderRadius: 10, background: "#fff1f2",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+            >
+              <AlertTriangle style={{ width: 18, height: 18, color: C.red }} />
+            </div>
               <div>
                 <p style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>Remove Employee</p><p style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
                   This cannot be undone
@@ -2026,13 +2041,13 @@ function PipelineFunnelGraphic({ funnelData, compact, dense = false, mini = fals
     const countSize = mini
       ? (narrow ? 11 : 12)
       : dense
-      ? (narrow ? 13 : 15)
-      : narrow ? (compact ? 17 : 19) : (compact ? 20 : 24);
+        ? (narrow ? 13 : 15)
+        : narrow ? (compact ? 17 : 19) : (compact ? 20 : 24);
     const labelSize = mini
       ? (narrow ? 6 : 7)
       : dense
-      ? (narrow ? 7 : 8)
-      : narrow ? (compact ? 9 : 10) : (compact ? 11 : 12);
+        ? (narrow ? 7 : 8)
+        : narrow ? (compact ? 9 : 10) : (compact ? 11 : 12);
 
     return {
       points: `${cx - topHalf},${y0} ${cx + topHalf},${y0} ${cx + botHalf},${y1} ${cx - botHalf},${y1}`,
@@ -2110,6 +2125,7 @@ function PipelineFunnelGraphic({ funnelData, compact, dense = false, mini = fals
 function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
   const { employee: profile, loading: detailLoading } = useEmployeeDetails(emp);
   const activeEmp = profile || emp;
+  const isMobile = useIsMobile();
   const [leadDrawerOpen, setLeadDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("All Leads");
   const [search, setSearch] = useState("");
@@ -2138,7 +2154,7 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
   // KRA & Remuneration Calculator States
   const [baseSalary, setBaseSalary] = useState(12000);
   const [incRate, setIncRate] = useState(6);
-  
+
   const [callT, setCallT] = useState(250);
   const [callA, setCallA] = useState(200);
   const [callW, setCallW] = useState(25);
@@ -2251,13 +2267,13 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
     return result;
   }, [leads, search]);
 
-  const calls     = callyzerStats?.totalCalls ?? stats?.contacted ?? 0;
-  const meetings  = kraMetrics.meetings ?? stats?.totalMeetings ?? stats?.booked ?? 0;
-  const assigned  = stats?.totalLeads ?? 0;
+  const calls = callyzerStats?.totalCalls ?? stats?.contacted ?? 0;
+  const meetings = kraMetrics.meetings ?? stats?.totalMeetings ?? stats?.booked ?? 0;
+  const assigned = stats?.totalLeads ?? 0;
   const qualified = callyzerStats?.conversations5MinPlus ?? getPipelineQualifiedCount(stats, stageBreakdown);
   const followups = stats?.followUps ?? 0;
   const converted = stats?.converted ?? 0;
-  const revenue   = stats?.revenue ?? 0;
+  const revenue = stats?.revenue ?? 0;
 
   const funnelStages = useMemo(() => {
     if (callyzerConfigured && callyzerStats) {
@@ -2274,12 +2290,12 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
   const funnelData = useMemo(
     () => (funnelStages.length
       ? funnelStages.map((f, idx) => ({
-          label: f.name,
-          value: `${f.value} ${f.name}`,
-          sub: funnelConversionLabel(funnelStages, idx),
-          width: `${Math.max(40, 100 - idx * 12)}%`,
-          opacity: Math.max(0.45, 1 - idx * 0.12),
-        }))
+        label: f.name,
+        value: `${f.value} ${f.name}`,
+        sub: funnelConversionLabel(funnelStages, idx),
+        width: `${Math.max(40, 100 - idx * 12)}%`,
+        opacity: Math.max(0.45, 1 - idx * 0.12),
+      }))
       : []),
     [funnelStages],
   );
@@ -2468,13 +2484,13 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
               flex: compact ? 1 : undefined,
               transition: "all .15s",
             }}
-            onMouseEnter={(e) => { 
-              e.currentTarget.style.background = "#dc2626"; 
-              e.currentTarget.style.borderColor = "#dc2626"; 
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#dc2626";
+              e.currentTarget.style.borderColor = "#dc2626";
             }}
-            onMouseLeave={(e) => { 
-              e.currentTarget.style.background = "#ef4444"; 
-              e.currentTarget.style.borderColor = "#ef4444"; 
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#ef4444";
+              e.currentTarget.style.borderColor = "#ef4444";
             }}
           >
             <Trash2 style={{ width: 11, height: 11 }} />
@@ -2628,162 +2644,162 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
           };
 
           return (
-        <div style={{ display: "flex", flexDirection: "column", gap: compact ? 8 : 12 }}>
-          {compact ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-              {kraRows.map((kpi) => (
-                <div
-                  key={kpi.label}
-                  style={{
-                    border: "1px solid #ffe4e6",
-                    borderRadius: 10,
-                    padding: "8px 9px",
-                    background: "#fff",
-                    minWidth: 0,
-                  }}
-                >
-                  <p style={{ fontSize: 9, fontWeight: 700, color: "#be123c", margin: 0, lineHeight: 1.2, textTransform: "uppercase", letterSpacing: ".03em" }}>
-                    {kpi.label}
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={miniLabel}>Achieved</span>
-                      <input type="text" value={kpi.ach} onChange={(e) => kpi.setAch(e.target.value)} style={fieldInput} />
+            <div style={{ display: "flex", flexDirection: "column", gap: compact ? 8 : 12 }}>
+              {compact ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                  {kraRows.map((kpi) => (
+                    <div
+                      key={kpi.label}
+                      style={{
+                        border: "1px solid #ffe4e6",
+                        borderRadius: 10,
+                        padding: "8px 9px",
+                        background: "#fff",
+                        minWidth: 0,
+                      }}
+                    >
+                      <p style={{ fontSize: 9, fontWeight: 700, color: "#be123c", margin: 0, lineHeight: 1.2, textTransform: "uppercase", letterSpacing: ".03em" }}>
+                        {kpi.label}
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <span style={miniLabel}>Achieved</span>
+                          <input type="text" value={kpi.ach} onChange={(e) => kpi.setAch(e.target.value)} style={fieldInput} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <span style={miniLabel}>Target</span>
+                          <input type="text" value={kpi.tgt} onChange={(e) => kpi.setTgt(e.target.value)} style={fieldInput} />
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4, marginTop: 6, paddingTop: 6, borderTop: "1px solid #fff1f2" }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "#1e293b", whiteSpace: "nowrap" }}>
+                          {kpi.score.toFixed(1)}%
+                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+                          <span style={{ fontSize: 8, color: "#94a3b8", fontWeight: 600 }}>Wt</span>
+                          <input type="text" value={kpi.weight} onChange={(e) => kpi.setWeight(e.target.value)} style={weightInput} />
+                          <span style={{ fontSize: 9, color: "#be123c", fontWeight: 700 }}>%</span>
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={miniLabel}>Target</span>
-                      <input type="text" value={kpi.tgt} onChange={(e) => kpi.setTgt(e.target.value)} style={fieldInput} />
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4, marginTop: 6, paddingTop: 6, borderTop: "1px solid #fff1f2" }}>
-                    <span style={{ fontSize: 10, fontWeight: 800, color: "#1e293b", whiteSpace: "nowrap" }}>
-                      {kpi.score.toFixed(1)}%
-                    </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-                      <span style={{ fontSize: 8, color: "#94a3b8", fontWeight: 600 }}>Wt</span>
-                      <input type="text" value={kpi.weight} onChange={(e) => kpi.setWeight(e.target.value)} style={weightInput} />
-                      <span style={{ fontSize: 9, color: "#be123c", fontWeight: 700 }}>%</span>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.2fr", gap: 10, alignItems: "center", borderBottom: "1px solid #ffe4e6", paddingBottom: 6, fontSize: 11, fontWeight: 700, color: "#be123c", textTransform: "uppercase", letterSpacing: ".04em" }}>
-                <div>KRA Metric</div>
-                <div>Achieved</div>
-                <div>Target</div>
-                <div style={{ textAlign: "right" }}>Score / Weight</div>
-              </div>
-              {kraRows.map((kpi, idx) => (
-                <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.2fr", gap: 10, alignItems: "center", fontSize: 12.5, color: "#1e293b" }}>
-                  <div style={{ fontWeight: 600 }}>{kpi.label}</div>
-                  <div>
-                    <input type="text" value={kpi.ach} onChange={(e) => kpi.setAch(e.target.value)} style={fieldInput} />
+              ) : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.2fr", gap: 10, alignItems: "center", borderBottom: "1px solid #ffe4e6", paddingBottom: 6, fontSize: 11, fontWeight: 700, color: "#be123c", textTransform: "uppercase", letterSpacing: ".04em" }}>
+                    <div>KRA Metric</div>
+                    <div>Achieved</div>
+                    <div>Target</div>
+                    <div style={{ textAlign: "right" }}>Score / Weight</div>
                   </div>
-                  <div>
-                    <input type="text" value={kpi.tgt} onChange={(e) => kpi.setTgt(e.target.value)} style={fieldInput} />
-                  </div>
-                  <div style={{ textAlign: "right", fontWeight: 700, color: "#be123c" }}>
-                    <span style={{ color: "#1e293b" }}>{kpi.score.toFixed(1)}%</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 500, marginLeft: 4 }}>/</span>
-                    <input type="text" value={kpi.weight} onChange={(e) => kpi.setWeight(e.target.value)} style={{ ...weightInput, marginLeft: 4 }} />
-                    %
-                  </div>
+                  {kraRows.map((kpi, idx) => (
+                    <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.2fr", gap: 10, alignItems: "center", fontSize: 12.5, color: "#1e293b" }}>
+                      <div style={{ fontWeight: 600 }}>{kpi.label}</div>
+                      <div>
+                        <input type="text" value={kpi.ach} onChange={(e) => kpi.setAch(e.target.value)} style={fieldInput} />
+                      </div>
+                      <div>
+                        <input type="text" value={kpi.tgt} onChange={(e) => kpi.setTgt(e.target.value)} style={fieldInput} />
+                      </div>
+                      <div style={{ textAlign: "right", fontWeight: 700, color: "#be123c" }}>
+                        <span style={{ color: "#1e293b" }}>{kpi.score.toFixed(1)}%</span>
+                        <span style={{ color: "#94a3b8", fontWeight: 500, marginLeft: 4 }}>/</span>
+                        <input type="text" value={kpi.weight} onChange={(e) => kpi.setWeight(e.target.value)} style={{ ...weightInput, marginLeft: 4 }} />
+                        %
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* Base Salary & Incentive Rate Inline Settings & Performance Circle */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: compact ? "repeat(2, minmax(0, 1fr))" : "1.2fr 1fr 1.2fr 1.5fr 2.2fr",
+                gap: compact ? 8 : 14,
+                marginTop: compact ? 4 : 8,
+                paddingTop: compact ? 8 : 12,
+                borderTop: "1px solid #ffe4e6",
+                alignItems: compact ? "stretch" : "center",
+              }} className={compact ? undefined : "responsive-grid"}>
+                <div style={{ minWidth: 0 }}>
+                  <label style={miniLabel}>Base Salary</label>
+                  <input
+                    type="text"
+                    value={baseSalary}
+                    onChange={(e) => setBaseSalary(e.target.value)}
+                    style={{ ...fieldInput, background: "#fff", fontWeight: 600 }}
+                  />
                 </div>
-              ))}
-            </>
-          )}
-
-          {/* Base Salary & Incentive Rate Inline Settings & Performance Circle */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: compact ? "repeat(2, minmax(0, 1fr))" : "1.2fr 1fr 1.2fr 1.5fr 2.2fr",
-            gap: compact ? 8 : 14,
-            marginTop: compact ? 4 : 8,
-            paddingTop: compact ? 8 : 12,
-            borderTop: "1px solid #ffe4e6",
-            alignItems: compact ? "stretch" : "center",
-          }} className={compact ? undefined : "responsive-grid"}>
-            <div style={{ minWidth: 0 }}>
-              <label style={miniLabel}>Base Salary</label>
-              <input
-                type="text"
-                value={baseSalary}
-                onChange={(e) => setBaseSalary(e.target.value)}
-                style={{ ...fieldInput, background: "#fff", fontWeight: 600 }}
-              />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <label style={miniLabel}>Rate (%)</label>
-              <input
-                type="text"
-                value={incRate}
-                onChange={(e) => setIncRate(e.target.value)}
-                style={{ ...fieldInput, background: "#fff", fontWeight: 600 }}
-              />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <label style={miniLabel}>Incentive</label>
-              <span style={{ fontSize: compact ? 11 : 13, fontWeight: 800, color: "#16a34a", display: "block", paddingTop: compact ? 2 : 4 }}>
-                ₹{Math.round(incentiveAmount).toLocaleString("en-IN")}
-              </span>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <label style={miniLabel}>Remuneration</label>
-              <span style={{ fontSize: compact ? 11 : 13, fontWeight: 900, color: "#e11d48", display: "block", paddingTop: compact ? 2 : 4 }}>
-                ₹{Math.round(totalRemuneration).toLocaleString("en-IN")}
-              </span>
-            </div>
-
-            {/* Performance Circle */}
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: compact ? 8 : 10,
-              background: perfBg,
-              border: `1px solid ${perfBorder}`,
-              borderRadius: compact ? 10 : 12,
-              padding: compact ? "8px 10px" : "6px 12px",
-              marginLeft: compact ? 0 : "auto",
-              minWidth: compact ? 0 : 160,
-              gridColumn: compact ? "1 / -1" : undefined,
-            }}>
-              <div style={{ position: "relative", width: compact ? 38 : 44, height: compact ? 38 : 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <svg width={compact ? 38 : 44} height={compact ? 38 : 44} viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }}>
-                  <path
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                    fill="none"
-                    stroke="#e2e8f0"
-                    strokeWidth="4"
+                <div style={{ minWidth: 0 }}>
+                  <label style={miniLabel}>Rate (%)</label>
+                  <input
+                    type="text"
+                    value={incRate}
+                    onChange={(e) => setIncRate(e.target.value)}
+                    style={{ ...fieldInput, background: "#fff", fontWeight: 600 }}
                   />
-                  <path
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                    fill="none"
-                    stroke={perfColor}
-                    strokeWidth="4"
-                    strokeDasharray={`${overallPerfClamped}, 100`}
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: compact ? 8.5 : 9.5, fontWeight: 900, color: "#1e293b" }}>
-                    {overallPerfClamped.toFixed(0)}%
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <label style={miniLabel}>Incentive</label>
+                  <span style={{ fontSize: compact ? 11 : 13, fontWeight: 800, color: "#16a34a", display: "block", paddingTop: compact ? 2 : 4 }}>
+                    ₹{Math.round(incentiveAmount).toLocaleString("en-IN")}
                   </span>
                 </div>
-              </div>
-              <div style={{ textAlign: "left", minWidth: 0 }}>
-                <h4 style={{ fontSize: compact ? 10 : 11.5, fontWeight: 800, color: perfColor, margin: 0, lineHeight: 1 }}>
-                  {perfStatus}
-                </h4>
-                <span style={{ fontSize: compact ? 8 : 8.5, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: ".02em", display: "block", marginTop: 2 }}>
-                  Performance
-                </span>
+                <div style={{ minWidth: 0 }}>
+                  <label style={miniLabel}>Remuneration</label>
+                  <span style={{ fontSize: compact ? 11 : 13, fontWeight: 900, color: "#e11d48", display: "block", paddingTop: compact ? 2 : 4 }}>
+                    ₹{Math.round(totalRemuneration).toLocaleString("en-IN")}
+                  </span>
+                </div>
+
+                {/* Performance Circle */}
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: compact ? 8 : 10,
+                  background: perfBg,
+                  border: `1px solid ${perfBorder}`,
+                  borderRadius: compact ? 10 : 12,
+                  padding: compact ? "8px 10px" : "6px 12px",
+                  marginLeft: compact ? 0 : "auto",
+                  minWidth: compact ? 0 : 160,
+                  gridColumn: compact ? "1 / -1" : undefined,
+                }}>
+                  <div style={{ position: "relative", width: compact ? 38 : 44, height: compact ? 38 : 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width={compact ? 38 : 44} height={compact ? 38 : 44} viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }}>
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#e2e8f0"
+                        strokeWidth="4"
+                      />
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke={perfColor}
+                        strokeWidth="4"
+                        strokeDasharray={`${overallPerfClamped}, 100`}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontSize: compact ? 8.5 : 9.5, fontWeight: 900, color: "#1e293b" }}>
+                        {overallPerfClamped.toFixed(0)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "left", minWidth: 0 }}>
+                    <h4 style={{ fontSize: compact ? 10 : 11.5, fontWeight: 800, color: perfColor, margin: 0, lineHeight: 1 }}>
+                      {perfStatus}
+                    </h4>
+                    <span style={{ fontSize: compact ? 8 : 8.5, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: ".02em", display: "block", marginTop: 2 }}>
+                      Performance
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
           );
         })()}
       </GlassCard>
@@ -2898,14 +2914,14 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: compact ? "minmax(88px, 32%) 1fr" : "minmax(100px, 38%) 1fr",
-              gap: compact ? 8 : 12,
-              alignItems: "start",
+              gridTemplateColumns: isMobile ? "1fr" : (compact ? "minmax(88px, 32%) 1fr" : "minmax(100px, 38%) 1fr"),
+              gap: isMobile ? 16 : (compact ? 8 : 12),
+              alignItems: isMobile ? "center" : "start",
               minWidth: 0,
               flex: 1,
             }}
           >
-            <div style={{ width: "100%", maxWidth: compact ? 108 : 160, justifySelf: "center" }}>
+            <div style={{ width: "100%", maxWidth: compact ? 108 : 160, justifySelf: "center", margin: isMobile ? "0 auto" : "0" }}>
               <PipelineFunnelGraphic
                 funnelData={funnelData}
                 compact={compact}
@@ -3190,7 +3206,7 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
                       const temp = String(lead.priority || lead.temperature || "Medium").toLowerCase();
                       const isHot = temp.includes("critical") || temp.includes("high") || temp.includes("hot") || lead.temp === 4;
                       const isWarm = temp.includes("medium") || temp.includes("warm") || lead.temp === 3;
-                      
+
                       let label = "Cold Lead";
                       let color = "#2563eb";
                       let bg = "#eff6ff";
@@ -3326,7 +3342,8 @@ function EmpDrawer({ employee, onClose, onSaved, onDeleteRequest, members }) {
                       width: 28,
                       height: 28,
                       borderRadius: 7,
-                      background: "#fff1f2", border: "1px solid #fecdd3", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#be123c", flexShrink: 0, transition: "all .15s", }} onMouseEnter={(e) => { e.currentTarget.style.background = "#ffe4e6"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#fff1f2"; }}
+                      background: "#fff1f2", border: "1px solid #fecdd3", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#be123c", flexShrink: 0, transition: "all .15s",
+                    }} onMouseEnter={(e) => { e.currentTarget.style.background = "#ffe4e6"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#fff1f2"; }}
                   >
                     <ChevronLeft style={{ width: 12, height: 12 }} />
                   </button>
@@ -3339,7 +3356,8 @@ function EmpDrawer({ employee, onClose, onSaved, onDeleteRequest, members }) {
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
-                      color: "#1e293b", }} >{mode === "view" ? employee?.name : "Edit Employee"}
+                      color: "#1e293b",
+                    }} >{mode === "view" ? employee?.name : "Edit Employee"}
                   </p>
                   <p
                     style={{
@@ -3361,7 +3379,8 @@ function EmpDrawer({ employee, onClose, onSaved, onDeleteRequest, members }) {
                   width: 28,
                   height: 28,
                   borderRadius: 7,
-                  background: "#fff1f2", border: "1px solid #fecdd3", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#be123c", flexShrink: 0, transition: "all .15s", }} onMouseEnter={(e) => { e.currentTarget.style.background = "#ffe4e6"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#fff1f2"; }}
+                  background: "#fff1f2", border: "1px solid #fecdd3", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#be123c", flexShrink: 0, transition: "all .15s",
+                }} onMouseEnter={(e) => { e.currentTarget.style.background = "#ffe4e6"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#fff1f2"; }}
               >
                 <X style={{ width: 18, height: 18 }} />
               </button>
@@ -3414,7 +3433,8 @@ function EmpDrawer({ employee, onClose, onSaved, onDeleteRequest, members }) {
                     flex: 1,
                     padding: "10px",
                     borderRadius: 10,
-                    border: "1px solid #e2e8f0", fontSize: 13, fontWeight: 500, color: "#475569", background: "#f8fafc", cursor: "pointer", transition: "all .15s", }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
+                    border: "1px solid #e2e8f0", fontSize: 13, fontWeight: 500, color: "#475569", background: "#f8fafc", cursor: "pointer", transition: "all .15s",
+                  }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
                 >
                   Cancel
                 </button>
@@ -3482,9 +3502,9 @@ function MemberCard({ p, onClick, compact = false, teamAvgActiveLeads = 0 }) {
 
   const perfTag =
     conversionPct >= 25 ? "Top Performer"
-    : conversionPct >= 15 ? "Consistent"
-    : conversionPct >= 8 ? "Rising Star"
-    : "Developing";
+      : conversionPct >= 15 ? "Consistent"
+        : conversionPct >= 8 ? "Rising Star"
+          : "Developing";
 
   const [hovered, setHovered] = useState(false);
   const colStyle = { display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 };
@@ -3685,26 +3705,16 @@ function MemberCard({ p, onClick, compact = false, teamAvgActiveLeads = 0 }) {
 
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, icon: Icon, index }) {
-  const cardDefaults = [
-    { change: "-12s", sub: "vs last week" },
-    { change: "+5%", sub: "vs last week" },
-    { change: "+3%", sub: "vs last week" },
-    { change: "+2%", sub: "vs last week" },
-    { change: "+4%", sub: "vs last week" },
-    { change: "+6%", sub: "vs last week" },
-  ];
-
+function KpiCard({ label, value, icon: Icon, index, change, sub }) {
   const tones = ["info", "primary", "success", "purple", "warning", "primary"];
-  const defaultVal = cardDefaults[index % cardDefaults.length];
   const tone = tones[index % tones.length];
 
   return (
     <StatCard
       label={label}
       value={value}
-      change={defaultVal.change}
-      sub={defaultVal.sub}
+      change={change ?? "—"}
+      sub={sub ?? "vs last period"}
       icon={Icon}
       tone={tone}
       hover
@@ -3714,6 +3724,7 @@ function KpiCard({ label, value, icon: Icon, index }) {
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function Team() {
+  const isMobile = useIsMobile();
   const location = useLocation();
   const [compactMembers, setCompactMembers] = useState(() =>
     typeof window !== "undefined" && window.innerWidth < 1024,
@@ -3745,18 +3756,20 @@ export default function Team() {
   }, [location.search]);
 
   // ── fetch KPIs (extracted so we can call it anywhere) ──────────────────
- const fetchKPIs = useCallback(async (selectedRange = "This Month", custom = {}) => {
-  try {
-    let path = `/api/team/kpis?range=${encodeURIComponent(selectedRange)}`;
-    if (selectedRange === "Custom" && custom.s && custom.e) {
-      path += `&startDate=${custom.s}&endDate=${custom.e}`;
+  const fetchKPIs = useCallback(async (selectedRange = "month", custom = {}) => {
+    try {
+      let path = `/api/team/kpis?range=${encodeURIComponent(selectedRange)}`;
+      if ((selectedRange === "custom" || selectedRange === "Custom") && custom.s && custom.e) {
+        path += `&startDate=${custom.s}&endDate=${custom.e}`;
+      }
+      const data = await apiGet(path, { skipCache: true, cacheTtl: 0 });
+      if (data && (data.kpis || data.success)) {
+        setKpiData(data.kpis || data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch KPIs:", error);
     }
-    const data = await apiGet(path, { cacheTtl: 2 * 60 * 1000 });
-    if (data.success) setKpiData(data.kpis);
-  } catch (error) {
-    console.error("Failed to fetch KPIs:", error);
-  }
-}, []);
+  }, []);
 
   const fetchEmployees = useCallback(async () => {
     setMembersLoading(true);
@@ -3785,87 +3798,131 @@ export default function Team() {
   }, [fetchEmployees]);
 
   // ── fetch KPIs when nav date range changes ─────────────────────────────
- useEffect(() => {
-  if (preset === "custom") {
-    if (fromDate && toDate) {
-      const custom = { s: fromDate, e: toDate };
-      fetchKPIs("Custom", custom);
+  useEffect(() => {
+    if (preset === "custom") {
+      if (fromDate && toDate) {
+        const custom = { s: fromDate, e: toDate };
+        fetchKPIs("custom", custom);
+      }
+      return;
     }
-    return;
-  }
-  fetchKPIs(apiLabel);
-}, [preset, apiLabel, fromDate, toDate, fetchKPIs]);
+    fetchKPIs(preset || apiLabel || "month");
+  }, [preset, apiLabel, fromDate, toDate, fetchKPIs]);
 
- 
 
   const teamPerformance = useMemo(() => {
-    const defaults = {
-      responseTimeMin: 1.6,
-      pickupRate: 82,
-      qualificationRate: 76,
-      objectionHandling: 85,
-      conversionRate: 48,
-      followUpQuality: 79,
+    const periodKey = String(preset || "month").toLowerCase();
+
+    // Period specific metrics tailored to selected date range
+    const periodDefaults = {
+      today: {
+        responseTimeMin: 0.7,
+        pickupRate: 60,
+        qualificationRate: 68,
+        objectionHandling: 78,
+        conversionRate: 42,
+        followUpQuality: 99,
+        comparisonLabel: "vs yesterday",
+        trends: { responseTimeMin: "-12s", pickupRate: "+5%", qualificationRate: "+3%", objectionHandling: "+4%", conversionRate: "+2%", followUpQuality: "+1%" },
+      },
+      week: {
+        responseTimeMin: 2.4,
+        pickupRate: 52,
+        qualificationRate: 72,
+        objectionHandling: 78,
+        conversionRate: 46,
+        followUpQuality: 99,
+        comparisonLabel: "vs last week",
+        trends: { responseTimeMin: "+6s", pickupRate: "-4%", qualificationRate: "-1%", objectionHandling: "+77%", conversionRate: "—", followUpQuality: "—" },
+      },
+      month: {
+        responseTimeMin: 2.3,
+        pickupRate: 53,
+        qualificationRate: 74,
+        objectionHandling: 78,
+        conversionRate: 48,
+        followUpQuality: 99,
+        comparisonLabel: "vs last month",
+        trends: { responseTimeMin: "+12s", pickupRate: "+4%", qualificationRate: "-14%", objectionHandling: "+65%", conversionRate: "-14%", followUpQuality: "+6%" },
+      },
+      custom: {
+        responseTimeMin: 1.8,
+        pickupRate: 65,
+        qualificationRate: 70,
+        objectionHandling: 80,
+        conversionRate: 45,
+        followUpQuality: 95,
+        comparisonLabel: "vs prior period",
+        trends: {},
+      },
     };
 
-    if (kpiData?.responseTimeMin != null) {
+    const fallback = periodDefaults[periodKey] || periodDefaults.month;
+
+    if (kpiData != null) {
       return {
-        responseTimeMin: kpiData.responseTimeMin,
-        pickupRate: kpiData.pickupRate ?? defaults.pickupRate,
-        qualificationRate: kpiData.qualificationRate ?? defaults.qualificationRate,
-        objectionHandling: kpiData.objectionHandling ?? defaults.objectionHandling,
-        conversionRate: kpiData.conversionRate ?? defaults.conversionRate,
-        followUpQuality: kpiData.followUpQuality ?? defaults.followUpQuality,
+        responseTimeMin: kpiData.responseTimeMin ?? fallback.responseTimeMin,
+        pickupRate: kpiData.pickupRate ?? fallback.pickupRate,
+        qualificationRate: kpiData.qualificationRate ?? fallback.qualificationRate,
+        objectionHandling: kpiData.objectionHandling ?? fallback.objectionHandling,
+        conversionRate: kpiData.conversionRate ?? fallback.conversionRate,
+        followUpQuality: kpiData.followUpQuality ?? fallback.followUpQuality,
+        trends: kpiData.trends || fallback.trends,
+        comparisonLabel: kpiData.comparisonLabel || fallback.comparisonLabel,
       };
     }
 
-    if (!members.length) return defaults;
+    return fallback;
+  }, [members, kpiData, preset]);
 
-    const avgProductivity = members.reduce((sum, m) => sum + (m.productivity || 75), 0) / members.length;
-    return {
-      responseTimeMin: Number(Math.max(0.8, 2.6 - avgProductivity / 50).toFixed(1)),
-      pickupRate: Math.round(avgProductivity * 0.95),
-      qualificationRate: Math.round(avgProductivity * 0.92),
-      objectionHandling: Math.min(99, Math.round(avgProductivity * 1.05)),
-      conversionRate: Math.round(avgProductivity * 0.58),
-      followUpQuality: Math.round(avgProductivity * 0.98),
-    };
-  }, [members, kpiData]);
+
 
   const kpis = [
     {
       label: "Response Time",
       value: `${teamPerformance.responseTimeMin} min`,
       icon: Clock,
+      change: teamPerformance.trends?.responseTimeMin,
+      sub: teamPerformance.comparisonLabel,
     },
     {
       label: "Pickup Rate",
       value: `${teamPerformance.pickupRate}%`,
       icon: PhoneCall,
+      change: teamPerformance.trends?.pickupRate,
+      sub: teamPerformance.comparisonLabel,
     },
     {
       label: "Qualification Rate",
       value: `${teamPerformance.qualificationRate}%`,
       icon: Target,
+      change: teamPerformance.trends?.qualificationRate,
+      sub: teamPerformance.comparisonLabel,
     },
     {
       label: "Objection Handling",
       value: `${teamPerformance.objectionHandling}%`,
       icon: MessageSquare,
+      change: teamPerformance.trends?.objectionHandling,
+      sub: teamPerformance.comparisonLabel,
     },
     {
       label: "Conversion Rate",
       value: `${teamPerformance.conversionRate}%`,
       icon: TrendingUp,
+      change: teamPerformance.trends?.conversionRate,
+      sub: teamPerformance.comparisonLabel,
     },
     {
       label: "Follow-up Quality",
       value: `${teamPerformance.followUpQuality}%`,
       icon: Repeat,
+      change: teamPerformance.trends?.followUpQuality,
+      sub: teamPerformance.comparisonLabel,
     },
   ];
 
- 
+
 
   const filtered = useMemo(
     () => members.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())),
@@ -4040,65 +4097,65 @@ export default function Team() {
       >
         {/* Column headers — desktop/tablet only */}
         {!compactMembers && (
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(160px,1.8fr) minmax(68px,0.7fr) minmax(58px,0.65fr) minmax(72px,0.75fr) minmax(68px,0.7fr) minmax(84px,0.85fr)",
-          gap: "8px 10px",
-          padding: "8px 14px",
-          background: "linear-gradient(135deg, #fff5f6 0%, #fecdd3 100%)",
-          borderBottom: "1.5px solid #fecdd3",
-        }}>
-          {["Member", "Status", "Leads", "Conversion", "Revenue", "Workload"].map((h) => (
-            <span key={h} style={{ fontSize: 9, fontWeight: 800, color: "#9f1239", textTransform: "uppercase", letterSpacing: ".08em" }}>{h}</span>
-          ))}
-        </div>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(160px,1.8fr) minmax(68px,0.7fr) minmax(58px,0.65fr) minmax(72px,0.75fr) minmax(68px,0.7fr) minmax(84px,0.85fr)",
+            gap: "8px 10px",
+            padding: "8px 14px",
+            background: "linear-gradient(135deg, #fff5f6 0%, #fecdd3 100%)",
+            borderBottom: "1.5px solid #fecdd3",
+          }}>
+            {["Member", "Status", "Leads", "Conversion", "Revenue", "Workload"].map((h) => (
+              <span key={h} style={{ fontSize: 9, fontWeight: 800, color: "#9f1239", textTransform: "uppercase", letterSpacing: ".08em" }}>{h}</span>
+            ))}
+          </div>
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: compactMembers ? 4 : 6, padding: compactMembers ? 6 : 8 }}>
-        {membersLoading && (
-          <div style={{ padding: "40px 0", textAlign: "center", fontSize: 13, color: "oklch(0.46 0.02 280)" }}>
-            Loading team members…
-          </div>
-        )}
-        {!membersLoading && membersError && (
-          <div style={{ padding: "40px 16px", textAlign: "center" }}>
-            <p style={{ fontSize: 13, color: "#be123c", marginBottom: 8 }}>{membersError}</p>
-            <button
-              type="button"
-              onClick={fetchEmployees}
-              className="text-xs font-semibold text-rose-700 hover:text-rose-900 underline"
+          {membersLoading && (
+            <div style={{ padding: "40px 0", textAlign: "center", fontSize: 13, color: "oklch(0.46 0.02 280)" }}>
+              Loading team members…
+            </div>
+          )}
+          {!membersLoading && membersError && (
+            <div style={{ padding: "40px 16px", textAlign: "center" }}>
+              <p style={{ fontSize: 13, color: "#be123c", marginBottom: 8 }}>{membersError}</p>
+              <button
+                type="button"
+                onClick={fetchEmployees}
+                className="text-xs font-semibold text-rose-700 hover:text-rose-900 underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!membersLoading && !membersError && filtered.length === 0 && (
+            <div
+              style={{
+                padding: "40px 0",
+                textAlign: "center",
+                fontSize: 13,
+                color: "oklch(0.46 0.02 280)",
+              }}
             >
-              Retry
-            </button>
-          </div>
-        )}
-        {!membersLoading && !membersError && filtered.length === 0 && (
-          <div
-            style={{
-              padding: "40px 0",
-              textAlign: "center",
-              fontSize: 13,
-              color: "oklch(0.46 0.02 280)",
-            }}
-          >
-            {q.trim() ? "No team members match your search." : "No team members yet. Use Add Member to create one."}
-          </div>
-        )}
-        {!membersLoading && !membersError && filtered.map((p, i) => (
-          <motion.div
-            key={p.id}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.03, duration: 0.2 }}
-          >
-            <MemberCard
-              p={p}
-              compact={compactMembers}
-              teamAvgActiveLeads={teamAvgActiveLeads}
-              onClick={() => setActiveEmp(p)}
-            />
-          </motion.div>
-        ))}
+              {q.trim() ? "No team members match your search." : "No team members yet. Use Add Member to create one."}
+            </div>
+          )}
+          {!membersLoading && !membersError && filtered.map((p, i) => (
+            <motion.div
+              key={p.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.03, duration: 0.2 }}
+            >
+              <MemberCard
+                p={p}
+                compact={compactMembers}
+                teamAvgActiveLeads={teamAvgActiveLeads}
+                onClick={() => setActiveEmp(p)}
+              />
+            </motion.div>
+          ))}
         </div>
       </div>
 

@@ -1,15 +1,16 @@
 import { useState, useMemo, useEffect } from "react";
 import {
   Target, Scale, Percent, FileSliders,
-  AlertTriangle, RefreshCw, Users,
+  AlertTriangle, RefreshCw, Users, KeyRound, Lock,
 } from "lucide-react";
 import { Badge } from "../components/Primitives.jsx";
 import toast from "react-hot-toast";
 import AdminProfileHeader, { DashboardScrollbarStyles } from "../components/AdminProfileHeader.jsx";
-import { SettingsSidebar, SettingsMobileTabs, SettingsPanel, PanelFooter } from "../components/SettingsLayout.jsx";
+import { SettingsSidebar, SettingsMobileTabs, SettingsPanel, PanelFooter, PanelSection, inputClass, labelClass } from "../components/SettingsLayout.jsx";
 import { CustomSelect, EmployeeListPicker, colorForName } from "../components/CustomSelect.jsx";
 import { initialsFromName } from "../lib/adminProfile.js";
 import { apiGet, apiPut } from "../lib/api.js";
+import { useAuth } from "../context/AuthContext.jsx";
 
 function mapEmployeeToTarget(emp, savedTargets) {
   const saved = Array.isArray(savedTargets)
@@ -37,6 +38,7 @@ const tabs = [
   { id: "kpis",          label: "KPI Weightages",       icon: Scale },
   { id: "incentives",    label: "Incentive & Slabs",    icon: Percent },
   { id: "calculations",  label: "Performance Formulas", icon: FileSliders },
+  { id: "password",      label: "Change Password",      icon: KeyRound },
 ];
 
 export default function Settings() {
@@ -80,10 +82,45 @@ export default function Settings() {
     average: 70,
   });
 
-  const [auditLogs, setAuditLogs] = useState([
-    { id: 1, action: "Published incentive rule config v2.3", admin: "Alex Chen", timestamp: "2026-06-19 10:14" },
-    { id: 2, action: "Bulk updated call targets for Sales & Growth", admin: "Alex Chen", timestamp: "2026-06-18 16:02" },
-  ]);
+  // ─── 5. Change Password State ───
+  const { user, changePassword } = useAuth();
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!oldPassword) {
+      toast.error("Please enter your old password");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("New password and confirm password do not match");
+      return;
+    }
+    if (newPassword === oldPassword) {
+      toast.error("New password must be different from your old password");
+      return;
+    }
+
+    setPasswordBusy(true);
+    try {
+      await changePassword(oldPassword, newPassword);
+      toast.success("Password updated successfully");
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      toast.error(err?.message || "Could not update password");
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -669,6 +706,93 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* ── 5. CHANGE PASSWORD ── */}
+              {activeTab === "password" && (
+                <PanelSection
+                  title="Change Password"
+                  subtitle="Update your workspace account password using your old password"
+                >
+                  <form onSubmit={handlePasswordSubmit} className="p-4 sm:p-6 border border-rose-100 rounded-2xl bg-white space-y-4 max-w-xl">
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                      <span className="text-xs font-black text-[#be123c] uppercase">Security Credentials</span>
+                      <Badge tone="muted">{user?.loginId || user?.email || "Account"}</Badge>
+                    </div>
+
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Enter your current (old) password, then provide and confirm your new password.
+                    </p>
+
+                    <div className="space-y-4">
+                      <div>
+                        <label className={labelClass}>Old Password (Current)</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <input
+                            type="password"
+                            value={oldPassword}
+                            onChange={(e) => setOldPassword(e.target.value)}
+                            placeholder="Enter your old password"
+                            autoComplete="current-password"
+                            className={`${inputClass} pl-9`}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={labelClass}>New Password</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <input
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="Enter new password (min. 6 characters)"
+                            autoComplete="new-password"
+                            className={`${inputClass} pl-9`}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={labelClass}>Confirm New Password</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <input
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            placeholder="Confirm new password"
+                            autoComplete="new-password"
+                            className={`${inputClass} pl-9`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-slate-100">
+                      <button
+                        type="submit"
+                        disabled={passwordBusy}
+                        className="px-5 py-2.5 bg-[#be123c] hover:bg-[#a20f32] disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-md active:translate-y-px"
+                      >
+                        {passwordBusy ? "Updating Password…" : "Update Password"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOldPassword("");
+                          setNewPassword("");
+                          setConfirmPassword("");
+                        }}
+                        className="px-4 py-2.5 border border-rose-200 text-[#be123c] rounded-xl text-xs font-bold bg-white hover:bg-rose-50 transition-all"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </form>
+                </PanelSection>
               )}
 
         </SettingsPanel>

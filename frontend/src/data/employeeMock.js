@@ -1201,25 +1201,29 @@ export function callFromApi(apiCall, leads = []) {
 
   return {
     id: apiCall.id,
-    leadId: apiCall.leadId ?? lead?.id ?? null,
-    name: lead?.name || lead?.leadName || apiCall.clientName || "Unknown Lead",
-    company: lead?.company || lead?.companyName || "—",
+    leadId: apiCall.leadId ?? apiCall.lead_id ?? lead?.id ?? null,
+    name: lead?.name || lead?.leadName || apiCall.clientName || apiCall.client_name || "Unknown Lead",
+    company: lead?.company || lead?.companyName || apiCall.clientCompany || apiCall.client_company || "—",
     duration: formatDurationFromSeconds(durationSec),
     durationSec,
     direction,
-    type,
     date: dateLabel,
     callAt: created || (createdDate ? createdDate.toISOString() : null),
     callDay,
     period,
     outcome: apiCall.outcome || "Call logged",
-    hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),
-    rating: 0,
-    mood: "neutral",
-    phone: lead?.phone || apiCall.clientPhone || "",
-    note: apiCall.aiSummary || apiCall.notes || "",
-    sopId: apiCall.sopId,
-    recordingUrl: apiCall.recordingUrl || null,
+    hasRec: Boolean(apiCall.recordingUrl || apiCall.recording_url || apiCall.aiSummary || apiCall.ai_summary || apiCall.notes),
+    rating: apiCall.rating !== undefined ? apiCall.rating : 5,
+    mood: apiCall.sentiment || apiCall.mood || "neutral",
+    phone: lead?.phone || apiCall.clientPhone || apiCall.client_phone || "",
+    note: typeof (apiCall.aiSummary || apiCall.ai_summary || apiCall.notes || apiCall.note) === "object"
+      ? (
+        (apiCall.aiSummary || apiCall.ai_summary || apiCall.notes || apiCall.note)?.summary ||
+        JSON.stringify(apiCall.aiSummary || apiCall.ai_summary || apiCall.notes || apiCall.note)
+      )
+      : String(apiCall.aiSummary || apiCall.ai_summary || apiCall.notes || apiCall.note || ""),
+    sopId: apiCall.sopId || apiCall.sop_id,
+    recordingUrl: apiCall.recordingUrl || apiCall.recording_url || null,
     source: apiCall.source || null,
   };
 }

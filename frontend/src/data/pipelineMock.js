@@ -66,6 +66,7 @@ const FORM_STAGE_TO_PIPELINE = {
   Lead: "lead",
   "New Lead": "lead",
   "Not Pick": "not_pick",
+  "Short Call": "short_call",
   "Conversation 2 min+": "conversation_2min",
   Conversation: "conversation_2min",
   "Conversation - 5 (Inko follow Up)": "conversation_2min",

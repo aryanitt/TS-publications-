@@ -71,7 +71,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
             to="/"
             onNavigate={onClose}
             isExpanded={isExpanded}
-            logo={<TSPublicationDoodleLogo size={36} />}
+            logo={<TSPublicationDoodleLogo size={36} showBackground={false} />}
             title="TS Publication"
             subtitle="Admin dashboard"
           />

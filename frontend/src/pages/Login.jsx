@@ -29,8 +29,13 @@ function AuthShell({ children, title, subtitle }) {
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full max-w-[420px]">
           <div className="mb-8 text-center">
-            <div className="mx-auto mb-5 inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-3 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm">
-              <TSPublicationDoodleLogo size={64} className="border-white/20 shadow-none" />
+            {/* Logo mark */}
+            <div className="mx-auto mb-6 inline-flex items-center justify-center">
+              <TSPublicationDoodleLogo
+                size={80}
+                shape="rounded"
+                className="shadow-[0_8px_32px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.06)] hover:shadow-[0_12px_40px_rgba(244,63,94,0.25),0_0_0_1px_rgba(255,255,255,0.1)] transition-shadow duration-300"
+              />
             </div>
             <h1 className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
               {title}

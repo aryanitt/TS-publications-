@@ -7,11 +7,11 @@ export const RANGE_TABS = [
 
 /** Shared compact pill classes for date/period filters */
 export const PERIOD_PILL_BTN =
-  "px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-semibold transition-all border whitespace-nowrap shrink-0";
+  "px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition-all border whitespace-nowrap shrink-0 shadow-xs";
 export const PERIOD_PILL_ACTIVE =
-  "border-rose-600 bg-gradient-to-r from-red-600 via-rose-500 to-pink-500 text-white shadow-sm";
+  "border-rose-600 bg-gradient-to-r from-red-600 via-rose-500 to-pink-500 text-white shadow-sm font-bold";
 export const PERIOD_PILL_INACTIVE =
-  "border-rose-200 bg-white text-gray-600 hover:border-rose-400 hover:text-rose-600 hover:bg-rose-50";
+  "border-rose-200/90 bg-white text-slate-700 hover:border-rose-400 hover:text-rose-600 hover:bg-rose-50/50 font-medium";
 
 const LABEL_BY_ID = Object.fromEntries(RANGE_TABS.map((t) => [t.id, t.label]));
 

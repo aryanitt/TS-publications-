@@ -118,7 +118,10 @@ function CallLogItem({ call, active, onSelect }) {
           <div className="flex items-center justify-between gap-1.5">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-slate-900 truncate leading-tight">{call.name}</p>
-              <p className="text-[10px] text-slate-500 truncate leading-tight">{call.company}</p>
+              <p className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
+                {call.company && call.company !== "—" ? `${call.company} · ` : ""}
+                <span className="text-slate-400 font-medium">{call.phone}</span>
+              </p>
             </div>
             {durationLabel ? (
               <span className="text-[11px] font-black text-slate-900 tabular-nums shrink-0">{durationLabel}</span>
@@ -156,7 +159,10 @@ function CallLogItem({ call, active, onSelect }) {
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="min-w-0">
               <p className="text-sm font-bold text-slate-900 truncate leading-tight">{call.name}</p>
-              <p className="text-[11px] text-slate-500 truncate mt-0.5">{call.company}</p>
+              <p className="text-[11px] text-slate-500 truncate mt-0.5 flex items-center gap-1.5">
+                {call.company && call.company !== "—" ? `${call.company} · ` : ""}
+                <span className="font-semibold text-slate-400">{call.phone}</span>
+              </p>
             </div>
             {durationLabel ? (
               <span className="text-sm font-black text-slate-900 tabular-nums shrink-0">{durationLabel}</span>
@@ -167,11 +173,6 @@ function CallLogItem({ call, active, onSelect }) {
             {call.rating > 0 && (
               <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-600">
                 <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {call.rating}
-              </span>
-            )}
-            {call.hasRec && (
-              <span className="text-[9px] font-bold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded border border-violet-100">
-                REC
               </span>
             )}
             <span className="text-[10px] font-semibold text-slate-400 ml-auto">{displayDate}</span>

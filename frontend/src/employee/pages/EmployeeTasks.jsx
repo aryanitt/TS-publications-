@@ -173,7 +173,7 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <Field label="Due Date">
             <input
               type="date"
@@ -186,7 +186,7 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
             <TimeOfDaySelects
               value={newTask.deadline}
               onChange={(deadline) => setNewTask((p) => ({ ...p, deadline }))}
-              selectClassName="h-10 rounded-xl bg-white border-slate-200 text-sm"
+              selectClassName="h-11 sm:h-10 rounded-xl bg-white border-slate-200 text-sm text-slate-900 w-full"
               SelectComponent={({ className, children, ...props }) => (
                 <select className={className} {...props}>{children}</select>
               )}
@@ -194,7 +194,7 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <Field label="Priority">
             <select
               className={INPUT}
@@ -223,17 +223,18 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
         </div>
       </div>
 
-      <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-4 mt-6 bg-white border-t border-slate-100 flex flex-wrap gap-2">
-        <BtnPrimary onClick={onSubmit} disabled={submitting} className="flex-1 sm:flex-initial">
+      <div className="sticky bottom-0 -mx-4 sm:-mx-5 -mb-4 sm:-mb-5 px-4 sm:px-5 py-3 sm:py-4 mt-6 bg-white/95 backdrop-blur-md border-t border-slate-100 flex items-center justify-between gap-2 z-20">
+        <BtnPrimary onClick={onSubmit} disabled={submitting} className="flex-1 justify-center py-2.5 sm:py-2 text-sm font-bold shadow-sm">
           <CheckCircle2 className="w-4 h-4" /> {submitting ? "Saving…" : "Create Task"}
         </BtnPrimary>
-        <BtnSecondary onClick={onClose} className="sm:ml-auto">
+        <BtnSecondary onClick={onClose} className="px-4 py-2.5 sm:py-2 text-sm">
           <X className="w-4 h-4" /> Cancel
         </BtnSecondary>
       </div>
     </Drawer>
   );
 }
+
 
 export default function EmployeeTasks() {
   const { tasks, createTask, updateTaskStatus, removeTask, syncTaskWithFollowUp, employee, usingApi, loading, refreshTasks } = useEmployee();
@@ -473,8 +474,8 @@ export default function EmployeeTasks() {
                     className="w-full h-9 sm:h-10 pl-8 sm:pl-9 pr-3 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
                   />
                 </div>
-                <BtnPrimary onClick={() => setDrawerOpen(true)} className="hidden sm:inline-flex shrink-0">
-                  <Plus className="w-4 h-4" /> Add Task
+                <BtnPrimary onClick={() => setDrawerOpen(true)} className="inline-flex shrink-0 text-xs sm:text-sm px-2.5 sm:px-3.5 py-2 rounded-xl whitespace-nowrap">
+                  <Plus className="w-4 h-4" /> <span className="hidden xs:inline">Add Task</span><span className="xs:hidden">Add</span>
                 </BtnPrimary>
               </div>
             </div>
@@ -668,6 +669,16 @@ export default function EmployeeTasks() {
           })}
         </div>
       )}
+
+      {/* Mobile Floating Action Button */}
+      <button
+        type="button"
+        onClick={() => setDrawerOpen(true)}
+        aria-label="Create Task"
+        className="sm:hidden fixed right-4 bottom-20 z-40 w-12 h-12 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center active:scale-95 transition-transform"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
 
       <AddTaskDrawer
         open={drawerOpen}

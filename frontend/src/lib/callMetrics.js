@@ -3,6 +3,8 @@ export const CALL_CONVERSATION_MIN_SEC = 120;
 
 export const CALL_CONVERSATION_LABEL = "2 min+";
 
+export const CALL_SHORT_LABEL = "< 2 min";
+
 export function parseCallDurationSeconds(durationStr) {
   if (durationStr == null || durationStr === "—") return 0;
   if (typeof durationStr === "number") return durationStr;
@@ -59,6 +61,16 @@ export function isOutboundCall(call = {}) {
   const type = String(call.type || "").toLowerCase();
   if (type === "in" || type === "inbound" || type === "incoming") return false;
   return type === "out" || type === "outbound" || type === "outgoing" || type === "miss";
+}
+
+/** Connected outbound call under conversation threshold (not client no-pick). */
+export function isShortConnectedCall(call = {}) {
+  const durationSec = Number.isFinite(call.durationSec)
+    ? call.durationSec
+    : parseCallDurationSeconds(call.duration);
+  if (durationSec <= 0 || durationSec >= CALL_CONVERSATION_MIN_SEC) return false;
+  if (!isOutboundCall(call)) return false;
+  return !isNotPickupByClientCall(call);
 }
 
 /** Matches Callyzer/DB: outbound dial where client did not pick up. */
