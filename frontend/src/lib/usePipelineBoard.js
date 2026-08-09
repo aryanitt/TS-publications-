@@ -21,10 +21,22 @@ export function clearPipelineGroupedCache() {
   groupedCache.clear();
 }
 
-function groupedCacheKey(period, calls, leadsLen, meetingsLen, visibleLen, adminScope, groupRev = 0) {
+function leadStagesSignature(leads = []) {
+  if (!Array.isArray(leads) || leads.length === 0) return "";
+  const parts = new Array(leads.length);
+  for (let i = 0; i < leads.length; i++) {
+    const l = leads[i];
+    parts[i] = l ? `${l.id}:${l.pipelineStage || l.stage}:${l.stageOverride ? 1 : 0}` : "";
+  }
+  return parts.join(";");
+}
+
+function groupedCacheKey(period, calls, leads, meetingsLen, visibleLen, adminScope, groupRev = 0) {
   const first = calls[0]?.id ?? "";
   const last = calls[calls.length - 1]?.id ?? "";
-  return `${period}:${adminScope ? "admin" : "emp"}:${calls.length}:${first}:${last}:${leadsLen}:${meetingsLen}:${visibleLen ?? "all"}:${groupRev}`;
+  const leadsLen = leads?.length || 0;
+  const leadSig = leadStagesSignature(leads);
+  return `${period}:${adminScope ? "admin" : "emp"}:${calls.length}:${first}:${last}:${leadsLen}:${leadSig}:${meetingsLen}:${visibleLen ?? "all"}:${groupRev}`;
 }
 
 function scheduleIdle(work, timeout = 80) {
@@ -68,97 +80,101 @@ export function usePipelineBoard({
 
   const visibleLen = visibleLeads?.length ?? null;
   const cacheKey = useMemo(
-    () => groupedCacheKey(period, uniqueCalls, leads.length, meetings.length, visibleLen, adminScope, groupRev),
-    [period, uniqueCalls, leads.length, meetings.length, visibleLen, adminScope, groupRev],
+    () => groupedCacheKey(period, uniqueCalls, leads, meetings.length, visibleLen, adminScope, groupRev),
+    [period, uniqueCalls, leads, meetings.length, visibleLen, adminScope, groupRev],
   );
 
-  const [boardState, setBoardState] = useState(() => {
+  const computedBoardState = useMemo(() => {
     const hit = groupedCache.get(cacheKey);
     if (hit) return hit;
-    return {
-      grouped: emptyGrouped(),
-      baseLeads: [],
-      callMetrics: countPipelineCallMetrics(uniqueCalls),
-      periodMeetings: filterMeetingsForPeriod(meetings, period),
-      stageDisplayCounts: {},
-      grouping: true,
+
+    const periodMeetings = filterMeetingsForPeriod(meetings, period);
+    const callMetrics = countPipelineCallMetrics(uniqueCalls);
+    const grouped = groupEmpLeadsKanban(leads, uniqueCalls, {
+      period,
+      meetings,
+      searchFiltered: visibleLeads,
+      adminScope,
+      includeUncontactedAssignments,
+      employeeId,
+      scopeCallsByAssignee,
+    });
+    const baseLeads = filterPipelineLeadsForPeriod(leads, uniqueCalls, period, meetings, null, {
+      adminScope,
+      includeUncontactedAssignments,
+      employeeId,
+      scopeCallsByAssignee,
+    });
+    const stageDisplayCounts = getPipelineStageDisplayCounts(grouped, {
+      callyzerStats,
+      callMetrics,
+      periodMeetings,
+    });
+
+    const result = {
+      grouped,
+      baseLeads,
+      callMetrics,
+      periodMeetings,
+      stageDisplayCounts,
+      grouping: false,
     };
-  });
-  const [grouping, setGrouping] = useState(() => !groupedCache.has(cacheKey));
-  const reqRef = useRef(0);
 
-  useEffect(() => {
-    const hit = groupedCache.get(cacheKey);
-    if (hit) {
-      setBoardState(hit);
-      setGrouping(false);
-      return undefined;
+    groupedCache.set(cacheKey, result);
+    if (groupedCache.size > GROUPED_CACHE_MAX) {
+      groupedCache.delete(groupedCache.keys().next().value);
     }
-
-    const reqId = ++reqRef.current;
-    setGrouping(true);
-
-    let cancelled = false;
-    (async () => {
-      await scheduleIdle(() => {
-        if (cancelled || reqId !== reqRef.current) return null;
-
-        const periodMeetings = filterMeetingsForPeriod(meetings, period);
-        const callMetrics = countPipelineCallMetrics(uniqueCalls);
-        const grouped = groupEmpLeadsKanban(leads, uniqueCalls, {
-          period,
-          meetings,
-          searchFiltered: visibleLeads,
-          adminScope,
-          includeUncontactedAssignments,
-          employeeId,
-          scopeCallsByAssignee,
-        });
-        const baseLeads = filterPipelineLeadsForPeriod(leads, uniqueCalls, period, meetings, null, {
-          adminScope,
-          includeUncontactedAssignments,
-          employeeId,
-          scopeCallsByAssignee,
-        });
-        const stageDisplayCounts = getPipelineStageDisplayCounts(grouped, {
-          callyzerStats,
-          callMetrics,
-          periodMeetings,
-        });
-
-        return {
-          grouped,
-          baseLeads,
-          callMetrics,
-          periodMeetings,
-          stageDisplayCounts,
-          grouping: false,
-        };
-      }).then((result) => {
-        if (cancelled || reqId !== reqRef.current || !result) return;
-        groupedCache.set(cacheKey, result);
-        if (groupedCache.size > GROUPED_CACHE_MAX) {
-          groupedCache.delete(groupedCache.keys().next().value);
-        }
-        setBoardState(result);
-        setGrouping(false);
-      });
-    })();
-
-    return () => { cancelled = true; };
+    return result;
   }, [
     cacheKey,
     leads,
-    visibleLeads,
-    uniqueCalls,
     period,
+    uniqueCalls,
     meetings,
+    visibleLeads,
     adminScope,
     includeUncontactedAssignments,
     employeeId,
     scopeCallsByAssignee,
     callyzerStats,
   ]);
+
+  const [localOverrides, setLocalOverrides] = useState({});
+
+  useEffect(() => {
+    setLocalOverrides({});
+  }, [period, adminScope]);
+
+  const boardState = useMemo(() => {
+    if (!Object.keys(localOverrides).length) return computedBoardState;
+    const nextGrouped = { ...computedBoardState.grouped };
+    for (const [leadId, targetStageId] of Object.entries(localOverrides)) {
+      let foundLead = null;
+      for (const col of Object.keys(nextGrouped)) {
+        if (Array.isArray(nextGrouped[col])) {
+          const idx = nextGrouped[col].findIndex(
+            (l) => String(l.id) === String(leadId) || String(l._dbId) === String(leadId),
+          );
+          if (idx !== -1) {
+            foundLead = {
+              ...nextGrouped[col][idx],
+              stage: targetStageId,
+              pipelineStage: targetStageId,
+              stageOverride: true,
+            };
+            nextGrouped[col] = nextGrouped[col].filter((_, i) => i !== idx);
+            break;
+          }
+        }
+      }
+      if (foundLead) {
+        nextGrouped[targetStageId] = [foundLead, ...(nextGrouped[targetStageId] || [])];
+      }
+    }
+    return { ...computedBoardState, grouped: nextGrouped };
+  }, [computedBoardState, localOverrides]);
+
+  const grouping = false;
 
   const { grouped, baseLeads, callMetrics, periodMeetings, stageDisplayCounts } = boardState;
 
@@ -182,47 +198,8 @@ export function usePipelineBoard({
   const syncedShortCallLeads = grouped.short_call?.length ?? callMetrics.shortCallLeads ?? 0;
   const syncedNotPickupLeads = grouped.not_pick?.length ?? callMetrics.notPickupLeads ?? 0;
   const moveLeadLocally = useCallback((leadId, targetStageId) => {
-    const id = String(leadId);
-    setBoardState((prev) => {
-      const nextGrouped = { ...prev.grouped };
-      let foundLead = null;
-      
-      for (const col of Object.keys(nextGrouped)) {
-        if (Array.isArray(nextGrouped[col])) {
-          nextGrouped[col] = nextGrouped[col].filter((l) => {
-            const isMatch = String(l.id) === id || String(l._dbId) === id;
-            if (isMatch) foundLead = l;
-            return !isMatch;
-          });
-        }
-      }
-      
-      if (foundLead) {
-        const updatedLead = {
-          ...foundLead,
-          stage: targetStageId,
-          pipelineStage: targetStageId,
-          updatedAt: new Date().toISOString(),
-        };
-        nextGrouped[targetStageId] = [...(nextGrouped[targetStageId] || []), updatedLead];
-        
-        const hit = groupedCache.get(cacheKey);
-        if (hit) {
-          groupedCache.set(cacheKey, {
-            ...hit,
-            grouped: nextGrouped,
-          });
-        }
-        
-        return {
-          ...prev,
-          grouped: nextGrouped,
-        };
-      }
-      
-      return prev;
-    });
-  }, [cacheKey]);
+    setLocalOverrides((prev) => ({ ...prev, [String(leadId)]: targetStageId }));
+  }, []);
 
   return {
     callScopedOnly,

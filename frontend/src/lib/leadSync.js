@@ -188,6 +188,7 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
       return raw;
     })(),
     pipelineStage: stage,
+    stageOverride: Boolean(lead.stageIsManual ?? lead.stage_is_manual ?? lead.stageOverride),
     temperature: lead.temperature,
     expectedRevenue: revenue,
     winProbability: lead.winProbability ?? lead.win_probability,
@@ -383,6 +384,7 @@ export function apiLeadToPipeline(lead) {
     _dbId: lead.id,
     stage,
     pipelineStage: stageRaw,
+    stageOverride: Boolean(lead.stageIsManual ?? lead.stage_is_manual ?? lead.stageOverride),
     name: lead.leadName || lead.lead_name || "Lead",
     company: lead.companyName || lead.company_name || "—",
     value: Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0),

@@ -104,6 +104,7 @@ export function buildPipelineChartFromLeads(leads = [], calls = [], options = {}
 
   const max = Math.max(1, ...Object.values(counts));
   return EMP_KANBAN_STAGES.map((s) => ({
+    id: s.id,
     label: s.shortLabel || s.label,
     fullLabel: s.label,
     count: counts[s.id] || 0,

@@ -120,7 +120,7 @@ export default function Topbar({ onMenu }) {
   const isDenseToolbar = isLeadsPage;
   const showDateRange = !hideDateRange(pathname);
   const navigate     = useNavigate();
-  const { admin, selectedService, setSelectedService } = useAdmin();
+  const { admin, selectedService, setSelectedService, servicesList } = useAdmin();
   const { logout }   = useAuth();
   const meta         = resolvePageMeta(pathname);
   const pipelinePeriod = String(searchParams.get("period") || "month").toLowerCase();
@@ -398,9 +398,9 @@ export default function Topbar({ onMenu }) {
                   background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
                 }}
               >
-                {CANONICAL_SERVICES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+              {(servicesList?.length ? servicesList : CANONICAL_SERVICES).map((s) => (
+                <option key={s} value={s}>{s.length > 28 ? s.slice(0, 26) + "..." : s}</option>
+              ))}
               </select>
             </div>
           )}
@@ -601,8 +601,8 @@ export default function Topbar({ onMenu }) {
                 background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
               }}
             >
-              {CANONICAL_SERVICES.map((s) => (
-                <option key={s} value={s}>{s}</option>
+              {(servicesList?.length ? servicesList : CANONICAL_SERVICES).map((s) => (
+                <option key={s} value={s}>{s.length > 28 ? s.slice(0, 26) + "..." : s}</option>
               ))}
             </select>
           </div>

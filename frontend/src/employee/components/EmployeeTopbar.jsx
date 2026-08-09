@@ -50,7 +50,7 @@ export default function EmployeeTopbar({ onMenu }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { employee, selectedService, setSelectedService } = useEmployee();
+  const { employee, selectedService, setSelectedService, servicesList } = useEmployee();
   const { logout } = useAuth();
   const meta = pathname.startsWith("/employee/sales-process/") && pathname !== "/employee/sales-process"
     ? { title: "SOP Detail", sub: "Full playbook · Scripts · Checklist" }
@@ -191,8 +191,8 @@ export default function EmployeeTopbar({ onMenu }) {
                     background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
                   }}
                 >
-                  {CANONICAL_SERVICES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {(servicesList?.length ? servicesList : CANONICAL_SERVICES).map((s) => (
+                    <option key={s} value={s}>{s.length > 28 ? s.slice(0, 26) + "..." : s}</option>
                   ))}
                 </select>
               </div>
@@ -302,8 +302,8 @@ export default function EmployeeTopbar({ onMenu }) {
                     background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
                   }}
                 >
-                  {CANONICAL_SERVICES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {(servicesList?.length ? servicesList : CANONICAL_SERVICES).map((s) => (
+                    <option key={s} value={s}>{s.length > 28 ? s.slice(0, 26) + "..." : s}</option>
                   ))}
                 </select>
               )}

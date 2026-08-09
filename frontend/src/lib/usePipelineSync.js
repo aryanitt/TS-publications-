@@ -81,7 +81,13 @@ function normalizeMasterPayload(raw, { mapLeads = true, attachLeads = [] } = {})
 
 function boardSignature(board) {
   const c = board?.calls || [];
-  return `${c.length}:${c[0]?.id ?? ""}:${c[c.length - 1]?.id ?? ""}:${board?.syncedAt ?? ""}`;
+  const leads = board?.leads || [];
+  const leadParts = new Array(leads.length);
+  for (let i = 0; i < leads.length; i++) {
+    const l = leads[i];
+    leadParts[i] = l ? `${l.id}:${l.pipelineStage || l.stage}:${l.stageOverride ? 1 : 0}` : "";
+  }
+  return `${c.length}:${c[0]?.id ?? ""}:${c[c.length - 1]?.id ?? ""}:${board?.syncedAt ?? ""}:${leadParts.join(";")}`;
 }
 
 function sliceBoardForPeriod(master, period) {
@@ -123,7 +129,7 @@ export function usePipelineSync({
   const [syncing, setSyncing] = useState(false);
   const reqIdRef = useRef(0);
 
-  const loadMaster = useCallback(async ({ sync = false, silent = false } = {}) => {
+  const loadMaster = useCallback(async ({ sync = false, silent = false, skipCache = sync } = {}) => {
     if (!enabled) {
       setLoading(false);
       return;
@@ -149,8 +155,8 @@ export function usePipelineSync({
 
       const res = await apiGet(path, {
         headers,
-        skipCache: sync,
-        cacheTtl: sync ? 0 : 60_000,
+        skipCache,
+        cacheTtl: skipCache ? 0 : 60_000,
       });
       if (reqId !== reqIdRef.current) return;
 
@@ -235,6 +241,8 @@ export function usePipelineSync({
     refreshing: syncing,
     syncing,
     refresh: () => loadMaster({ silent: true, sync: true }),
+    // Fresh leads without the heavyweight Callyzer resync — for realtime nudges.
+    refreshLeadsOnly: () => loadMaster({ silent: true, sync: false, skipCache: true }),
     remapCallsForLeads,
   };
 }

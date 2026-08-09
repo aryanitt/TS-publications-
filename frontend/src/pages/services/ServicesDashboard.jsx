@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Search, Download, Plus, Bot, Database, Target, Briefcase, Code,
-  ChevronRight,
+  ChevronRight, Trash2,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -14,8 +14,9 @@ import {
   getAllServices, SERVICE_CATEGORIES, SERVICE_STATUSES, SERVICE_PRICING_SORT,
   formatServiceMoney, formatServicePriceLabel, serviceBadgeTone,
 } from "../../data/servicesMock.js";
-import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
+import { apiGet, apiPost, apiDelete, invalidateCache } from "../../lib/api.js";
 import { formatIndianNumber } from "../../lib/indianFormat.js";
+import { cleanServiceName, extractLeadService, leadBelongsToService } from "../../lib/servicesRegistry.js";
 import AddServiceDrawer from "./AddServiceDrawer.jsx";
 
 const ICON_MAP = {
@@ -67,9 +68,65 @@ export default function ServicesDashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
-        const services = data.services?.length ? data.services : getAllServices();
-        setCatalog(services.map(normalizeCatalogService));
+        const [dataRes, leadsRes] = await Promise.allSettled([
+          apiGet("/api/services", { skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/v1/leads?limit=500&page=1"),
+        ]);
+        
+        let services = dataRes.status === "fulfilled" && dataRes.value?.services?.length
+          ? dataRes.value.services
+          : getAllServices();
+          
+        let leads = leadsRes.status === "fulfilled"
+          ? (Array.isArray(leadsRes.value) ? leadsRes.value : (leadsRes.value?.data || leadsRes.value?.leads || []))
+          : [];
+
+        const existingNames = new Set(services.map((s) => cleanServiceName(s.name).toLowerCase()));
+        
+        const extraServicesMap = new Map();
+        leads.forEach((l) => {
+          const svcName = extractLeadService(l);
+          if (svcName && !existingNames.has(svcName.toLowerCase())) {
+            if (!extraServicesMap.has(svcName.toLowerCase())) {
+              extraServicesMap.set(svcName.toLowerCase(), {
+                id: `svc-${svcName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+                name: svcName,
+                category: "general",
+                categoryLabel: "General Services",
+                status: "ACTIVE",
+                badge: "POPULAR",
+                description: `Auto-created service for ${svcName}`,
+                revenue: 0,
+                leads: 0,
+                converted: 0,
+                convRate: 0,
+                priceNum: 0,
+                price: "Custom",
+                icon: "briefcase",
+              });
+            }
+          }
+        });
+
+        const mergedServices = [...services, ...Array.from(extraServicesMap.values())];
+
+        if (leads.length > 0) {
+          mergedServices.forEach((svc) => {
+            const svcName = svc.name;
+            const matching = leads.filter((l) => leadBelongsToService(l, svcName));
+            if (matching.length > 0) {
+              svc.leads = matching.length;
+              svc.converted = matching.filter((l) => 
+                String(l.status || "").toLowerCase().includes("converted") || 
+                String(l.status || "").toLowerCase().includes("payment")
+              ).length;
+              svc.revenue = matching.reduce((acc, l) => acc + (Number(l.expectedRevenue || l.expected_revenue) || 0), 0);
+              svc.convRate = svc.leads > 0 ? Math.round((svc.converted / svc.leads) * 100) : 0;
+            }
+          });
+        }
+
+        setCatalog(mergedServices.map(normalizeCatalogService));
       } catch {
         setCatalog(getAllServices().map(normalizeCatalogService));
       }
@@ -117,6 +174,20 @@ export default function ServicesDashboard() {
   }, [revenueTrajectory]);
 
   const openAddService = () => setAddOpen(true);
+
+  const handleDeleteService = async (e, service) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete the service "${service.name}"?`)) return;
+    try {
+      await apiDelete(`/api/services/${service.id}`);
+      setCatalog((prev) => prev.filter((s) => s.id !== service.id));
+      invalidateCache("/api/services");
+      toast.success(`Service "${service.name}" deleted successfully`);
+    } catch (err) {
+      toast.error(`Failed to delete service: ${err.message || String(err)}`);
+    }
+  };
 
   const handleAddClose = async (newService) => {
     if (newService) {
@@ -368,7 +439,17 @@ export default function ServicesDashboard() {
                   <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 grid place-items-center shrink-0 group-hover:bg-rose-100 transition">
                     <Icon className="w-4 h-4" />
                   </div>
-                  <Badge tone={serviceBadgeTone(service.badge)}>{service.badge}</Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge tone={serviceBadgeTone(service.badge)}>{service.badge}</Badge>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteService(e, service)}
+                      title="Delete service"
+                      className="w-7 h-7 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 grid place-items-center transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <h3 className="text-xs font-black text-slate-900 group-hover:text-rose-800 transition leading-snug">
                   {service.name}

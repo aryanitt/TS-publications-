@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { getStoredAuthUser } from "../lib/crmContext.js";
 import { adminProfileFromAuth } from "../lib/adminProfile.js";
+import { apiGet } from "../lib/api.js";
+import { CANONICAL_SERVICES, getDynamicServicesList, cleanServiceName } from "../lib/servicesRegistry.js";
 
 const STORAGE_KEY = "ts_admin_profile";
 
@@ -60,6 +62,8 @@ export function AdminProvider({ children }) {
   const { user } = useAuth();
   const [admin, setAdmin] = useState(loadProfile);
   const [selectedService, setSelectedService] = useState("All Services");
+  const [catalogServices, setCatalogServices] = useState([]);
+  const [extraServices, setExtraServices] = useState([]);
 
   useEffect(() => {
     if (user?.role === "admin") {
@@ -70,6 +74,44 @@ export function AdminProvider({ children }) {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(admin));
   }, [admin]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [svcRes, leadsRes] = await Promise.allSettled([
+          apiGet("/api/services", { skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/v1/leads?limit=500&page=1"),
+        ]);
+        
+        const catalog = svcRes.status === "fulfilled" && Array.isArray(svcRes.value?.services)
+          ? svcRes.value.services
+          : [];
+        const leads = leadsRes.status === "fulfilled"
+          ? (Array.isArray(leadsRes.value) ? leadsRes.value : (leadsRes.value?.data || leadsRes.value?.leads || []))
+          : [];
+        
+        if (active) {
+          setCatalogServices(catalog);
+          const computed = getDynamicServicesList(catalog, leads);
+          setExtraServices(computed);
+        }
+      } catch (err) {
+        console.error("Error loading services in AdminContext:", err);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const servicesList = useMemo(() => {
+    return getDynamicServicesList(catalogServices, extraServices);
+  }, [catalogServices, extraServices]);
+
+  const registerNewService = (rawName) => {
+    const cleaned = cleanServiceName(rawName);
+    if (!cleaned) return;
+    setExtraServices((prev) => Array.from(new Set([...prev, cleaned])));
+  };
 
   const updateAdmin = (patch) => setAdmin((prev) => ({ ...prev, ...patch }));
 
@@ -86,15 +128,26 @@ export function AdminProvider({ children }) {
       updateNotifications,
       selectedService,
       setSelectedService,
+      servicesList,
+      registerNewService,
     }),
-    [admin, selectedService],
+    [admin, selectedService, servicesList],
   );
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
 }
 
+const DEFAULT_ADMIN_CONTEXT = {
+  admin: DEFAULT_ADMIN,
+  updateAdmin: () => {},
+  updateNotifications: () => {},
+  selectedService: "All Services",
+  setSelectedService: () => {},
+  servicesList: ["All Services"],
+  registerNewService: () => {},
+};
+
 export function useAdmin() {
   const ctx = useContext(AdminContext);
-  if (!ctx) throw new Error("useAdmin must be used within AdminProvider");
-  return ctx;
+  return ctx || DEFAULT_ADMIN_CONTEXT;
 }

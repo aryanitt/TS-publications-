@@ -53,17 +53,55 @@ function normalizeCallForDisplay(call, liveLead) {
   };
 }
 
-function DetailField({ label, value, onChange, readOnly = false, type = "text", options }) {
+const CUSTOM_FIELD_OPTION = "__custom__";
+
+function DetailField({ label, value, onChange, readOnly = false, type = "text", options, allowCustom = false }) {
+  const [customMode, setCustomMode] = useState(
+    allowCustom && Boolean(value) && value !== "—" && !options?.includes(value),
+  );
+
   return (
     <div className={fieldCardClass}>
       <p className={labelClass}>{label}</p>
       {readOnly ? (
         <p className="text-xs font-black text-slate-800 mt-1.5 truncate">{value || "—"}</p>
+      ) : options && customMode ? (
+        <div className="relative">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Type to add new…"
+            autoFocus
+            className={inputClass}
+            style={{ paddingRight: 28 }}
+          />
+          <button
+            type="button"
+            onClick={() => { setCustomMode(false); onChange(""); }}
+            title="Choose from list instead"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            ×
+          </button>
+        </div>
       ) : options ? (
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass}>
+        <select
+          value={value}
+          onChange={(e) => {
+            if (e.target.value === CUSTOM_FIELD_OPTION) {
+              setCustomMode(true);
+              onChange("");
+              return;
+            }
+            onChange(e.target.value);
+          }}
+          className={inputClass}
+        >
           {options.map((opt) => (
             <option key={opt} value={opt}>{opt}</option>
           ))}
+          {allowCustom && <option value={CUSTOM_FIELD_OPTION}>+ Add new…</option>}
         </select>
       ) : (
         <input
@@ -94,6 +132,7 @@ export default function LeadDetailPanel({
   addActivityRecord,
   startCallyzerCall,
   onTemperatureChange,
+  onStageChange,
   pipelineView = false,
   editLeadsHref = null,
 }) {
@@ -108,12 +147,37 @@ export default function LeadDetailPanel({
   const [noteSaving, setNoteSaving] = useState(false);
   const [fetchedCalls, setFetchedCalls] = useState([]);
   const [callsLoading, setCallsLoading] = useState(false);
+  const [serviceOptions, setServiceOptions] = useState(CANONICAL_SERVICES);
 
   useEffect(() => {
     setDraft(buildDetailDraft(liveLead));
-  }, [liveLead?.id, liveLead?.updatedAt, liveLead?.stage]);
+  }, [liveLead?.id]);
 
-  const crmHeaders = variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders();
+  const crmHeaders = useMemo(
+    () => (variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders()),
+    [variant],
+  );
+
+  // Use the real service catalog (same source as the New Lead form) instead of
+  // the small hardcoded placeholder list, so this reflects what the business
+  // actually offers.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiGet("/api/services", { headers: crmHeaders, cacheTtl: 30_000 });
+        const names = (data?.services || data?.data || [])
+          .map((s) => s.name || s.title)
+          .filter(Boolean);
+        if (!cancelled && names.length) {
+          setServiceOptions(["—", ...names]);
+        }
+      } catch {
+        // keep defaults
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [crmHeaders]);
 
   useEffect(() => {
     // Always fetch calls from the API for the specific lead so Callyzer
@@ -392,7 +456,12 @@ export default function LeadDetailPanel({
         <DetailField
           label="Stage"
           value={draft.stage}
-          onChange={patchDraft("stage")}
+          onChange={(val) => {
+            patchDraft("stage")(val);
+            if (onStageChange) {
+              onStageChange(val);
+            }
+          }}
           options={CANONICAL_STAGE_LABELS}
           readOnly={readOnly}
         />
@@ -410,7 +479,8 @@ export default function LeadDetailPanel({
           label="Service"
           value={draft.service || "—"}
           onChange={patchDraft("service")}
-          options={CANONICAL_SERVICES}
+          options={serviceOptions}
+          allowCustom
           readOnly={readOnly}
         />
         <DetailField label="City" value={draft.city} onChange={patchDraft("city")} readOnly={readOnly} />

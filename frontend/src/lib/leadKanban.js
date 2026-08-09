@@ -138,6 +138,23 @@ function phoneLast10(value) {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
+function leadUpdatedMs(lead) {
+  const raw = lead?.updatedAt || lead?.updated_at || lead?.createdAt || lead?.created_at;
+  const ms = raw ? new Date(raw).getTime() : NaN;
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/** Duplicate leads can share a phone. Prefer the manually-staged one, then the
+ *  most recently updated — otherwise a stale duplicate silently wins the slot
+ *  and steals the call attribution, discarding the real lead's manual stage. */
+function preferredPhoneMatch(current, candidate) {
+  if (!current) return candidate;
+  if (Boolean(candidate.stageOverride) !== Boolean(current.stageOverride)) {
+    return candidate.stageOverride ? candidate : current;
+  }
+  return leadUpdatedMs(candidate) >= leadUpdatedMs(current) ? candidate : current;
+}
+
 export function buildLeadLookupIndex(leads = []) {
   const byId = new Map();
   const byPhone = new Map();
@@ -145,7 +162,7 @@ export function buildLeadLookupIndex(leads = []) {
     if (!lead) continue;
     byId.set(String(lead.id), lead);
     const key = phoneLast10(lead.phone || lead.clientPhone);
-    if (key) byPhone.set(key, lead);
+    if (key) byPhone.set(key, preferredPhoneMatch(byPhone.get(key), lead));
   }
   return { byId, byPhone };
 }
@@ -316,13 +333,14 @@ export function resolveLeadKanbanColumn(lead, calls = [], options = {}) {
   if (lead._fromCall && lead._callCol) return lead._callCol;
 
   const dbStageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
-  if (ADVANCED_KANBAN_STAGES.has(dbStageId)) return dbStageId;
-  if (dbStageId === "meeting_booked" || dbStageId === "meeting_done") return dbStageId;
+  if (lead.stageOverride || (dbStageId && dbStageId !== "lead")) return dbStageId;
 
-  return resolveEarlyFunnelColumn(lead, calls, {
-    outboundOnly: true,
-    scopeByAssignee: options.scopeByAssignee ?? false,
-  }) || "lead";
+  return (
+    resolveEarlyFunnelColumn(lead, calls, {
+      outboundOnly: true,
+      scopeByAssignee: options.scopeByAssignee ?? false,
+    }) || dbStageId || "lead"
+  );
 }
 
 /** Only leads visible in pipeline: Callyzer call activity, meetings, or uncontacted new assignment. */
@@ -341,6 +359,10 @@ export function filterPipelineLeadsForPeriod(leads = [], periodCalls = [], perio
 
   return list.filter((lead) => {
     const id = String(lead.id);
+    // A human explicitly placed this lead in a column — it stays on the board even
+    // with no calls this period. Otherwise it drops out of scope and an auto-classified
+    // Callyzer card takes its place, which reads as the manual move reverting.
+    if (lead.stageOverride) return true;
     if (meetingLeadIds.has(id)) return true;
     if (callActiveIds.has(id)) return true;
     if (includeUncontactedAssignments) {
@@ -540,15 +562,18 @@ export function groupKanbanSyncedWithCallyzer(
     placed.add(id);
   };
 
-  placeMeetingsOnKanban(map, placed, allLeads, meetings, periodKey, showLead);
-
-  // Rep-set pipeline stages (Meeting Booked, Proposal, etc.) win over Callyzer auto-routing.
+  // Rep-set or manually overridden pipeline stages win over Callyzer auto-routing
+  // AND over meeting-derived placement — a manual move must stick no matter what
+  // the underlying meeting record or call history would otherwise dictate.
   for (const lead of scopedVisible) {
     if (!showLead(lead)) continue;
     const dbStageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
-    if (!ADVANCED_KANBAN_STAGES.has(dbStageId)) continue;
-    pushLead(dbStageId, lead);
+    if (lead.stageOverride || (dbStageId && dbStageId !== "lead")) {
+      pushLead(dbStageId, lead);
+    }
   }
+
+  placeMeetingsOnKanban(map, placed, allLeads, meetings, periodKey, showLead);
 
   // Lead-centric: best early-funnel column from calls for leads not manually staged.
   const leadsToEvaluate = new Set();
@@ -697,8 +722,8 @@ export function getPipelineStageDisplayCounts(
 
   const booked = periodMeetings.filter((m) => resolveMeetingKanbanColumn(m) === "meeting_booked");
   const done = periodMeetings.filter((m) => resolveMeetingKanbanColumn(m) === "meeting_done");
-  counts.meeting_booked = booked.length;
-  counts.meeting_done = done.length;
+  if (booked.length > counts.meeting_booked) counts.meeting_booked = booked.length;
+  if (done.length > counts.meeting_done) counts.meeting_done = done.length;
 
   return counts;
 }

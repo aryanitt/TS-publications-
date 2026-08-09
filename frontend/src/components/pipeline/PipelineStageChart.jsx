@@ -12,8 +12,9 @@ export default function PipelineStageChart({
   className = "",
 }) {
   const pipelineTotal = stages.reduce((sum, s) => sum + (s.count || 0), 0);
-  const proposalSentCount = stages.find((s) => s.fullLabel === "Proposal Sent" || s.label === "Proposal")?.count ?? 0;
-  const convRate = pipelineTotal ? `${Math.round((proposalSentCount / pipelineTotal) * 100)}%` : "—";
+  const proposalSentCount = stages.find((s) => s.id === "proposal_sent" || s.fullLabel === "Proposal Sent" || s.label === "Proposal Sent" || s.label === "Proposal")?.count ?? 0;
+  const convertedCount = stages.filter((s) => s.id === "advance_paid" || s.id === "payment_complete" || s.fullLabel === "Advance Paid" || s.fullLabel === "Payment Complete").reduce((sum, s) => sum + (s.count || 0), 0);
+  const convRate = pipelineTotal ? `${Math.round(((proposalSentCount + convertedCount) / pipelineTotal) * 100)}%` : "—";
 
   const defaultFooter = [
     { label: "In pipeline", val: pipelineTotal },

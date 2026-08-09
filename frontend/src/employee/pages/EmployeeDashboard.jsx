@@ -204,8 +204,9 @@ export default function EmployeeDashboard() {
 
   const pendingAgenda = agenda.filter((a) => !agendaDone[a.id]).length;
   const pipelineTotal = pipeline.reduce((s, p) => s + p.count, 0);
-  const proposalSentCount = pipeline.find((p) => p.label === "Proposal Sent")?.count ?? 0;
-  const convRate = pipelineTotal ? `${Math.round((proposalSentCount / pipelineTotal) * 100)}%` : "—";
+  const proposalSentCount = pipeline.find((p) => p.id === "proposal_sent" || p.fullLabel === "Proposal Sent" || p.label === "Proposal Sent" || p.label === "Proposal")?.count ?? 0;
+  const convertedCount = pipeline.filter((p) => p.id === "advance_paid" || p.id === "payment_complete" || p.fullLabel === "Advance Paid" || p.fullLabel === "Payment Complete").reduce((s, p) => s + p.count, 0);
+  const convRate = pipelineTotal ? `${Math.round(((proposalSentCount + convertedCount) / pipelineTotal) * 100)}%` : "—";
 
   const markAgendaDone = (itemId) => {
     setAgendaDone((prev) => ({ ...prev, [itemId]: true }));

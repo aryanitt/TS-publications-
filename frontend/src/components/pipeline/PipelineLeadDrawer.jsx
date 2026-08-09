@@ -6,10 +6,14 @@ import {
   fetchLeadForPipelineCard,
   normalizeLeadForDetailPanel,
   resolvePipelineCardLeadLocal,
+  adminPipelineIdToDbStage,
 } from "../../lib/leadSync.js";
 import { getAdminCrmHeaders } from "../../lib/crmContext.js";
+import { getStageMeta } from "../../data/pipelineMock.js";
+import { mapStageToId } from "../../lib/pipelineStages.js";
+import { apiPatch } from "../../lib/api.js";
 
-export default function PipelineLeadDrawer({ open, onClose, lead, calls = [] }) {
+export default function PipelineLeadDrawer({ open, onClose, lead, calls = [], onMoveStage }) {
   const [resolvedLead, setResolvedLead] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
@@ -21,7 +25,7 @@ export default function PipelineLeadDrawer({ open, onClose, lead, calls = [] }) 
     }
 
     const local = resolvePipelineCardLeadLocal(lead, { leads: [], periodCalls: calls });
-    setResolvedLead(local);
+    setResolvedLead((prev) => (prev?.id === local?.id && prev?.stage === local?.stage ? prev : local));
 
     const crmId = local?._dbId ?? local?.id;
     const hasLocalCrm = /^\d+$/.test(String(crmId));
@@ -60,6 +64,31 @@ export default function PipelineLeadDrawer({ open, onClose, lead, calls = [] }) 
   const crmId = liveLead?._dbId ?? (/^\d+$/.test(String(liveLead?.id)) ? liveLead.id : null);
   const editLeadsHref = crmId ? `/leads?leadId=${crmId}` : null;
 
+  const handleStageSelect = (stageLabel) => {
+    const leadId = liveLead?._dbId ?? liveLead?.id ?? lead?.id;
+    if (!leadId) return;
+    const targetStageId = mapStageToId(stageLabel) || getStageMeta(stageLabel)?.id || "lead";
+    if (onMoveStage) {
+      onMoveStage(leadId, targetStageId, { scroll: false });
+    }
+  };
+
+  const handleSave = async (updates) => {
+    const leadId = liveLead?._dbId ?? liveLead?.id ?? lead?.id;
+    if (!leadId) return;
+    if (updates.stage || updates.pipelineStage) {
+      const stageLabel = updates.pipelineStage || updates.stage;
+      handleStageSelect(stageLabel);
+      if (crmId && String(crmId).match(/^\d+$/)) {
+        const stageMeta = getStageMeta(stageLabel);
+        const dbStage = adminPipelineIdToDbStage(stageMeta?.id || mapStageToId(stageLabel));
+        apiPatch(`/api/v1/leads/${crmId}/stage`, { stage: dbStage, status: dbStage }, {
+          headers: getAdminCrmHeaders(),
+        }).catch(() => {});
+      }
+    }
+  };
+
   return (
     <Drawer open={open} onClose={onClose} title={liveLead?.name || "Lead Details"}>
       {loadingDetail && !crmId ? (
@@ -69,9 +98,11 @@ export default function PipelineLeadDrawer({ open, onClose, lead, calls = [] }) 
           liveLead={liveLead}
           variant="admin"
           showReassignment={false}
-          readOnly
+          readOnly={false}
           pipelineView
           editLeadsHref={editLeadsHref}
+          onStageChange={handleStageSelect}
+          onSave={handleSave}
           onClose={onClose}
           calls={calls}
         />

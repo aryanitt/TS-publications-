@@ -367,6 +367,7 @@ function distributeUnassigned(state, employees, leads, options = {}) {
   const workloadLeads = allLeads || leads;
   let workload = computeWorkload(employees, next.assignments, workloadLeads);
   let assignedCount = 0;
+  const newAssignments = [];
 
   for (const lead of leads) {
     const lid = String(getLeadId(lead));
@@ -388,6 +389,7 @@ function distributeUnassigned(state, employees, leads, options = {}) {
       : `auto-${next.distribution.mode}`;
     next = assignLead(next, lead, emp, method);
     assignedCount += 1;
+    newAssignments.push({ leadId: lid, employee: emp, method });
 
     if (pick.nextIndex != null) {
       next = {
@@ -399,16 +401,16 @@ function distributeUnassigned(state, employees, leads, options = {}) {
   }
 
   saveState(next);
-  return { state: next, assignedCount };
+  return { state: next, assignedCount, newAssignments };
 }
 
 /** Background auto-assign (respects autoAssign toggle, skips manual leads). */
 export function autoAssignUnassigned(state, employees, leads) {
-  if (!state.distribution.autoAssign) return state;
+  if (!state.distribution.autoAssign) return { state, assignedCount: 0, newAssignments: [] };
   return distributeUnassigned(state, employees, leads, {
     includeManual: false,
     allLeads: leads,
-  }).state;
+  });
 }
 
 /**

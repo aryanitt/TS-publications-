@@ -27,10 +27,15 @@ function isAuthApiPath(path) {
   return pathname.startsWith("/api/auth");
 }
 
+/** Private LAN IP (phone/tablet hitting the dev machine's network address). */
+function isLanDevHost(host) {
+  return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+}
+
 function isLocalDevHost() {
   if (typeof window === "undefined") return false;
   const host = window.location.hostname;
-  return host === "localhost" || host === "127.0.0.1";
+  return host === "localhost" || host === "127.0.0.1" || isLanDevHost(host);
 }
 
 function shouldUseDirectBackendUrl() {
@@ -75,7 +80,19 @@ function resolveLocalDevApiBase() {
   if (envUrl != null && String(envUrl).trim() !== "") {
     return String(envUrl).replace(/\/$/, "");
   }
+  // A phone/tablet on the LAN must reach the dev machine's network address, not "localhost".
+  if (typeof window !== "undefined" && isLanDevHost(window.location.hostname)) {
+    return `http://${window.location.hostname}:5000`;
+  }
   return "http://localhost:5000";
+}
+
+/** Origin the realtime socket should connect to — mirrors apiUrl's backend resolution. */
+export function getSocketBase() {
+  if (typeof window === "undefined") return getApiBase();
+  if (shouldUseDirectBackendUrl()) return resolveDirectApiBase();
+  if (isLocalDevHost()) return resolveLocalDevApiBase();
+  return window.location.origin;
 }
 
 export function apiUrl(path) {

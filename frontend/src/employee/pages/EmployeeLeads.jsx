@@ -35,7 +35,7 @@ function isDraggablePipelineLead(lead) {
   return /^\d+$/.test(String(lead.id));
 }
 
-const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, onDragStart, onDragEnd, isNewAssigned }) {
+const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, onDragStart, onDragEnd, isNewAssigned, onMoveStage, currentStage }) {
   const canDrag = isDraggablePipelineLead(lead);
 
   return (
@@ -73,11 +73,35 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
           </span>
         )}
         <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
             <p className="text-[10px] text-slate-500 truncate mt-0.5">{lead.company}</p>
           </div>
-          <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status] || lead.stage || "Lead"} />
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status] || lead.stage || "Lead"} />
+            {canDrag && onMoveStage && (
+              <select
+                value={currentStage || lead.pipelineStage || lead.stage || ""}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onMoveStage(lead.id, e.target.value);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="block sm:hidden bg-rose-50/50 hover:bg-rose-50 text-[9px] font-black text-rose-700 border border-rose-200/80 rounded px-1.5 py-0.5 outline-none appearance-none pr-4"
+                style={{
+                  background: 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23be123c\' stroke-width=\'3.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 3px center/8px',
+                  paddingRight: '12px'
+                }}
+              >
+                <option value="" disabled style={{ color: '#64748b', backgroundColor: '#ffffff' }}>Move...</option>
+                {EMP_KANBAN_STAGES.map((s) => (
+                  <option key={s.id} value={s.id} style={{ color: '#1e293b', backgroundColor: '#ffffff' }}>
+                    {s.id === "conversation_2min" ? "Convo" : s.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
         <div className="flex items-center justify-between pt-2 border-t border-rose-50">
           <span className="text-xs font-black text-rose-700 tabular-nums">{lead.budget}</span>
@@ -588,12 +612,14 @@ export default function EmployeeLeads() {
                       <LeadCard
                         key={lead.id}
                         lead={lead}
+                        currentStage={stage.id}
                         lastLabel={activityLabelMap.get(lead.id) ?? "—"}
                         isNewAssigned={isPipelineNewAssigned(lead)}
                         isDragging={dragLeadId === lead.id}
                         onOpen={() => setSelected(lead)}
                         onDragStart={() => setDragLeadId(lead.id)}
                         onDragEnd={() => setDragLeadId(null)}
+                        onMoveStage={moveLeadToStage}
                       />
                     ))}
                     {hiddenCount > 0 && (
@@ -722,7 +748,7 @@ export default function EmployeeLeads() {
         defaultStage="Lead"
       />
 
-      <EmployeeLeadDrawer lead={selected} periodCalls={periodCalls} onClose={() => setSelected(null)} />
+      <EmployeeLeadDrawer lead={selected} periodCalls={periodCalls} onClose={() => setSelected(null)} onMoveStage={moveLeadToStage} />
     </div>
   );
 }

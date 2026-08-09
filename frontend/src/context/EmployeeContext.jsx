@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "./AuthContext.jsx";
+import { getDynamicServicesList } from "../lib/servicesRegistry.js";
 import {
   CURRENT_EMPLOYEE,
   MOCK_EMPLOYEE_ID,
@@ -62,6 +63,8 @@ import {
   fetchAllEmployeeLeads,
 } from "../lib/leadSync.js";
 import { invalidateCallyzerStatsCache, CALLYZER_POLL_INTERVAL_MS, dispatchCallyzerRefresh } from "../lib/useCallyzerStats.js";
+import { onLeadChanged, onDashboardRefresh, markLocalLeadChange } from "../lib/realtime.js";
+import { invalidatePipelineBoardCache } from "../lib/usePipelineSync.js";
 
 const EmployeeContext = createContext(null);
 
@@ -1008,12 +1011,14 @@ export function EmployeeProvider({ children }) {
     const acceptedAt = fromNewAssigned ? new Date().toISOString() : current?.acceptedAt;
     const prevSnapshot = current ? { ...current } : null;
 
+    markLocalLeadChange();
     setLeads((prev) => prev.map((l) => {
       if (String(l.id) !== String(leadId)) return l;
       return {
         ...l,
         stage: stageLabel,
         pipelineStage: stageLabel,
+        stageOverride: true,
         status: patch.employeeStatus || l.status,
         assignmentStatus: fromNewAssigned ? "accepted" : l.assignmentStatus,
         acceptedAt,
@@ -1028,6 +1033,9 @@ export function EmployeeProvider({ children }) {
         }, { headers: getCrmHeaders() });
         invalidateCache("/api/v1/employee/");
         invalidateCache(`/api/v1/leads/${leadId}`);
+        // usePipelineSync keeps its own module-level board cache that invalidateCache
+        // does not touch — without this the board keeps serving the pre-move payload.
+        invalidatePipelineBoardCache();
       } catch (err) {
         if (prevSnapshot) {
           setLeads((prev) => prev.map((l) => (String(l.id) === String(leadId) ? prevSnapshot : l)));
@@ -1132,6 +1140,7 @@ export function EmployeeProvider({ children }) {
 
     const prevSnapshot = leads.find((l) => String(l.id) === String(leadId));
 
+    markLocalLeadChange();
     setLeads((prev) => prev.map((l) => (
       String(l.id) === String(leadId)
         ? {
@@ -1141,6 +1150,7 @@ export function EmployeeProvider({ children }) {
           ...(updates.status !== undefined ? { status: updates.status } : {}),
           stage: normalizedUpdates.stage || l.stage,
           pipelineStage: normalizedUpdates.pipelineStage || l.pipelineStage,
+          stageOverride: Boolean(stageUpdate || l.stageOverride),
           ...(updates.company !== undefined ? { company: updates.company } : {}),
           ...(updates.city !== undefined ? { city: updates.city } : {}),
           ...(updates.source !== undefined ? { source: updates.source } : {}),
@@ -1221,6 +1231,7 @@ export function EmployeeProvider({ children }) {
         }
         invalidateCache("/api/v1/employee/");
         invalidateCache(`/api/v1/leads/${leadId}`);
+        if (stageUpdate) invalidatePipelineBoardCache();
       } catch (err) {
         if (prevSnapshot) {
           setLeads((prev) => prev.map((l) => (
@@ -1607,6 +1618,25 @@ export function EmployeeProvider({ children }) {
     };
   }, [usingApi, employee?.id, loading]);
 
+  // Live sync — a stage change made elsewhere (admin web, another device) refetches this employee's leads.
+  useEffect(() => {
+    if (!usingApi || !employee?.id) return undefined;
+    let timer = null;
+    const refetch = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        refreshLeads(employee.id, employee);
+      }, 400);
+    };
+    const offLead = onLeadChanged(refetch);
+    const offDashboard = onDashboardRefresh(refetch);
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      offLead();
+      offDashboard();
+    };
+  }, [usingApi, employee?.id, refreshLeads]);
+
   const value = useMemo(() => ({
     employee,
     tasks,
@@ -1656,6 +1686,7 @@ export function EmployeeProvider({ children }) {
     reloadWorkspace,
     selectedService,
     setSelectedService,
+    servicesList: getDynamicServicesList([], leads),
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, markFollowUpNotPicked, markFollowUpCallAgain, refreshFollowUps,
@@ -1690,8 +1721,14 @@ export function EmployeeProvider({ children }) {
   );
 }
 
+const DEFAULT_EMPLOYEE_CONTEXT = {
+  employee: null,
+  selectedService: "All Services",
+  setSelectedService: () => {},
+  servicesList: ["All Services"],
+};
+
 export function useEmployee() {
   const ctx = useContext(EmployeeContext);
-  if (!ctx) throw new Error("useEmployee must be used within EmployeeProvider");
-  return ctx;
+  return ctx || DEFAULT_EMPLOYEE_CONTEXT;
 }

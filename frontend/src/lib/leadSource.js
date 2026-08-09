@@ -38,14 +38,67 @@ export const EXCLUDED_SOURCE_KEYS = new Set([
 export const MARKETING_SOURCE_KEYS = new Set(SOURCE_CATALOG.map((s) => s.key));
 
 function isSeedOrDemoLead(lead) {
+  if (!lead) return true;
+
+  // 1) Explicit mock / seed flags
+  if (lead.is_demo || lead.isDemo || lead.is_seed || lead.isSeed) return true;
+
+  // 2) Mock ID patterns
+  const idStr = String(lead.id || "").toLowerCase();
+  if (
+    idStr.startsWith("seed-") ||
+    idStr.startsWith("mock-") ||
+    idStr.startsWith("demo-") ||
+    idStr.startsWith("test-")
+  ) {
+    return true;
+  }
+
+  // 3) Assigned by seed / mock
   const assignedBy = String(lead?.assigned_by || lead?.assignedBy || "").toLowerCase();
-  if (assignedBy === "seed") return true;
+  if (assignedBy === "seed" || assignedBy === "demo" || assignedBy === "mock") return true;
 
+  // 4) Check sourceMeta flags
+  const meta = lead.sourceMeta || lead.source_meta || {};
+  if (meta.isSeed || meta.is_seed || meta.isDemo || meta.is_demo || meta.dummy || meta.isMock) return true;
+
+  // 5) Dummy name patterns
+  const name = String(lead.lead_name || lead.leadName || lead.name || "").toLowerCase();
+  if (
+    name.includes("demo") ||
+    name.includes("test lead") ||
+    name.includes("sample lead") ||
+    name.includes("dummy") ||
+    name.includes("mock lead")
+  ) {
+    return true;
+  }
+
+  // 6) Dummy email patterns
   const email = String(lead?.email || "").toLowerCase();
-  if (email.endsWith("@example.com")) return true;
+  if (
+    email.endsWith("@example.com") ||
+    email.endsWith("@test.com") ||
+    email.endsWith("@demo.com") ||
+    email.includes("dummy") ||
+    email.includes("test")
+  ) {
+    return true;
+  }
 
-  const phone = String(lead?.phone || "").replace(/\D/g, "");
-  if (phone.startsWith("9190000")) return true;
+  // 7) Dummy phone patterns
+  const phone = String(lead?.phone || lead?.phone_number || "").replace(/\D/g, "");
+  if (
+    phone.startsWith("9190000") ||
+    phone.startsWith("90000") ||
+    phone.startsWith("00000") ||
+    phone.startsWith("12345") ||
+    phone === "1234567890" ||
+    phone === "9876543210" ||
+    phone === "9999999999"
+  ) {
+    return true;
+  }
 
   return false;
 }
@@ -143,11 +196,12 @@ export function aggregateLeadsBySource(leads = []) {
       });
     }
     const bucket = buckets.get(key);
-    const revenue = leadRevenue(lead);
+    const converted = isLeadConverted(lead);
+    const revenue = converted ? leadRevenue(lead) : 0;
     bucket.leads.push(lead);
     bucket.leadCount += 1;
     bucket.totalRevenue += revenue;
-    if (isLeadConverted(lead)) bucket.convertedCount += 1;
+    if (converted) bucket.convertedCount += 1;
   }
 
   return Array.from(buckets.values())
@@ -182,4 +236,18 @@ export function formatSourceRevenue(val) {
 export function filterLeadsBySourceKey(leads, sourceKey) {
   const target = String(sourceKey || "").toLowerCase();
   return leads.filter((lead) => resolveLeadSourceKey(lead) === target);
+}
+
+/**
+ * A dismissed source stays hidden only while every one of its leads predates the
+ * dismissal — a fresh lead on that channel after dismissal brings the card back.
+ */
+export function isSourceDismissed(group, dismissedAtIso) {
+  if (!dismissedAtIso) return false;
+  const dismissedAt = new Date(dismissedAtIso).getTime();
+  if (Number.isNaN(dismissedAt)) return false;
+  return group.leads.every((lead) => {
+    const createdAt = new Date(lead.createdAt || lead.created_at || 0).getTime();
+    return Number.isNaN(createdAt) || createdAt <= dismissedAt;
+  });
 }

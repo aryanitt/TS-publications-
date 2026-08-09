@@ -7,9 +7,11 @@ import {
   normalizeLeadForDetailPanel,
   resolvePipelineCardLeadLocal,
 } from "../../lib/leadSync.js";
+import { getStageMeta } from "../../data/pipelineMock.js";
+import { mapStageToId } from "../../lib/pipelineStages.js";
 import { getCrmHeaders } from "../../lib/crmContext.js";
 
-export default function EmployeeLeadDrawer({ lead, periodCalls = [], onClose }) {
+export default function EmployeeLeadDrawer({ lead, periodCalls = [], onClose, onMoveStage }) {
   const {
     calls = [],
     activities = {},
@@ -35,7 +37,7 @@ export default function EmployeeLeadDrawer({ lead, periodCalls = [], onClose }) 
     }
 
     const local = resolvePipelineCardLeadLocal(lead, { leads, periodCalls });
-    setResolvedLead(local);
+    setResolvedLead((prev) => (prev?.id === local?.id && prev?.stage === local?.stage ? prev : local));
 
     const crmId = local?._dbId ?? local?.id;
     const hasLocalCrm = /^\d+$/.test(String(crmId));
@@ -77,8 +79,28 @@ export default function EmployeeLeadDrawer({ lead, periodCalls = [], onClose }) 
 
   const detailReady = liveLead && /^\d+$/.test(String(liveLead._dbId ?? liveLead.id));
   const pipelineView = Boolean(lead._fromCall);
-  const canEdit = detailReady && !pipelineView;
-  const crmId = liveLead?._dbId ?? (detailReady ? liveLead.id : null);
+  const canEdit = detailReady;
+
+  const handleStageSelect = (stageLabel) => {
+    const leadId = liveLead?._dbId ?? liveLead?.id ?? lead?.id;
+    if (!leadId) return;
+    const targetStageId = mapStageToId(stageLabel) || getStageMeta(stageLabel)?.id || "lead";
+    if (onMoveStage) {
+      onMoveStage(leadId, targetStageId, { scroll: false });
+    }
+  };
+
+  const handleSave = async (updates) => {
+    const leadId = liveLead?._dbId ?? liveLead?.id ?? lead?.id;
+    if (!leadId) return;
+    if (updates.stage || updates.pipelineStage) {
+      const stageLabel = updates.pipelineStage || updates.stage;
+      handleStageSelect(stageLabel);
+    }
+    if (canEdit && editLeadDetails) {
+      await editLeadDetails(leadId, updates);
+    }
+  };
 
   return (
     <Drawer open={!!lead} onClose={onClose} title={liveLead?.name || lead.name || "Lead Details"}>
@@ -91,8 +113,9 @@ export default function EmployeeLeadDrawer({ lead, periodCalls = [], onClose }) 
           showReassignment={canEdit}
           pipelineView={pipelineView}
           onClose={onClose}
-          readOnly={!canEdit}
-          onSave={canEdit ? (updates) => editLeadDetails(liveLead._dbId ?? liveLead.id, updates) : undefined}
+          readOnly={false}
+          onStageChange={handleStageSelect}
+          onSave={handleSave}
           calls={periodCalls.length ? periodCalls : calls}
           activities={activities}
           employee={employee}

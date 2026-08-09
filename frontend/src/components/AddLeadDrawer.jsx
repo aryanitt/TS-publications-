@@ -716,23 +716,68 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
     );
   }
   
-  function ALSelect({ options, value = "", onChange, error = false, placeholder = "Select" }) {
+  const CUSTOM_OPTION_VALUE = "__custom__";
+
+  function ALSelect({ options, value = "", onChange, error = false, placeholder = "Select", customPlaceholder = "Type your own…" }) {
+    const [customMode, setCustomMode] = useState(Boolean(value) && !options.includes(value));
+
+    const baseFieldStyle = {
+      background: "#fff5f5",
+      border: `1.5px solid ${error ? "#f43f5e" : "#fecdd3"}`,
+      borderRadius: 10,
+      padding: "10px 13px", fontSize: 13, color: "#111827",
+      outline: "none", width: "100%", fontFamily: "inherit",
+    };
+
+    if (customMode) {
+      return (
+        <div style={{ position: "relative" }}>
+          <input
+            type="text"
+            value={value}
+            onChange={e => onChange && onChange(e.target.value)}
+            placeholder={customPlaceholder}
+            autoFocus
+            style={{ ...baseFieldStyle, paddingRight: 32 }}
+          />
+          <button
+            type="button"
+            onClick={() => { setCustomMode(false); onChange && onChange(""); }}
+            title="Choose from list instead"
+            style={{
+              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+              background: "none", border: "none", color: "#9ca3af", cursor: "pointer",
+              fontSize: 16, lineHeight: 1, padding: 4,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      );
+    }
+
     return (
       <select
         value={value}
-        onChange={e => onChange && onChange(e.target.value)}
+        onChange={e => {
+          if (e.target.value === CUSTOM_OPTION_VALUE) {
+            setCustomMode(true);
+            onChange && onChange("");
+            return;
+          }
+          onChange && onChange(e.target.value);
+        }}
         style={{
-          background: "#fff5f5",
-          border: `1.5px solid ${error ? "#f43f5e" : "#fecdd3"}`,
-          borderRadius: 10,
-          padding: "10px 36px 10px 13px", fontSize: 13, color: value ? "#111827" : "#9ca3af",
-          outline: "none", width: "100%", fontFamily: "inherit", appearance: "none",
+          ...baseFieldStyle,
+          padding: "10px 36px 10px 13px", color: value ? "#111827" : "#9ca3af",
+          appearance: "none",
           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23f43f5e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
           backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center",
         }}
       >
         <option value="">{placeholder}</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        <option value={CUSTOM_OPTION_VALUE}>+ Add new…</option>
       </select>
     );
   }

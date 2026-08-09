@@ -3,10 +3,10 @@ import { Link } from "react-router-dom";
 import {
   Search, Radio, Users, IndianRupee, Star, Eye,
   MousePointerClick, Instagram, Globe, Linkedin, MessageCircle,
-  Share2, Zap, Filter,
+  Share2, Zap, Filter, Trash2,
 } from "lucide-react";
 import { GlassCard, StatCard } from "../../components/Primitives.jsx";
-import { apiGet } from "../../lib/api.js";
+import { apiGet, apiPut } from "../../lib/api.js";
 import { fetchAllLeads } from "../../lib/leadSync.js";
 import { getAdminCrmHeaders } from "../../lib/crmContext.js";
 import {
@@ -15,6 +15,7 @@ import {
   getSourcesSummary,
   SOURCE_CATALOG,
   filterLeadsForSourceDashboard,
+  isSourceDismissed,
 } from "../../lib/leadSource.js";
 
 const SOURCE_ICONS = {
@@ -42,6 +43,8 @@ export default function SourcesDashboard() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [dismissedSources, setDismissedSources] = useState({});
+  const [deletingKey, setDeletingKey] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,12 +59,35 @@ export default function SourcesDashboard() {
         if (!cancelled) setLoading(false);
       }
     })();
+    apiGet("/api/settings", { headers: getAdminCrmHeaders(), skipCache: true })
+      .then((res) => {
+        if (!cancelled) setDismissedSources(res?.dismissedSources || {});
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
   const marketingLeads = useMemo(() => filterLeadsForSourceDashboard(leads), [leads]);
-  const sourceGroups = useMemo(() => aggregateLeadsBySource(marketingLeads), [marketingLeads]);
+  const allSourceGroups = useMemo(() => aggregateLeadsBySource(marketingLeads), [marketingLeads]);
+  const sourceGroups = useMemo(
+    () => allSourceGroups.filter((g) => !isSourceDismissed(g, dismissedSources[g.key])),
+    [allSourceGroups, dismissedSources],
+  );
   const summary = useMemo(() => getSourcesSummary(sourceGroups), [sourceGroups]);
+
+  const handleDeleteSource = async (group) => {
+    if (!window.confirm(`Remove "${group.label}" from this dashboard? It'll come back automatically if a new lead comes in from this source.`)) return;
+    setDeletingKey(group.key);
+    const next = { ...dismissedSources, [group.key]: new Date().toISOString() };
+    try {
+      await apiPut("/api/settings", { dismissedSources: next }, { headers: getAdminCrmHeaders() });
+      setDismissedSources(next);
+    } catch {
+      // leave the card in place if the save failed
+    } finally {
+      setDeletingKey(null);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -148,6 +174,15 @@ export default function SourcesDashboard() {
                     <p className="text-[9px] text-slate-500 mt-0.5 truncate">Source channel</p>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSource(group)}
+                  disabled={deletingKey === group.key}
+                  title="Remove this source from the dashboard"
+                  className="shrink-0 w-7 h-7 rounded-md grid place-items-center text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-1.5 mb-3 flex-1">

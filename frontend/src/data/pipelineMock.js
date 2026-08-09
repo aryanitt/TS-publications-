@@ -32,8 +32,18 @@ export function timeAgoShort(iso) {
   return `${Math.floor(d / 7)}w ago`;
 }
 
-export function getStageMeta(stageId) {
-  return PIPELINE_STAGES.find((s) => s.id === stageId) || PIPELINE_STAGES[0];
+export function getStageMeta(stageIdOrLabel) {
+  if (!stageIdOrLabel) return PIPELINE_STAGES[0];
+  const q = String(stageIdOrLabel).toLowerCase().trim();
+  const normalized = q.replace(/_/g, " ");
+  return (
+    PIPELINE_STAGES.find(
+      (s) => s.id === stageIdOrLabel
+        || s.id.toLowerCase() === q
+        || s.label.toLowerCase() === q
+        || s.label.toLowerCase() === normalized,
+    ) || PIPELINE_STAGES[0]
+  );
 }
 
 export function getStageIndex(stageId) {

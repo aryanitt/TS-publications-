@@ -23,6 +23,8 @@ import {
   isConverted, persistAssignmentState,
   isQueueEligibleLead, isLeadUnassigned,
 } from "../lib/leadAssignment.js";
+import { useAdmin } from "../context/AdminContext.jsx";
+import { extractLeadService, leadBelongsToService } from "../lib/servicesRegistry.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
 import { PERIOD_PILL_BTN, PERIOD_PILL_INACTIVE } from "../lib/dateRange.js";
 
@@ -60,10 +62,12 @@ function getLeadPhone(lead) {
 }
 
 function getLeadService(lead) {
+  const extracted = extractLeadService(lead);
+  if (extracted) return `Service: ${extracted}`;
   return lead.service || lead.requirements || lead.insights || "—";
 }
 
-function EmployeeCard({ emp, stats, utilPct, status, paused, onTogglePause, onDrop, dragOver }) {
+function EmployeeCard({ emp, stats, status, paused, onTogglePause, onDrop, dragOver }) {
   return (
     <div
       onDragOver={(e) => { e.preventDefault(); onDrop?.(true); }}
@@ -118,22 +122,6 @@ function EmployeeCard({ emp, stats, utilPct, status, paused, onTogglePause, onDr
           </div>
         ))}
       </div>
-
-      <div>
-        <div className="flex justify-between text-[9px] font-bold mb-0.5">
-          <span className="text-slate-500">Capacity</span>
-          <span style={{ color: status.color }}>{utilPct}%</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-rose-50 overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${Math.min(utilPct, 100)}%`,
-              background: status.dot,
-            }}
-          />
-        </div>
-    </div>
     </div>
   );
 }
@@ -148,6 +136,7 @@ export default function Leads() {
     }
     return [];
   });
+  const { selectedService } = useAdmin();
   const [employees, setEmployees] = useState([]);
   const [assignState, setAssignState] = useState(() => getAssignmentState());
   const [loading, setLoading] = useState(() => leads.length === 0);
@@ -225,16 +214,16 @@ const showToast = (message, type = "success") => {
         setLeads(leadList);
         setEmployees(empList);
 
-        setAssignState((prev) => {
-          let s = syncRoundRobinOrder(prev, empList);
-          if (!s.distribution.roundRobinOrder?.length) {
-            s = initRoundRobinOrder(s, empList);
-          }
-          if (leadList.length && !leadData.fromV1) {
-            s = autoAssignUnassigned(s, empList, leadList);
-          }
-          return s;
-        });
+        let s = syncRoundRobinOrder(assignState, empList);
+        if (!s.distribution.roundRobinOrder?.length) {
+          s = initRoundRobinOrder(s, empList);
+        }
+        if (leadList.length && !leadData.fromV1) {
+          const { state: next, newAssignments } = autoAssignUnassigned(s, empList, leadList);
+          s = next;
+          persistDistributedAssignments(newAssignments);
+        }
+        setAssignState(s);
       })
       .catch(() => {
         setLeads([]);
@@ -362,6 +351,9 @@ const showToast = (message, type = "success") => {
     const q = search.toLowerCase().trim();
     return queueLeads
       .filter((l) => {
+        if (selectedService && selectedService !== "All Services" && !leadBelongsToService(l, selectedService)) {
+          return false;
+        }
         if (showSheetLeadsOnly && !l.is_bulk_uploaded) return false;
         if (!q) return true;
         return [l.lead_name, l.phone, l.phone_number, getLeadService(l)]
@@ -374,7 +366,7 @@ const showToast = (message, type = "success") => {
           ? String(va).localeCompare(String(vb))
           : String(vb).localeCompare(String(va));
       });
-  }, [queueLeads, search, sortKey, sortDir, showSheetLeadsOnly]);
+  }, [queueLeads, search, sortKey, sortDir, showSheetLeadsOnly, selectedService]);
 
   const handleAssign = useCallback(
     async (lead, employee, method = "manual") => {
@@ -401,6 +393,32 @@ const showToast = (message, type = "success") => {
     },
     [assignState],
   );
+
+  /** Round-robin / workload / skill distribution only updates local state — this
+   *  persists each resulting lead→employee assignment to the backend so employees
+   *  actually receive the lead, instead of it only looking assigned in this admin view. */
+  const persistDistributedAssignments = useCallback(async (newAssignments) => {
+    if (!newAssignments?.length) return;
+    const results = await Promise.allSettled(
+      newAssignments.map(({ leadId, employee, method }) =>
+        apiPost("/api/v1/assignment/assign", {
+          leadId,
+          employeeId: employee.id,
+          method,
+        }, { headers: getAdminCrmHeaders() }),
+      ),
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed) {
+      showToast(`${failed} of ${newAssignments.length} assignments failed to save — they'll retry on next distribution`, "error");
+    }
+    invalidateCache("/api/v1");
+    const byLeadId = new Map(newAssignments.map((a) => [String(a.leadId), a.employee]));
+    setLeads((prev) => prev.map((l) => {
+      const emp = byLeadId.get(String(getLeadId(l)));
+      return emp ? { ...l, assignedTo: { id: emp.id, name: emp.name } } : l;
+    }));
+  }, []);
 
   const handleBulkAssign = async (employee) => {
     const toAssign = filtered.filter((l) => selected.has(String(getLeadId(l))));
@@ -602,26 +620,25 @@ const showToast = (message, type = "success") => {
                   selected.has(String(getLeadId(l))),
                 );
 
-                setAssignState((prev) => {
-                  const { state: next, assignedCount } = runDistributionNow(
-                    prev,
-                    employees,
-                    leads,
-                    selectedLeads,
+                const { state: next, assignedCount, newAssignments } = runDistributionNow(
+                  assignState,
+                  employees,
+                  leads,
+                  selectedLeads,
+                );
+                setAssignState(next);
+                if (assignedCount === 0) {
+                  showToast(
+                    "Could not assign — reps may be paused, on leave, or at capacity",
+                    "error",
                   );
-                  if (assignedCount === 0) {
-                    showToast(
-                      "Could not assign — reps may be paused, on leave, or at capacity",
-                      "error",
-                    );
-                  } else {
-                    showToast(
-                      `${assignedCount} selected lead${assignedCount === 1 ? "" : "s"} assigned via ${modeLabels[prev.distribution.mode]}`,
-                    );
-                    setSelected(new Set());
-                  }
-                  return next;
-                });
+                } else {
+                  showToast(
+                    `${assignedCount} selected lead${assignedCount === 1 ? "" : "s"} assigned via ${modeLabels[assignState.distribution.mode]}`,
+                  );
+                  setSelected(new Set());
+                  persistDistributedAssignments(newAssignments);
+                }
               }}
               className={`${PERIOD_PILL_BTN} bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 flex items-center gap-1`}
             >
@@ -908,7 +925,6 @@ const showToast = (message, type = "success") => {
                     key={emp.id}
                     emp={emp}
                     stats={stats}
-                    utilPct={utilPct}
                     status={status}
                     paused={settings.receivingPaused}
                     onTogglePause={(id) => setAssignState(toggleEmployeeReceiving(assignState, id))}
