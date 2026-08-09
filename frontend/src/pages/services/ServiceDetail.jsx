@@ -274,7 +274,7 @@ export default function ServiceDetail() {
       <div className="rounded-2xl overflow-hidden shadow-sm border border-rose-100">
         {/* gradient banner */}
         <div className="bg-gradient-to-r from-rose-600 to-rose-500 px-4 pt-4 pb-10 sm:pb-5 relative">
-          <div className="absolute inset-0 opacity-10"
+          <div className="absolute inset-0 opacity-10 pointer-events-none"
             style={{ backgroundImage: "radial-gradient(circle at 80% 20%, white 0%, transparent 60%)" }} />
           {/* back button */}
           <Link
