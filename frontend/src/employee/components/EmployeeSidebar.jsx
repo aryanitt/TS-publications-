@@ -36,7 +36,7 @@ const NAV = [
 export default function EmployeeSidebar({ open, onClose, collapsed, onToggleCollapse }) {
   const [hovered, setHovered] = useState(false);
   const { employee } = useEmployee();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const isExpanded = !collapsed || hovered;
 
@@ -86,7 +86,7 @@ export default function EmployeeSidebar({ open, onClose, collapsed, onToggleColl
             name={employee.name}
             role={employee.role}
             title={employee.name}
-            avatar={<EmployeeDoodleAvatar size={32} shape="circle" photoUrl={employee?.avatarUrl} />}
+            avatar={<EmployeeDoodleAvatar size={32} shape="circle" photoUrl={user?.avatarUrl || employee?.avatarUrl} />}
             onSignOut={() => { logout(); onClose(); navigate("/login", { replace: true }); }}
           />
         </SidebarFooter>

@@ -46,7 +46,7 @@ const items = [
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   const [hovered, setHovered] = useState(false);
   const { admin } = useAdmin();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const isExpanded = !collapsed || hovered;
 
@@ -104,7 +104,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
             name={admin.fullName}
             role={admin.role}
             title={`${admin.fullName} — ${admin.role}`}
-            avatar={<AdminDoodleAvatar size={32} shape="circle" photoUrl={admin.avatarUrl} />}
+            avatar={<AdminDoodleAvatar size={32} shape="circle" photoUrl={user?.avatarUrl || admin.avatarUrl} />}
             onSignOut={() => { logout(); onClose(); navigate("/login", { replace: true }); }}
           />
         </SidebarFooter>

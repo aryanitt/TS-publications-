@@ -1,5 +1,5 @@
 import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { apiGet, apiPost, invalidateCache } from "../lib/api.js";
+import { apiGet, apiPost, apiPut, invalidateCache } from "../lib/api.js";
 import {
   clearAuthStorage,
   clearEmployeeStorage,
@@ -161,9 +161,25 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  // Profile photo lives on the auth identity (users table) — same field for admin
+  // and employee, returned by /login and /me, so it follows the account to any device.
+  const updateAvatar = useCallback(async (avatarUrl) => {
+    const data = await apiPut("/api/auth/me/avatar", { avatarUrl });
+    if (!data?.success) {
+      throw new Error(data?.message || "Could not save photo");
+    }
+    if (data?.user) {
+      const nextUser = normalizeAuthUser(data.user);
+      setUser(nextUser);
+      storeAuthUser(nextUser);
+      syncEmployeeProfileFromAuth(nextUser);
+    }
+    return data;
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, login, logout, changePassword, refreshUser: bootstrap }),
-    [user, loading, login, logout, changePassword, bootstrap],
+    () => ({ user, loading, login, logout, changePassword, refreshUser: bootstrap, updateAvatar }),
+    [user, loading, login, logout, changePassword, bootstrap, updateAvatar],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

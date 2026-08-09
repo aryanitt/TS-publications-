@@ -121,7 +121,7 @@ export default function Topbar({ onMenu }) {
   const showDateRange = !hideDateRange(pathname);
   const navigate     = useNavigate();
   const { admin, selectedService, setSelectedService, servicesList } = useAdmin();
-  const { logout }   = useAuth();
+  const { logout, user }   = useAuth();
   const meta         = resolvePageMeta(pathname);
   const pipelinePeriod = String(searchParams.get("period") || "month").toLowerCase();
 
@@ -541,7 +541,7 @@ export default function Topbar({ onMenu }) {
             className="relative flex items-center justify-center gap-1.5 sm:gap-2 w-9 h-9 sm:w-auto sm:h-auto p-0 sm:pl-1 sm:pr-3 sm:py-1 rounded-full sm:rounded-xl shrink-0
               border border-[#E5E7EB] bg-white hover:bg-[#FFE4EC] transition"
           >
-            <AdminDoodleAvatar size={28} shape="circle" className="shrink-0" photoUrl={admin.avatarUrl} />
+            <AdminDoodleAvatar size={28} shape="circle" className="shrink-0" photoUrl={user?.avatarUrl || admin.avatarUrl} />
             <div className={`${isLeadsPage ? "hidden 2xl:block" : "hidden lg:block"} text-left leading-tight min-w-0`}>
               <div className="text-xs font-semibold text-[#DC143C] truncate max-w-[120px]">{admin.fullName}</div>
               <div className="text-[10px] text-[#6B7280] truncate max-w-[120px]">{admin.role}</div>

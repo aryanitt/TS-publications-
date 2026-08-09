@@ -30,9 +30,15 @@ export function DashboardScrollbarStyles() {
 
 export default function AdminProfileHeader() {
   const { admin, updateAdmin } = useAdmin();
-  const { user } = useAuth();
+  const { user, updateAvatar } = useAuth();
   const { pathname } = useLocation();
   const onSettingsPage = pathname === "/settings";
+  const photoUrl = user?.avatarUrl || admin.avatarUrl;
+
+  const handlePhotoUploaded = async (url) => {
+    await updateAvatar(url);
+    updateAdmin({ avatarUrl: url });
+  };
 
   const displayName = admin.fullName || user?.name || "Admin";
   const displayEmail = user?.email || admin.email;
@@ -78,11 +84,11 @@ export default function AdminProfileHeader() {
         {/* Avatar */}
         <div className="absolute -top-7 left-4 sm:-top-9 sm:left-6">
           <div className="rounded-full border-[3px] sm:border-4 border-white shadow-md">
-            <AdminDoodleAvatar size={56} shape="circle" className="sm:hidden" photoUrl={admin.avatarUrl} />
-            <AdminDoodleAvatar size={68} shape="circle" className="hidden sm:block" photoUrl={admin.avatarUrl} />
+            <AdminDoodleAvatar size={56} shape="circle" className="sm:hidden" photoUrl={photoUrl} />
+            <AdminDoodleAvatar size={68} shape="circle" className="hidden sm:block" photoUrl={photoUrl} />
           </div>
           <AvatarUploadButton
-            onUploaded={(url) => updateAdmin({ avatarUrl: url })}
+            onUploaded={handlePhotoUploaded}
             headers={getAdminCrmHeaders()}
             className="w-5 h-5 sm:w-6 sm:h-6 -bottom-0.5 -right-0.5"
           />

@@ -51,7 +51,7 @@ export default function EmployeeTopbar({ onMenu }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { employee, selectedService, setSelectedService, servicesList } = useEmployee();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const meta = pathname.startsWith("/employee/sales-process/") && pathname !== "/employee/sales-process"
     ? { title: "SOP Detail", sub: "Full playbook · Scripts · Checklist" }
     : PAGE_META[pathname] || { title: "Employee Panel", sub: "" };
@@ -248,7 +248,7 @@ export default function EmployeeTopbar({ onMenu }) {
                 className="relative flex items-center justify-center gap-1.5 sm:gap-2 w-9 h-9 sm:w-auto sm:h-auto p-0 sm:pl-1 sm:pr-3 sm:py-1 rounded-full sm:rounded-xl
                   border border-[#E5E7EB] bg-white hover:bg-[#FFE4EC] transition"
               >
-                <EmployeeDoodleAvatar size={28} shape="circle" className="shrink-0" photoUrl={employee?.avatarUrl} />
+                <EmployeeDoodleAvatar size={28} shape="circle" className="shrink-0" photoUrl={user?.avatarUrl || employee?.avatarUrl} />
                 <div className="hidden lg:block text-left leading-tight min-w-0">
                   <div className="text-xs font-semibold text-[#DC143C] truncate max-w-[100px]">{employee.name?.split(" ")[0]}</div>
                   <div className="text-[10px] text-[#6B7280] truncate">{employee.role}</div>

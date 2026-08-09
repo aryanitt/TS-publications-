@@ -30,7 +30,14 @@ export function DashboardScrollbarStyles() {
 
 export default function EmployeeProfileHeader() {
   const { employee, updateEmployeeAvatar } = useEmployee();
-  const { user } = useAuth();
+  const { user, updateAvatar } = useAuth();
+  const photoUrl = user?.avatarUrl || employee?.avatarUrl;
+
+  const handlePhotoUploaded = async (url) => {
+    await updateAvatar(url);
+    // Also mirror onto the employees table so the Team roster can show it too.
+    updateEmployeeAvatar?.(url);
+  };
   const { pathname } = useLocation();
   const onProfilePage = pathname === "/employee/profile";
 
@@ -79,11 +86,11 @@ export default function EmployeeProfileHeader() {
       <div className="px-4 pb-4 sm:px-6 sm:pb-5 relative">
         <div className="absolute -top-7 left-4 sm:-top-9 sm:left-6">
           <div className="rounded-full border-[3px] sm:border-4 border-white shadow-md">
-            <EmployeeDoodleAvatar size={56} shape="circle" className="sm:hidden" photoUrl={employee?.avatarUrl} />
-            <EmployeeDoodleAvatar size={68} shape="circle" className="hidden sm:block" photoUrl={employee?.avatarUrl} />
+            <EmployeeDoodleAvatar size={56} shape="circle" className="sm:hidden" photoUrl={photoUrl} />
+            <EmployeeDoodleAvatar size={68} shape="circle" className="hidden sm:block" photoUrl={photoUrl} />
           </div>
           <AvatarUploadButton
-            onUploaded={updateEmployeeAvatar}
+            onUploaded={handlePhotoUploaded}
             headers={getCrmHeaders()}
             className="w-5 h-5 sm:w-6 sm:h-6 -bottom-0.5 -right-0.5"
           />

@@ -270,74 +270,145 @@ export default function ServiceDetail() {
   return (
     <div className="space-y-4 page-shell min-w-0 max-w-5xl">
 
-      <GlassCard className="p-3.5 sm:p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link
-              to="/services"
-              className="w-9 h-9 rounded-xl border border-rose-100 bg-white text-rose-700 grid place-items-center shrink-0 hover:bg-rose-50 transition"
-              aria-label="Back to catalog"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-            <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 grid place-items-center shrink-0">
-              <Icon className="w-5 h-5" />
+      {/* ── Hero Header Card ── */}
+      <div className="rounded-2xl overflow-hidden shadow-sm border border-rose-100">
+        {/* gradient banner */}
+        <div className="bg-gradient-to-r from-rose-600 to-rose-500 px-4 pt-4 pb-10 sm:pb-5 relative">
+          <div className="absolute inset-0 opacity-10"
+            style={{ backgroundImage: "radial-gradient(circle at 80% 20%, white 0%, transparent 60%)" }} />
+          {/* back button */}
+          <Link
+            to="/services"
+            className="inline-flex items-center gap-1.5 text-white/80 hover:text-white text-xs font-semibold transition mb-3"
+            aria-label="Back to catalog"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
+          </Link>
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm grid place-items-center shrink-0 border border-white/30">
+              <Icon className="w-5 h-5 text-white" />
             </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black text-slate-900 truncate">{service.name}</h1>
-                <Badge tone={serviceBadgeTone(service.badge)}>{service.badge}</Badge>
-                <Badge tone={service.status === "ACTIVE" ? "success" : "muted"}>{service.status}</Badge>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg font-black text-white leading-tight break-words drop-shadow-sm">
+                {service.name}
+              </h1>
+              <p className="text-white/75 text-[11px] mt-0.5 font-medium">
                 {service.categoryLabel} · {formatServicePriceLabel(service.price, service.priceNum)}
               </p>
             </div>
+            {/* Desktop action buttons — shown inline in banner */}
+            <div className="hidden sm:flex items-center gap-2 shrink-0 ml-auto">
+              <button
+                type="button"
+                onClick={() => toast.success("Link copied")}
+                className="h-8 w-8 rounded-xl bg-white/15 hover:bg-white/25 text-white inline-flex items-center justify-center transition border border-white/20"
+                title="Share"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => toast.success("Export started")}
+                className="h-8 w-8 rounded-xl bg-white/15 hover:bg-white/25 text-white inline-flex items-center justify-center transition border border-white/20"
+                title="Export"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/services/${service.id}/edit`)}
+                className="h-8 px-4 rounded-xl bg-white text-rose-700 text-xs font-bold hover:bg-rose-50 inline-flex items-center gap-1.5 shadow-sm transition"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteService}
+                className="h-8 w-8 rounded-xl bg-white/15 hover:bg-red-100/30 text-white/80 hover:text-white inline-flex items-center justify-center border border-white/20 transition"
+                title="Delete"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
+        </div>
 
-          <div className="flex items-center gap-2 shrink-0 pl-12 sm:pl-0">
+        {/* white floating panel — mobile only (-mt-6 overlap), desktop hidden */}
+        <div className="sm:hidden bg-white -mt-6 rounded-t-2xl px-4 pt-3 pb-4 relative shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+          {/* status pill */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+              service.status === "ACTIVE"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                : "bg-slate-100 border-slate-200 text-slate-500"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${service.status === "ACTIVE" ? "bg-emerald-500" : "bg-slate-400"}`} />
+              {service.status}
+            </span>
+            {service.badge && service.badge !== service.status && (
+              <Badge tone={serviceBadgeTone(service.badge)}>{service.badge}</Badge>
+            )}
+          </div>
+          {/* mobile action buttons */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => toast.success("Link copied")}
-              className="h-9 px-3 rounded-xl border border-rose-200 bg-white text-xs font-bold text-rose-800 hover:bg-rose-50 inline-flex items-center gap-1.5 transition"
+              className="h-9 w-9 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 inline-flex items-center justify-center transition"
+              title="Share"
             >
-              <Share2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Share</span>
+              <Share2 className="w-4 h-4" />
             </button>
             <button
               type="button"
               onClick={() => toast.success("Export started")}
-              className="h-9 px-3 rounded-xl border border-rose-200 bg-white text-xs font-bold text-rose-800 hover:bg-rose-50 inline-flex items-center gap-1.5 transition"
+              className="h-9 w-9 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 inline-flex items-center justify-center transition"
+              title="Export"
             >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Export</span>
+              <Download className="w-4 h-4" />
             </button>
             <button
               type="button"
               onClick={() => navigate(`/services/${service.id}/edit`)}
-              className="h-9 px-3 rounded-xl bg-rose-700 text-white text-xs font-bold hover:bg-rose-800 inline-flex items-center gap-1.5 shadow-sm transition"
+              className="h-9 flex-1 rounded-xl bg-rose-700 text-white text-xs font-bold hover:bg-rose-800 inline-flex items-center justify-center gap-1.5 shadow-sm transition"
             >
-              <Pencil className="w-3.5 h-3.5 shrink-0" />
-              Edit
+              <Pencil className="w-3.5 h-3.5" /> Edit
             </button>
             <button
               type="button"
               onClick={handleDeleteService}
-              className="h-9 px-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold inline-flex items-center gap-1.5 border border-red-200 transition"
+              className="h-9 w-9 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 inline-flex items-center justify-center border border-red-100 transition"
+              title="Delete"
             >
-              <Trash2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Delete</span>
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
-      </GlassCard>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        {/* Desktop status bar */}
+        <div className="hidden sm:flex items-center gap-2 bg-white px-5 py-2.5 border-t border-rose-50">
+          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+            service.status === "ACTIVE"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+              : "bg-slate-100 border-slate-200 text-slate-500"
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${service.status === "ACTIVE" ? "bg-emerald-500" : "bg-slate-400"}`} />
+            {service.status}
+          </span>
+          {service.badge && service.badge !== service.status && (
+            <Badge tone={serviceBadgeTone(service.badge)}>{service.badge}</Badge>
+          )}
+        </div>
+      </div>
+
+      {/* ── Stats Grid ── */}
+      <div className="grid grid-cols-2 gap-2.5">
         <StatCard label="Total Leads" value={service.leads >= 1000 ? `${(service.leads / 1000).toFixed(1)}k` : String(service.leads)} icon={Users} iconBg="bg-rose-50" iconColor="text-rose-600" hover={false} />
         <StatCard label="Converted" value={String(service.converted)} icon={CheckCircle2} iconBg="bg-emerald-50" iconColor="text-emerald-600" hover={false} />
         <StatCard label="Revenue" value={formatServiceMoney(service.revenue)} icon={DollarSign} iconBg="bg-sky-50" iconColor="text-sky-600" hover={false} />
         <StatCard label="Conv. Rate" value={`${service.convRate}%`} icon={TrendingUp} iconBg="bg-amber-50" iconColor="text-amber-600" hover={false} />
       </div>
+
 
       {/* Automated Lead Routing & Employee Assignment Panel */}
       <GlassCard className="p-4 sm:p-5 border-rose-200/80 bg-gradient-to-br from-rose-50/30 via-white to-rose-50/10">
