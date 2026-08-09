@@ -264,11 +264,34 @@ export function apiEmployeeToAdmin(emp) {
   };
 }
 
+export function isDummyEmployee(emp) {
+  if (!emp) return true;
+  const name = String(emp.name || emp.employeeName || "").trim().toLowerCase();
+  const email = String(emp.email || "").trim().toLowerCase();
+  const idStr = String(emp.id || "").trim().toLowerCase();
+
+  if (idStr.startsWith("mock-") || idStr.startsWith("demo-") || idStr.startsWith("seed-") || idStr.startsWith("test-")) return true;
+  if (email.endsWith("@example.com") || email.endsWith("@test.com") || email.endsWith("@demo.com")) return true;
+
+  const dummyNames = [
+    "test user",
+    "john doe",
+    "jane doe",
+    "dummy employee",
+    "test employee",
+  ];
+
+  if (dummyNames.includes(name)) return true;
+
+  return false;
+}
+
 /** Active employees only — excludes inactive/demo rows not shown on Team page. */
 export function filterAssignableEmployees(employees = []) {
   const seen = new Set();
   return (Array.isArray(employees) ? employees : []).filter((emp) => {
     if (!emp?.id) return false;
+    if (isDummyEmployee(emp)) return false;
     const status = String(emp.status || "active").trim().toLowerCase();
     if (status === "inactive") return false;
     const key = String(emp.id);

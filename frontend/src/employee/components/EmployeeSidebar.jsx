@@ -86,7 +86,7 @@ export default function EmployeeSidebar({ open, onClose, collapsed, onToggleColl
             name={employee.name}
             role={employee.role}
             title={employee.name}
-            avatar={<EmployeeDoodleAvatar size={32} shape="circle" />}
+            avatar={<EmployeeDoodleAvatar size={32} shape="circle" photoUrl={employee?.avatarUrl} />}
             onSignOut={() => { logout(); onClose(); navigate("/login", { replace: true }); }}
           />
         </SidebarFooter>

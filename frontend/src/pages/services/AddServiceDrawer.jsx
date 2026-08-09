@@ -5,6 +5,7 @@ import { formatServicePriceLabel } from "../../lib/indianFormat.js";
 import { SERVICE_CATEGORIES } from "../../data/servicesMock.js";
 
 const CATEGORY_OPTIONS = SERVICE_CATEGORIES.filter((c) => c.id !== "all");
+const CUSTOM_CATEGORY_OPTION = "__custom__";
 
 const BADGE_OPTIONS = ["ACTIVE", "POPULAR", "ENTERPRISE"];
 
@@ -39,7 +40,9 @@ export function buildServiceFromForm(form) {
     id: slugify(form.name),
     name: form.name.trim(),
     category: form.category,
-    categoryLabel: categoryMeta?.label?.replace(/^Category: /, "") || categoryMeta?.label || "General",
+    // Custom-typed categories have no matching id in CATEGORY_OPTIONS — fall back
+    // to the typed text itself instead of the generic "General" label.
+    categoryLabel: categoryMeta?.label?.replace(/^Category: /, "") || categoryMeta?.label || form.category.trim() || "General",
     status: form.status,
     badge: form.badge,
     description: form.description.trim(),
@@ -64,9 +67,13 @@ export function buildServiceFromForm(form) {
 
 export default function AddServiceDrawer({ open, onClose }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [customCategory, setCustomCategory] = useState(false);
 
   useEffect(() => {
-    if (open) setForm(EMPTY_FORM);
+    if (open) {
+      setForm(EMPTY_FORM);
+      setCustomCategory(false);
+    }
   }, [open]);
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
@@ -136,15 +143,44 @@ export default function AddServiceDrawer({ open, onClose }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Category</label>
-              <select
-                value={form.category}
-                onChange={(e) => update("category", e.target.value)}
-                className={inputClass}
-              >
-                {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label.replace(/^Category: /, "")}</option>
-                ))}
-              </select>
+              {customCategory ? (
+                <div className="relative">
+                  <input
+                    value={form.category}
+                    onChange={(e) => update("category", e.target.value)}
+                    placeholder="Type a category name…"
+                    autoFocus
+                    className={inputClass}
+                    style={{ paddingRight: 32 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setCustomCategory(false); update("category", EMPTY_FORM.category); }}
+                    title="Choose from list instead"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={form.category}
+                  onChange={(e) => {
+                    if (e.target.value === CUSTOM_CATEGORY_OPTION) {
+                      setCustomCategory(true);
+                      update("category", "");
+                      return;
+                    }
+                    update("category", e.target.value);
+                  }}
+                  className={inputClass}
+                >
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label.replace(/^Category: /, "")}</option>
+                  ))}
+                  <option value={CUSTOM_CATEGORY_OPTION}>+ Add new…</option>
+                </select>
+              )}
             </div>
             <div>
               <label className={labelClass}>Price</label>

@@ -157,8 +157,11 @@ export function mapApiEmployee(row) {
     phone: row.phone || "",
     department: row.department || "Sales",
     avatarColor: "#2563eb",
+    avatarUrl: row.avatarUrl || row.avatar_url || "",
+    status: String(row.status || "active").trim().toLowerCase(),
   };
 }
+
 
 export function isMockEmployeeId(id, mockId = 101) {
   return id == null || Number(id) === mockId;

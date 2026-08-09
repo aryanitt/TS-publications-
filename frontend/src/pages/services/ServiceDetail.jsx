@@ -2,13 +2,27 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Share2, Download, Pencil, Trash2, Bot, Database, Target, Briefcase, Code,
-  Users, DollarSign, TrendingUp, CheckCircle2,
+  Users, DollarSign, TrendingUp, CheckCircle2, Zap, UserCheck, RefreshCw, UserPlus, ShieldAlert,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import { formatServiceMoney, formatServicePriceLabel, serviceBadgeTone } from "../../data/servicesMock.js";
-import { apiGet, apiDelete } from "../../lib/api.js";
+import { apiGet, apiDelete, apiPost, apiPut } from "../../lib/api.js";
 import { extractLeadService, cleanServiceName, leadBelongsToService } from "../../lib/servicesRegistry.js";
+
+const DEFAULT_EMPLOYEES = [
+  { id: "1", name: "Amit Kumar", role: "Sales Manager" },
+  { id: "2", name: "Aryan gupta", role: "sales" },
+  { id: "3", name: "Neha Patel", role: "Sales Executive" },
+  { id: "4", name: "Padam Gupta", role: "Manager" },
+  { id: "5", name: "Piyush Dhingra", role: "Sales Manager" },
+  { id: "6", name: "Priya Sharma", role: "Sales Executive" },
+  { id: "7", name: "Ritik Verma", role: "Sales Manager" },
+  { id: "8", name: "Rohan Verma", role: "Sales Executive" },
+  { id: "9", name: "Sarita", role: "sales manager" },
+  { id: "10", name: "Sourav", role: "sales manager" },
+  { id: "11", name: "Sushmit Verma", role: "Sales Executive" },
+];
 
 const ICON_MAP = {
   bot: Bot,
@@ -25,6 +39,12 @@ export default function ServiceDetail() {
   const [serviceLeads, setServiceLeads] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const [assignedEmpIds, setAssignedEmpIds] = useState([]);
+  const [autoTransferEnabled, setAutoTransferEnabled] = useState(true);
+  const [allEmployees, setAllEmployees] = useState(DEFAULT_EMPLOYEES);
+  const [savingRules, setSavingRules] = useState(false);
+  const [distributingNow, setDistributingNow] = useState(false);
+
   const handleDeleteService = async () => {
     if (!service) return;
     if (!window.confirm(`Are you sure you want to delete the service "${service.name}"?`)) return;
@@ -36,6 +56,30 @@ export default function ServiceDetail() {
       toast.error(`Failed to delete service: ${err.message || String(err)}`);
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const empRes = await apiGet("/api/v1/team/employees", { skipCache: true, cacheTtl: 0 }).catch(() => apiGet("/api/v1/employees", { skipCache: true, cacheTtl: 0 }));
+        const list = Array.isArray(empRes) ? empRes : (empRes?.employees || empRes?.data || []);
+        const activeOnly = list.filter((e) => {
+          const s = String(e.status || "active").trim().toLowerCase();
+          return s === "active";
+        });
+        if (!cancelled) {
+          setAllEmployees(activeOnly.map((e) => ({
+            id: String(e.id),
+            name: e.name || `Employee ${e.id}`,
+            role: e.role || e.department || "Sales",
+          })));
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +165,8 @@ export default function ServiceDetail() {
           if (!cancelled) {
             setService(found);
             setServiceLeads(matching);
+            setAutoTransferEnabled(found.distributionEnabled !== false);
+            setAssignedEmpIds(Array.isArray(found.distributionEmployeeIds) ? found.distributionEmployeeIds.map((id) => String(id)) : []);
           }
         } else {
           if (!cancelled) {
@@ -140,6 +186,63 @@ export default function ServiceDetail() {
     };
   }, [serviceId]);
 
+  const toggleEmployee = (empId) => {
+    const sId = String(empId);
+    setAssignedEmpIds((prev) =>
+      prev.includes(sId) ? prev.filter((id) => id !== sId) : [...prev, sId]
+    );
+  };
+
+  const handleSaveDistributionRules = async () => {
+    if (!service) return;
+    setSavingRules(true);
+    try {
+      const selectedNames = allEmployees
+        .filter((e) => assignedEmpIds.includes(String(e.id)))
+        .map((e) => e.name);
+
+      await apiPut(`/api/services/${service.id}/distribution`, {
+        enabled: autoTransferEnabled,
+        employeeIds: assignedEmpIds,
+        employeeNames: selectedNames,
+      });
+
+      setService((prev) => ({
+        ...prev,
+        distributionEnabled: autoTransferEnabled,
+        distributionEmployeeIds: assignedEmpIds,
+        distributionEmployeeNames: selectedNames,
+      }));
+
+      toast.success(`Saved lead routing rules for "${service.name}"!`);
+    } catch (err) {
+      toast.error(`Failed to save rules: ${err.message || String(err)}`);
+    } finally {
+      setSavingRules(false);
+    }
+  };
+
+  const handleDistributeNow = async () => {
+    if (!service) return;
+    setDistributingNow(true);
+    try {
+      const res = await apiPost(`/api/services/${service.id}/distribute`, {});
+      if (res?.assigned > 0) {
+        toast.success(`Transferred ${res.assigned} unassigned lead(s) for "${service.name}"!`);
+        const leadsRes = await apiGet("/api/v1/leads?limit=500&page=1");
+        const freshLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes?.data || leadsRes?.leads || []);
+        const matching = freshLeads.filter((l) => leadBelongsToService(l, service.name));
+        setServiceLeads(matching);
+      } else {
+        toast.info(res?.message || `No unassigned leads pending for "${service.name}".`);
+      }
+    } catch (err) {
+      toast.error(`Transfer failed: ${err.message || String(err)}`);
+    } finally {
+      setDistributingNow(false);
+    }
+  };
+
   if (loading) {
     return (
       <GlassCard className="p-10 text-center">
@@ -158,6 +261,11 @@ export default function ServiceDetail() {
   }
 
   const Icon = ICON_MAP[service.icon] || Bot;
+  const unassignedCount = serviceLeads.filter((l) => {
+    const assignee = l.assignedTo ?? l.assigned_to ?? l.assigneeId;
+    const resolved = typeof assignee === "object" ? assignee?.id : assignee;
+    return !resolved || String(resolved) === "0" || String(l.assignee_name || "").toLowerCase() === "unassigned";
+  }).length;
 
   return (
     <div className="space-y-4 page-shell min-w-0 max-w-5xl">
@@ -230,6 +338,114 @@ export default function ServiceDetail() {
         <StatCard label="Revenue" value={formatServiceMoney(service.revenue)} icon={DollarSign} iconBg="bg-sky-50" iconColor="text-sky-600" hover={false} />
         <StatCard label="Conv. Rate" value={`${service.convRate}%`} icon={TrendingUp} iconBg="bg-amber-50" iconColor="text-amber-600" hover={false} />
       </div>
+
+      {/* Automated Lead Routing & Employee Assignment Panel */}
+      <GlassCard className="p-4 sm:p-5 border-rose-200/80 bg-gradient-to-br from-rose-50/30 via-white to-rose-50/10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-rose-100 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Zap className="w-5 h-5 text-rose-600 animate-pulse" />
+              <h3 className="text-sm sm:text-base font-black text-slate-900">
+                Automated Lead Transfer & Employee Assignment
+              </h3>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Leads coming for <strong className="text-slate-800">{service.name}</strong> will be automatically transferred to assigned employees every 15 minutes.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={distributingNow}
+              onClick={handleDistributeNow}
+              className="h-9 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white text-xs font-bold shadow-md shadow-rose-200 active:scale-95 transition inline-flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 fill-white" />
+              {distributingNow ? "Transferring Leads…" : "⚡ Run Auto-Transfer Now (Manual)"}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="rounded-xl border border-rose-100 bg-white p-3.5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-900">15-Minute Automatic Background Transfer</p>
+              <p className="text-[10px] font-medium text-slate-500 mt-0.5">
+                {autoTransferEnabled ? "🟢 Active — Runs background transfer every 15 min" : "🔴 Disabled — Manual transfer only"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAutoTransferEnabled(!autoTransferEnabled)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                autoTransferEnabled ? "bg-emerald-600" : "bg-slate-300"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  autoTransferEnabled ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="rounded-xl border border-rose-100 bg-white p-3.5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-900">Unassigned Leads Pending</p>
+              <p className="text-[10px] font-medium text-slate-500 mt-0.5">
+                {unassignedCount} lead(s) for {service.name} ready for transfer
+              </p>
+            </div>
+            <span className="text-lg font-black text-rose-700 tabular-nums px-3 py-1 rounded-xl bg-rose-50 border border-rose-200">
+              {unassignedCount}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-4 pt-3.5 border-t border-rose-100">
+          <label className="block text-xs font-bold text-slate-800 mb-2">
+            Assign Employees to Handle "{service.name}" Leads:
+          </label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {allEmployees.map((emp) => {
+              const isSelected = assignedEmpIds.includes(String(emp.id));
+              return (
+                <button
+                  key={emp.id}
+                  type="button"
+                  onClick={() => toggleEmployee(String(emp.id))}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer active:scale-95 ${
+                    isSelected
+                      ? "bg-rose-700 text-white border-rose-700 shadow-sm"
+                      : "bg-white text-slate-700 border-slate-200 hover:border-rose-300 hover:bg-rose-50/50"
+                  }`}
+                >
+                  <UserCheck className={`w-3.5 h-3.5 ${isSelected ? "text-white" : "text-slate-400"}`} />
+                  <span>{emp.name}</span>
+                  {emp.role && <span className="text-[9px] opacity-75 font-normal">({emp.role})</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <p className="text-[10px] font-semibold text-slate-500">
+              {assignedEmpIds.length > 0
+                ? `Leads for "${service.name}" will be automatically distributed round-robin between ${assignedEmpIds.length} employee(s).`
+                : "⚠️ Select at least 1 employee to enable round-robin lead transfer."}
+            </p>
+            <button
+              type="button"
+              disabled={savingRules}
+              onClick={handleSaveDistributionRules}
+              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-sm disabled:opacity-50 cursor-pointer self-end sm:self-auto"
+            >
+              {savingRules ? "Saving Rules…" : "Save Assignment Rules"}
+            </button>
+          </div>
+        </div>
+      </GlassCard>
 
       <GlassCard className="p-4 sm:p-5">
         <h3 className="text-[11px] font-extrabold text-rose-700 uppercase tracking-wider mb-2">

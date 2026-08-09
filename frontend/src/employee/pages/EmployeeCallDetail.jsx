@@ -5,7 +5,7 @@ import {
   ArrowLeft, Phone, CalendarClock, Play, Pause, Sparkles,
   CheckCircle, Circle, Star, Smile, AlertCircle, RefreshCw,
   Clock, RotateCcw, Volume2, ShieldCheck, HelpCircle, ChevronRight,
-  User, CheckCircle2, History, ChevronDown, Pencil, IndianRupee,
+  User, CheckCircle2, History, ChevronDown, Pencil, IndianRupee, UserPlus,
 } from "lucide-react";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import { CustomSelect } from "../../components/CustomSelect.jsx";
@@ -19,10 +19,7 @@ import { LOCAL_SOPS, LEAD_STATUS_LABELS, EMP_KANBAN_STAGES, getEmpStageMeta, map
 import { temperatureToApi, workflowStatusFromTemperature, apiLeadToEmployee, unwrapApiList } from "../../lib/leadSync.js";
 import { formatCallDisplayDate, formatCallDurationLabel } from "../../lib/callDisplay.js";
 
-const EMP_STAGE_OPTIONS = EMP_KANBAN_STAGES.map((stage) => ({
-  id: stage.id,
-  label: stage.label,
-}));
+import SaveContactModal from "../../components/SaveContactModal.jsx";
 
 const LEAD_STATUS_OPTIONS = [
   { value: "hot", label: "Hot Lead" },
@@ -768,9 +765,17 @@ export default function EmployeeCallDetail() {
     }
   };
 
-  return (
-    <div className="space-y-2 sm:space-y-4 page-shell min-w-0 animate-fade-in pb-12">
+  const callPhoneNum = lead?.phone || call.phone || "";
+  const rawCallName = String(lead?.name || call.name || "").trim();
+  const isUnknownCallName =
+    !rawCallName ||
+    rawCallName.toLowerCase() === "unknown" ||
+    rawCallName.toLowerCase() === "unknown lead" ||
+    rawCallName === callPhoneNum ||
+    rawCallName.replace(/\D/g, "") === callPhoneNum.replace(/\D/g, "");
 
+  return (
+    <div className="space-y-4 sm:space-y-6 animate-fade-in text-slate-800 pb-12">
       {/* Top Navigation — single compact row */}
       <div className="rounded-xl sm:rounded-2xl border border-rose-100/60 bg-white p-2 sm:p-2.5 shadow-sm min-w-0">
         <div className="flex items-center justify-between gap-2 min-w-0">
@@ -844,14 +849,33 @@ export default function EmployeeCallDetail() {
         
         <div className="flex items-start gap-4">
           <AvatarCircle
-            initials={lead?.av || (lead?.name || call.name).slice(0, 2).toUpperCase()}
+            initials={lead?.av || ((!isUnknownCallName ? rawCallName : callPhoneNum) || "C").slice(0, 2).toUpperCase()}
             color={lead?.color || "#e11d48"}
             size={52}
           />
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base sm:text-lg font-display font-bold text-slate-900 leading-none">
-                {lead?.name || call.name}
+              <h2 className="text-base sm:text-lg font-display font-bold text-slate-900 leading-none flex items-center gap-2 flex-wrap">
+                <span>{!isUnknownCallName ? rawCallName : (callPhoneNum || "No Number")}</span>
+                {isUnknownCallName ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const entered = window.prompt(`Save contact name for ${callPhoneNum}:`);
+                      if (entered && entered.trim()) {
+                        const clean = entered.trim();
+                        setEditName(clean);
+                        if (call) call.name = clean;
+                        if (lead) lead.name = clean;
+                        toast.success(`Saved contact name "${clean}"`);
+                      }
+                    }}
+                    title="Save contact name"
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 transition shrink-0"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                  </button>
+                ) : null}
               </h2>
               {lead && <LeadStatusBadge status={lead.status} label={leadStatusLabel(lead)} />}
               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10.5px] ${moodInfo.bg}`}>

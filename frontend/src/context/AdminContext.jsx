@@ -16,6 +16,7 @@ export const DEFAULT_ADMIN = {
   email: "",
   phone: "",
   city: "",
+  avatarUrl: "",
   timezone: "Asia/Kolkata (IST)",
   loginId: "",
   joinedAt: null,

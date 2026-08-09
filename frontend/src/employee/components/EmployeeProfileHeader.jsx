@@ -3,6 +3,8 @@ import { Settings } from "lucide-react";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import EmployeeDoodleAvatar from "./EmployeeDoodleAvatar.jsx";
+import AvatarUploadButton from "../../components/AvatarUploadButton.jsx";
+import { getCrmHeaders } from "../../lib/crmContext.js";
 import { formatDateTime as formatProfileDateTime } from "../../lib/adminProfile.js";
 
 function formatDate(iso) {
@@ -27,7 +29,7 @@ export function DashboardScrollbarStyles() {
 }
 
 export default function EmployeeProfileHeader() {
-  const { employee } = useEmployee();
+  const { employee, updateEmployeeAvatar } = useEmployee();
   const { user } = useAuth();
   const { pathname } = useLocation();
   const onProfilePage = pathname === "/employee/profile";
@@ -77,10 +79,15 @@ export default function EmployeeProfileHeader() {
       <div className="px-4 pb-4 sm:px-6 sm:pb-5 relative">
         <div className="absolute -top-7 left-4 sm:-top-9 sm:left-6">
           <div className="rounded-full border-[3px] sm:border-4 border-white shadow-md">
-            <EmployeeDoodleAvatar size={56} shape="circle" className="sm:hidden" />
-            <EmployeeDoodleAvatar size={68} shape="circle" className="hidden sm:block" />
+            <EmployeeDoodleAvatar size={56} shape="circle" className="sm:hidden" photoUrl={employee?.avatarUrl} />
+            <EmployeeDoodleAvatar size={68} shape="circle" className="hidden sm:block" photoUrl={employee?.avatarUrl} />
           </div>
-          <span className="absolute bottom-0.5 right-0.5 sm:bottom-1 sm:right-1 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-emerald-400 border-2 border-white shadow-sm" />
+          <AvatarUploadButton
+            onUploaded={updateEmployeeAvatar}
+            headers={getCrmHeaders()}
+            className="w-5 h-5 sm:w-6 sm:h-6 -bottom-0.5 -right-0.5"
+          />
+          <span className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-emerald-400 border-2 border-white shadow-sm" />
         </div>
 
         <div className="pt-9 sm:pt-12 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

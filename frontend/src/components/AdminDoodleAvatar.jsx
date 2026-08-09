@@ -5,8 +5,19 @@ const S = {
   strokeLinejoin: "round",
 };
 
-export default function AdminDoodleAvatar({ size = 32, className = "", shape = "circle" }) {
+export default function AdminDoodleAvatar({ size = 32, className = "", shape = "circle", photoUrl = "" }) {
   const radius = shape === "circle" ? "rounded-full" : size >= 44 ? "rounded-2xl" : "rounded-xl";
+
+  if (photoUrl) {
+    return (
+      <div
+        className={`relative shrink-0 overflow-hidden border-2 border-slate-200/90 bg-slate-50 shadow-[0_2px_8px_rgba(15,23,42,0.06)] ${radius} ${className}`}
+        style={{ width: size, height: size }}
+      >
+        <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+      </div>
+    );
+  }
 
   return (
     <div

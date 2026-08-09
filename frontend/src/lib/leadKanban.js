@@ -510,6 +510,35 @@ function withLatestCallTimestamp(lead, calls = []) {
   return { ...lead, callAt: raw, startedAt: raw };
 }
 
+export function getLeadTimestampMs(lead) {
+  if (!lead) return 0;
+  
+  // 1. Call timestamp if any
+  const callTime = lead.callAt || lead.startedAt || lead.lastCallAt || lead.last_call_at;
+  if (callTime) {
+    const ms = new Date(String(callTime).replace(" ", "T")).getTime();
+    if (!Number.isNaN(ms) && ms > 0) return ms;
+  }
+
+  // 2. Meeting timestamp if any
+  const meetingTime = lead.scheduledAt || lead.meetingDate || lead.meeting_date;
+  if (meetingTime) {
+    const ms = new Date(String(meetingTime).replace(" ", "T")).getTime();
+    if (!Number.isNaN(ms) && ms > 0) return ms;
+  }
+
+  // 3. Assigned / Created / Updated timestamp
+  const dateStr = lead.assignedAt || lead.assigned_at || lead.createdAt || lead.created_at || lead.updatedAt || lead.updated_at || lead.date;
+  if (dateStr && dateStr !== "—") {
+    const ms = new Date(String(dateStr).replace(" ", "T")).getTime();
+    if (!Number.isNaN(ms) && ms > 0) return ms;
+  }
+
+  // Fallback to numeric id if applicable
+  const numId = Number(String(lead.id || "").replace(/\D/g, ""));
+  return numId || 0;
+}
+
 /**
  * Build kanban from Callyzer period calls + meetings.
  * Lead-centric: each lead's best early-funnel column from all their outbound calls in the period.
@@ -608,6 +637,7 @@ export function groupKanbanSyncedWithCallyzer(
     pushLead(col, leadFromOrphanCall(call, col));
   }
 
+
   for (const lead of scopedVisible) {
     const id = String(lead.id);
     if (placed.has(id)) continue;
@@ -625,6 +655,13 @@ export function groupKanbanSyncedWithCallyzer(
       if (!(options.adminScope && isNewPipelineLead(lead) && !outboundLeadIds.has(id))) continue;
     }
     pushLead("lead", withLatestCallTimestamp(lead, getLeadCalls(lead)));
+  }
+
+  // Sort every pipeline column so newest/latest leads appear at the top
+  for (const colKey of Object.keys(map)) {
+    if (Array.isArray(map[colKey])) {
+      map[colKey].sort((a, b) => getLeadTimestampMs(b) - getLeadTimestampMs(a));
+    }
   }
 
   return map;

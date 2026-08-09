@@ -61,6 +61,7 @@ import {
   replaceFetchedList,
   unwrapWorkspacePayload,
   fetchAllEmployeeLeads,
+  filterAssignableEmployees,
 } from "../lib/leadSync.js";
 import { invalidateCallyzerStatsCache, CALLYZER_POLL_INTERVAL_MS, dispatchCallyzerRefresh } from "../lib/useCallyzerStats.js";
 import { onLeadChanged, onDashboardRefresh, markLocalLeadChange } from "../lib/realtime.js";
@@ -244,15 +245,19 @@ export function EmployeeProvider({ children }) {
       if (cached?.id) return cached.id;
     }
 
-    const res = await apiGet("/api/v1/employees", {
+    const res = await apiGet("/api/v1/team/employees", {
       headers: getCrmHeaders("employee", profile),
       cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
       skipCache: true,
-    });
+    }).catch(() => apiGet("/api/v1/employees", {
+      headers: getCrmHeaders("employee", profile),
+      cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
+      skipCache: true,
+    }));
     if (res?.success === false) {
       throw new Error(res.message || "Could not load employees");
     }
-    const employees = unwrapApiData(res);
+    const employees = unwrapApiData(res) || res?.employees || res?.data || [];
     if (!Array.isArray(employees) || !employees.length) {
       throw new Error("No employees in database — add team members first");
     }
@@ -265,7 +270,7 @@ export function EmployeeProvider({ children }) {
     const mapped = { ...employee, ...mapApiEmployee(matched) };
     setEmployee(mapped);
     storeEmployee(mapped);
-    setTeamEmployees(employees.map((e) => mapApiEmployee(e)));
+    setTeamEmployees(filterAssignableEmployees(employees.map((e) => mapApiEmployee(e))));
     setUsingApi(true);
     return matched.id;
   }, [employee, teamEmployees]);
@@ -1244,20 +1249,39 @@ export function EmployeeProvider({ children }) {
     }
   }, [usingApi, leads]);
 
+  const updateEmployeeAvatar = useCallback(async (avatarUrl) => {
+    setEmployee((prev) => (prev ? { ...prev, avatarUrl } : prev));
+    if (!employee?.id) return;
+    try {
+      await apiPut(`/api/v1/employees/${employee.id}`, { avatarUrl }, { headers: getCrmHeaders() });
+      invalidateCache("/api/v1/employee");
+    } catch (err) {
+      toast.error(err.message || "Could not save photo");
+    }
+  }, [employee?.id]);
+
   const refreshTeamEmployees = useCallback(async () => {
     try {
-      const empRes = await apiGet("/api/v1/employees", {
+      // Use /api/v1/employees?status=active to get ONLY the 4 real active employees
+      const empRes = await apiGet("/api/v1/employees?status=active", {
         headers: getCrmHeaders("employee", employee),
-        cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
         skipCache: true,
-      });
+        cacheTtl: 0,
+      }).catch(() => apiGet("/api/team/employees", {
+        headers: getCrmHeaders("employee", employee),
+        skipCache: true,
+        cacheTtl: 0,
+      }));
       if (empRes?.success === false) return [];
-      const employees = unwrapApiData(empRes);
-      const list = Array.isArray(employees) ? employees : [];
+      const employees = unwrapApiData(empRes) || empRes?.employees || empRes?.data || [];
+      const rawList = Array.isArray(employees) ? employees : [];
+      const mapped = rawList.map((e) => mapApiEmployee(e));
+      // Only keep active employees
+      const list = filterAssignableEmployees(mapped);
       if (list.length) {
-        setTeamEmployees(list.map((e) => mapApiEmployee(e)));
+        setTeamEmployees(list);
       }
-      return list.map((e) => mapApiEmployee(e));
+      return list;
     } catch {
       return [];
     }
@@ -1372,16 +1396,17 @@ export function EmployeeProvider({ children }) {
           if (!cancelled) setLoading(false);
 
           try {
-            const empRes = await apiGet("/api/v1/employees", {
+            const empRes = await apiGet("/api/v1/employees?status=active", {
               headers: getCrmHeaders("employee", authProfile),
-              cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
               skipCache: true,
+              cacheTtl: 0,
             });
             if (!cancelled && empRes?.success !== false) {
               const employees = unwrapApiData(empRes);
-              const list = Array.isArray(employees) ? employees : [];
+              const rawList = Array.isArray(employees) ? employees : [];
+              const list = filterAssignableEmployees(rawList.map((e) => mapApiEmployee(e)));
               if (list.length) {
-                setTeamEmployees(list.map((e) => mapApiEmployee(e)));
+                setTeamEmployees(list);
               }
             }
           } catch {
@@ -1401,19 +1426,24 @@ export function EmployeeProvider({ children }) {
           : { ...CURRENT_EMPLOYEE };
 
         try {
-          const empRes = await apiGet("/api/v1/employees", {
+          const empRes = await apiGet("/api/v1/employees?status=active", {
             headers: getCrmHeaders("employee", seedProfile),
-            cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
             skipCache: true,
-          });
+            cacheTtl: 0,
+          }).catch(() => apiGet("/api/team/employees", {
+            headers: getCrmHeaders("employee", seedProfile),
+            skipCache: true,
+            cacheTtl: 0,
+          }));
           if (cancelled) return;
           if (empRes?.success === false) {
             throw new Error(empRes.message || "Employees API failed");
           }
-          const employees = unwrapApiData(empRes);
-          const list = Array.isArray(employees) ? employees : [];
+          const employees = unwrapApiData(empRes) || empRes?.employees || empRes?.data || [];
+          const rawList = Array.isArray(employees) ? employees : [];
+          const list = filterAssignableEmployees(rawList.map((e) => mapApiEmployee(e)));
           if (list.length && !cancelled) {
-            setTeamEmployees(list.map((e) => mapApiEmployee(e)));
+            setTeamEmployees(list);
           }
           const matched = matchEmployeeFromList(list, seedProfile, MOCK_EMPLOYEE_ID);
           if (matched && !cancelled) {
@@ -1660,6 +1690,7 @@ export function EmployeeProvider({ children }) {
     updateLeadStage,
     updateLeadTemperature,
     editLeadDetails,
+    updateEmployeeAvatar,
     refreshLeads,
     refreshCalls,
     syncCallyzerData,
@@ -1690,7 +1721,7 @@ export function EmployeeProvider({ children }) {
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, markFollowUpNotPicked, markFollowUpCallAgain, refreshFollowUps,
-    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, refreshLeads, refreshCalls, syncCallyzerData,
+    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, updateEmployeeAvatar, refreshLeads, refreshCalls, syncCallyzerData,
     reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, setCalls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,

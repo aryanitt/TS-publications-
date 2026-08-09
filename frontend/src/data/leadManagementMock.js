@@ -7,12 +7,17 @@ const daysAgo = (n) => {
 };
 
 export const dummyEmployees = [
-  { id: 101, name: "Priya Sharma", email: "priya@company.in", role: "Senior AE", department: "Sales", status: "active" },
-  { id: 102, name: "Rahul Mehta", email: "rahul@company.in", role: "Account Executive", department: "Sales", status: "active" },
-  { id: 103, name: "Ananya Reddy", email: "ananya@company.in", role: "SDR", department: "Sales", status: "active" },
-  { id: 104, name: "Vikram Singh", email: "vikram@company.in", role: "Sales Rep", department: "Marketing", status: "active" },
-  { id: 105, name: "Kavya Nair", email: "kavya@company.in", role: "Inside Sales", department: "Support", status: "active" },
-  { id: 106, name: "Arjun Patel", email: "arjun@company.in", role: "AE", department: "Sales", status: "on_leave" },
+  { id: 1, name: "Amit Kumar", email: "amit.kumar@techsales.in", role: "Sales Manager", department: "Sales", status: "active" },
+  { id: 2, name: "Aryan gupta", email: "aryan.gupta@techsales.in", role: "sales", department: "Sales", status: "active" },
+  { id: 3, name: "Neha Patel", email: "neha.patel@techsales.in", role: "Sales Executive", department: "Sales", status: "active" },
+  { id: 4, name: "Padam Gupta", email: "padam.gupta@techsales.in", role: "Manager", department: "Management", status: "active" },
+  { id: 5, name: "Piyush Dhingra", email: "piyush.dhingra@techsales.in", role: "Sales Manager", department: "Sales", status: "active" },
+  { id: 6, name: "Priya Sharma", email: "priya.sharma@techsales.in", role: "Sales Executive", department: "Sales", status: "active" },
+  { id: 7, name: "Ritik Verma", email: "ritik.verma@techsales.in", role: "Sales Manager", department: "Sales", status: "active" },
+  { id: 8, name: "Rohan Verma", email: "rohan.verma@techsales.in", role: "Sales Executive", department: "Sales", status: "active" },
+  { id: 9, name: "Sarita", email: "sarita@techsales.in", role: "sales manager", department: "Sales", status: "active" },
+  { id: 10, name: "Sourav", email: "sourav@techsales.in", role: "sales manager", department: "Sales", status: "active" },
+  { id: 11, name: "Sushmit Verma", email: "sushmit.verma@techsales.in", role: "Sales Executive", department: "Sales", status: "active" },
 ];
 
 export const dummyLeads = [

@@ -70,6 +70,22 @@ const TYPE_ICON = {
 const CARD_BTN =
   "inline-flex items-center justify-center gap-1 w-full py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px] font-semibold border transition min-h-[36px] sm:min-h-0";
 
+function getFollowUpDisplayName(itemOrLead, fallbackPhone = "") {
+  if (!itemOrLead) return fallbackPhone ? formatIndianPhone(fallbackPhone) : "No Number";
+  const raw = String(itemOrLead.name || itemOrLead.leadName || "").trim();
+  const phoneNum = itemOrLead.phone || itemOrLead.clientPhone || fallbackPhone || "";
+  const isUnknown =
+    !raw ||
+    raw.toLowerCase() === "unknown" ||
+    raw.toLowerCase() === "unknown lead" ||
+    raw === phoneNum ||
+    (phoneNum && raw.replace(/\D/g, "") === phoneNum.replace(/\D/g, ""));
+
+  if (!isUnknown) return raw;
+  if (phoneNum) return formatIndianPhone(phoneNum);
+  return "No Number";
+}
+
 function CompletedFollowUpCard({ item }) {
   const TypeIcon = TYPE_ICON[item.type] || Phone;
 
@@ -78,7 +94,7 @@ function CompletedFollowUpCard({ item }) {
       <div className="flex items-center gap-2 mb-1.5 sm:mb-2">
         <AvatarCircle initials={item.av} color={item.color} size={28} />
         <div className="flex-1 min-w-0">
-          <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{item.name}</p>
+          <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{getFollowUpDisplayName(item, item.phone)}</p>
           <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">{item.company}</p>
         </div>
         <Badge tone="success">Completed</Badge>
@@ -114,7 +130,7 @@ function NewLeadCard({ lead, onLiveCall, onWhatsApp }) {
         <AvatarCircle initials={lead.av} color={lead.color} size={28} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1.5">
-            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{lead.name}</p>
+            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{getFollowUpDisplayName(lead, phone)}</p>
             <span className="shrink-0 text-[7px] sm:text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border bg-rose-100 text-rose-800 border-rose-200">
               New
             </span>
@@ -242,7 +258,7 @@ function FollowUpCard({ item, onCall, onWhatsApp, leads = [] }) {
               onClick={() => onCall(item)}
               className="text-xs sm:text-sm font-bold text-slate-900 truncate text-left hover:text-rose-700 transition"
             >
-              {item.name}
+              {getFollowUpDisplayName(item, phone)}
             </button>
             <span className={`sm:hidden shrink-0 text-[7px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusPill}`}>
               {statusLabel}

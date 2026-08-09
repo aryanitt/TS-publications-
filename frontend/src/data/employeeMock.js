@@ -1285,7 +1285,10 @@ export function followUpFromApi(apiFollowup, leads = [], type) {
   const lead = leads.find((l) => String(l.id) === String(apiFollowup.leadId));
   const { dateStr, timeStr } = parseFollowUpSchedule(apiFollowup.scheduledAt);
   const urgency = getFollowUpUrgency(dateStr);
-  const leadName = lead?.name || lead?.leadName || apiFollowup.leadName || "Lead";
+  const phoneNum = lead?.phone || lead?.clientPhone || apiFollowup.phone || apiFollowup.clientPhone || "";
+  const rawName = lead?.name || lead?.leadName || apiFollowup.leadName || "";
+  const isUnknownName = !rawName || rawName.trim().toLowerCase() === "unknown" || rawName.trim().toLowerCase() === "unknown lead" || rawName === phoneNum;
+  const leadName = !isUnknownName ? rawName : (phoneNum || "Lead");
   const resolvedType = inferFollowUpType(apiFollowup.note, type);
   const status = String(apiFollowup.status || "pending").toLowerCase();
   const isCompleted = status === "completed" || status === "done";

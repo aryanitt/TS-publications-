@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Plus, Users, Flame, CheckCircle2, ClipboardList, TrendingUp,
-  Phone, Calendar, ArrowRight, Zap, Target, ChevronRight, MessageCircle,
+  Phone, Calendar, ArrowRight, Zap, Target, ChevronRight, MessageCircle, Pencil,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -135,11 +135,31 @@ export default function EmployeeDashboard() {
   const tasksDue = todayTasks.filter((t) => t.status !== "done" && t.status !== "completed").length;
   const tasksDone = todayTasks.filter((t) => t.status === "done" || t.status === "completed").length;
   const hotFollowUps = (followUps || []).filter((f) => f && !f.done && (f.urgency === "overdue" || f.urgency === "today")).length;
+  const [customCallsTarget, setCustomCallsTarget] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("emp_calls_target");
+      if (saved && !isNaN(Number(saved)) && Number(saved) > 0) return Number(saved);
+    } catch {}
+    return employee?.callsTarget || 60;
+  });
+
   const callsToday = callyzerStats?.totalCalls ?? filterCallsForPeriod(calls || [], "today").length;
-  const callsTarget = employee?.callsTarget || 60;
+  const callsTarget = customCallsTarget || employee?.callsTarget || 60;
   const callPct = callsTarget ? Math.min(100, Math.round((callsToday / callsTarget) * 100)) : 0;
   const callRingDash = (callPct / 100) * (2 * Math.PI * 15.5);
   const callRingCirc = 2 * Math.PI * 15.5;
+
+  const handleEditCallsTarget = () => {
+    const entered = window.prompt("Set your daily call target:", String(callsTarget));
+    if (entered && !isNaN(Number(entered)) && Number(entered) > 0) {
+      const newTarget = Math.round(Number(entered));
+      setCustomCallsTarget(newTarget);
+      try {
+        window.localStorage.setItem("emp_calls_target", String(newTarget));
+      } catch {}
+      toast.success(`Daily call target updated to ${newTarget}`);
+    }
+  };
 
   const conversations5MinPlus = useMemo(() => {
     if (callyzerStats?.conversations5MinPlus != null) {
@@ -518,8 +538,17 @@ export default function EmployeeDashboard() {
                 </div>
               </div>
               <div className="min-w-0">
-                <p className="text-base sm:text-lg font-black text-slate-900 tabular-nums leading-none">
-                  {callsToday}<span className="text-xs sm:text-sm text-slate-400 font-semibold">/{callsTarget}</span>
+                <p className="text-base sm:text-lg font-black text-slate-900 tabular-nums leading-none flex items-center gap-1">
+                  <span>{callsToday}</span>
+                  <span className="text-xs sm:text-sm text-slate-400 font-semibold">/{callsTarget}</span>
+                  <button
+                    type="button"
+                    onClick={handleEditCallsTarget}
+                    title="Edit daily call target"
+                    className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
                 </p>
                 <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 mt-0.5 leading-tight">
                   Calls today · {callPct}% of target

@@ -7,13 +7,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LEAD_STATUS_LABELS,
-  EMP_TEAM,
   EMP_LEAD_TEMPERATURES,
   phonesMatchLoose,
 } from "../../data/employeeMock.js";
 import { LeadStatusBadge, AvatarCircle, FormTextarea, BtnPrimary } from "../../employee/components/EmpUI.jsx";
 import CashCollectedPanel from "../CashCollectedPanel.jsx";
-import { CANONICAL_STAGE_LABELS, buildDetailDraft, unwrapApiList } from "../../lib/leadSync.js";
+import { CANONICAL_STAGE_LABELS, buildDetailDraft, unwrapApiList, filterAssignableEmployees, isDummyEmployee } from "../../lib/leadSync.js";
 import { callFromApiLite } from "../../lib/callFromApiLite.js";
 import { formatCallDisplayDate, formatCallDuration, isCallConnected } from "../../lib/callDisplay.js";
 import { formatTelUrl } from "../../lib/phoneUtils.js";
@@ -265,11 +264,9 @@ export default function LeadDetailPanel({
   }, [showReassignment, teamEmployees.length, refreshTeamEmployees]);
 
   const reassignOptions = useMemo(() => {
-    const source = teamEmployees.length
-      ? teamEmployees
-      : EMP_TEAM.map((t, i) => ({ id: i + 1, name: t.name }));
-    const byName = new Map(source.filter((e) => e?.name).map((e) => [e.name, e]));
-    if (currentAssignee && currentAssignee !== "—" && !byName.has(currentAssignee)) {
+    const source = filterAssignableEmployees(teamEmployees);
+    const byName = new Map(source.filter((e) => e?.name && !isDummyEmployee(e)).map((e) => [e.name, e]));
+    if (currentAssignee && currentAssignee !== "—" && !byName.has(currentAssignee) && !isDummyEmployee({ name: currentAssignee })) {
       byName.set(currentAssignee, { id: `assignee-${currentAssignee}`, name: currentAssignee });
     }
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -322,8 +319,7 @@ export default function LeadDetailPanel({
   };
 
   const handleManualReassign = async (newAssignee) => {
-    const emp = teamEmployees.find((e) => e.name === newAssignee)
-      || EMP_TEAM.find((t) => t.name === newAssignee);
+    const emp = filterAssignableEmployees(teamEmployees).find((e) => e.name === newAssignee);
     if (!emp?.id) {
       toast.error("Could not find employee to assign");
       return;
@@ -339,9 +335,7 @@ export default function LeadDetailPanel({
   };
 
   const handleAutoReassign = async () => {
-    const pool = teamEmployees.length
-      ? teamEmployees.filter((e) => e.name !== currentAssignee)
-      : EMP_TEAM.filter((t) => t.name !== currentAssignee);
+    const pool = filterAssignableEmployees(teamEmployees).filter((e) => e.name !== currentAssignee);
     if (pool.length === 0) return;
     const randomChoice = pool[Math.floor(Math.random() * pool.length)];
     const ok = await reassignLead(liveLead.id, randomChoice.id, randomChoice.name, "auto");
@@ -394,6 +388,55 @@ export default function LeadDetailPanel({
           )}
         </div>
       )}
+      {/* ── Call / WhatsApp / Live Call action bar (top) ── */}
+      {variant === "employee" && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!liveLead?.phone) {
+                toast.error("Phone number not found for this lead");
+                return;
+              }
+              const telUrl = formatTelUrl(liveLead.phone);
+              if (telUrl) window.location.href = telUrl;
+            }}
+            className="flex-1 h-10 rounded-xl border border-rose-250 bg-white text-rose-800 hover:bg-rose-50/50 text-xs font-bold transition flex items-center justify-center gap-1.5"
+          >
+            <Phone className="w-4 h-4 text-rose-600" /> Call
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              if (!liveLead?.phone) {
+                toast.error("Phone number not found for this lead");
+                return;
+              }
+              const cleanPhone = liveLead.phone.replace(/\D/g, "");
+              const formatted = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+              window.open(`https://wa.me/${formatted}`, "_blank", "noopener,noreferrer");
+            }}
+            className="flex-1 h-10 rounded-xl border border-emerald-250 bg-emerald-50/10 text-emerald-800 hover:bg-emerald-50/30 text-xs font-bold transition flex items-center justify-center gap-1.5"
+          >
+            <MessageCircle className="w-4 h-4 text-emerald-600" /> WhatsApp
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const session = await startCallyzerCall?.(liveLead);
+              onClose?.();
+              navigate(`/employee/call-assistant?leadId=${liveLead.id}&lead=${encodeURIComponent(liveLead.name)}`);
+              if (session?.message) toast.success(session.message);
+            }}
+            className="flex-1 h-10 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition shadow-[0_4px_12px_rgba(220,38,38,0.2)] flex items-center justify-center gap-1.5"
+          >
+            <Zap className="w-4 h-4 fill-white" /> Live Call
+          </button>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50/40 via-white to-rose-100/10 p-4 shadow-sm relative overflow-hidden">
         <div className="absolute right-0 top-0 w-20 h-20 bg-rose-500/5 rounded-full blur-xl pointer-events-none" />
         <div className="flex items-start gap-3">
@@ -560,53 +603,7 @@ export default function LeadDetailPanel({
         </div>
       )}
 
-      {variant === "employee" && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              if (!liveLead?.phone) {
-                toast.error("Phone number not found for this lead");
-                return;
-              }
-              const telUrl = formatTelUrl(liveLead.phone);
-              if (telUrl) window.location.href = telUrl;
-            }}
-            className="flex-1 h-10 rounded-xl border border-rose-250 bg-white text-rose-800 hover:bg-rose-50/50 text-xs font-bold transition flex items-center justify-center gap-1.5"
-          >
-            <Phone className="w-4 h-4 text-rose-600" /> Call
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => {
-              if (!liveLead?.phone) {
-                toast.error("Phone number not found for this lead");
-                return;
-              }
-              const cleanPhone = liveLead.phone.replace(/\D/g, "");
-              const formatted = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-              window.open(`https://wa.me/${formatted}`, "_blank", "noopener,noreferrer");
-            }}
-            className="flex-1 h-10 rounded-xl border border-emerald-250 bg-emerald-50/10 text-emerald-800 hover:bg-emerald-50/30 text-xs font-bold transition flex items-center justify-center gap-1.5"
-          >
-            <MessageCircle className="w-4 h-4 text-emerald-600" /> WhatsApp
-          </button>
 
-          <button
-            type="button"
-            onClick={async () => {
-              const session = await startCallyzerCall?.(liveLead);
-              onClose?.();
-              navigate(`/employee/call-assistant?leadId=${liveLead.id}&lead=${encodeURIComponent(liveLead.name)}`);
-              if (session?.message) toast.success(session.message);
-            }}
-            className="flex-1 h-10 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition shadow-[0_4px_12px_rgba(220,38,38,0.2)] flex items-center justify-center gap-1.5"
-          >
-            <Zap className="w-4 h-4 fill-white" /> Live Call
-          </button>
-        </div>
-      )}
 
       <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4 space-y-3.5 shadow-sm">
         <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
