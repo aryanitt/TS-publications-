@@ -154,7 +154,9 @@ function normalizeEmployeeLeadStatus(lead) {
 }
 
 export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
-  const name = lead.leadName || lead.lead_name || "Lead";
+  const rawName = lead.leadName || lead.lead_name || lead.name;
+  const phoneNum = lead.phone || lead.phone_number || "";
+  const name = (rawName && rawName.trim().toLowerCase() !== "unknown") ? rawName : (phoneNum || "Lead");
   const id = lead.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const rawStage = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Lead";
@@ -379,13 +381,18 @@ export function apiLeadToPipeline(lead) {
     || lead.employeeName
     || "";
 
+  const rawName = lead.leadName || lead.lead_name || lead.name;
+  const phoneNum = lead.phone || lead.phone_number || "";
+  const name = (rawName && rawName.trim().toLowerCase() !== "unknown") ? rawName : (phoneNum || "Lead");
+
   return {
     id: lead.id,
     _dbId: lead.id,
     stage,
     pipelineStage: stageRaw,
     stageOverride: Boolean(lead.stageIsManual ?? lead.stage_is_manual ?? lead.stageOverride),
-    name: lead.leadName || lead.lead_name || "Lead",
+    name,
+    phone: phoneNum,
     company: lead.companyName || lead.company_name || "—",
     value: Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0),
     priority,

@@ -38,6 +38,15 @@ function isDraggablePipelineLead(lead) {
 const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, onDragStart, onDragEnd, isNewAssigned, onMoveStage, currentStage }) {
   const canDrag = isDraggablePipelineLead(lead);
 
+  const phone = lead.phone || lead.phone_number || "";
+  const displayName = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
+    ? lead.name
+    : (phone || lead.company || "No Number");
+
+  const displaySub = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
+    ? (lead.company || phone || "—")
+    : (lead.company && lead.company !== "—" && lead.company !== phone ? lead.company : "—");
+
   return (
     <div
       draggable={canDrag}
@@ -49,11 +58,9 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
         startLeadCardDrag(e, lead.id, onDragStart);
       }}
       onDragEnd={onDragEnd}
-      className={`rounded-xl border bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
-        isNewAssigned ? "border-rose-300 ring-1 ring-rose-100" : "border-rose-100"
-      } ${canDrag ? "cursor-grab active:cursor-grabbing select-none" : ""} ${
-        isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"
-      }`}
+      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
+        canDrag ? "cursor-grab active:cursor-grabbing select-none" : ""
+      } ${isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"}`}
     >
       <div
         role="button"
@@ -74,8 +81,8 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
         )}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
-            <p className="text-[10px] text-slate-500 truncate mt-0.5">{lead.company}</p>
+            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{displayName}</p>
+            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displaySub}</p>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status] || lead.stage || "Lead"} />

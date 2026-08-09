@@ -44,6 +44,15 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
   const canDrag = isDraggablePipelineLead(lead);
 
+  const phone = lead.phone || lead.phone_number || "";
+  const displayName = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
+    ? lead.name
+    : (phone || lead.company || "No Number");
+
+  const displaySub = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
+    ? (lead.company || phone || "—")
+    : (lead.company && lead.company !== "—" && lead.company !== phone ? lead.company : "—");
+
   return (
     <div
       draggable={canDrag}
@@ -73,8 +82,8 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
       >
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
-            <p className="text-[10px] text-slate-500 truncate mt-0.5">{lead.company}</p>
+            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{displayName}</p>
+            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displaySub}</p>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             <Badge tone={priorityTone}>{lead.priority}</Badge>
