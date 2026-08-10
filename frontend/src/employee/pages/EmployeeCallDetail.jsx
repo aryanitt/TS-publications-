@@ -30,7 +30,7 @@ const LEAD_STATUS_OPTIONS = [
   { value: "ni", label: "Not Interested" },
 ];
 
-const PIPELINE_STAGE_OPTIONS = EMP_STAGE_OPTIONS.map((option) => ({
+const PIPELINE_STAGE_OPTIONS = EMP_KANBAN_STAGES.map((option) => ({
   value: option.id,
   label: option.label,
 }));
@@ -69,7 +69,7 @@ function stageToSelectValue(stage) {
 }
 
 function stageSelectToLabel(stageValue) {
-  const id = EMP_STAGE_OPTIONS.some((option) => option.id === stageValue)
+  const id = EMP_KANBAN_STAGES.some((option) => option.id === stageValue)
     ? stageValue
     : stageToSelectValue(stageValue);
   return getEmpStageMeta(id).label;
