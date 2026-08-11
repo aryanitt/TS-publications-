@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Calendar, CalendarClock, CheckCircle2, Copy, ExternalLink, History, Link2, Plus,
+  Calendar, CalendarClock, Check, CheckCircle2, Copy, ExternalLink, History, Link2, MessageCircle, Plus,
   Search, Sparkles, Trash2, Video, X,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -17,7 +17,7 @@ import {
   getEmpAppToday,
 } from "../../data/employeeMock.js";
 import {
-  BtnPrimary, BtnSecondary, EmpEmptyState, AvatarCircle,
+  BtnPrimary, BtnSecondary, EmpEmptyState, AvatarCircle, EmpModal,
 } from "../components/EmpUI.jsx";
 import { TimeOfDaySelects } from "../components/TimeOfDaySelects.jsx";
 
@@ -52,6 +52,126 @@ function Field({ label, children, className = "" }) {
   );
 }
 
+function GoogleMeetShareModal({ open, onClose, data }) {
+  if (!open || !data?.meetLink) return null;
+
+  const [targetPhone, setTargetPhone] = useState(data.leadPhone || "");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setTargetPhone(data.leadPhone || "");
+  }, [data?.leadPhone]);
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(data.meetLink);
+    setCopied(true);
+    toast.success("Google Meet link copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShareWhatsApp = () => {
+    const rawPhone = targetPhone || data.leadPhone || "";
+    const digits = rawPhone.replace(/\D/g, "");
+    let cleanPhone = digits;
+    if (digits.length === 10) {
+      cleanPhone = `91${digits}`;
+    }
+
+    const leadGreeting = data.leadName ? `Hi ${data.leadName},` : "Hi,";
+    const titleText = data.title ? `📌 *${data.title}*` : "📌 *Google Meet Meeting*";
+    const dateText = data.date ? `\n📅 *Date:* ${data.date}` : "";
+    const timeText = data.time ? `\n⏰ *Time:* ${data.time}` : "";
+
+    const message = `${leadGreeting}\n\nHere is the Google Meet link for our meeting:\n${titleText}${dateText}${timeText}\n\n🔗 *Join Google Meet:* ${data.meetLink}\n\nLooking forward to speaking with you!`;
+
+    const waUrl = cleanPhone
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+
+    window.open(waUrl, "_blank", "noopener,noreferrer");
+    toast.success("Opening WhatsApp…");
+  };
+
+  return (
+    <EmpModal
+      open={open}
+      onClose={onClose}
+      title="🎥 Google Meet Created"
+      subtitle="Share this meeting link via WhatsApp or copy directly to clipboard."
+      footer={
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+          <button
+            type="button"
+            onClick={handleShareWhatsApp}
+            className="w-full sm:w-auto flex-1 h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold shadow-sm inline-flex items-center justify-center gap-2 transition"
+          >
+            <MessageCircle className="w-4 h-4" /> Share on WhatsApp
+          </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="w-full sm:w-auto h-10 px-4 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold inline-flex items-center justify-center gap-2 transition"
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+            {copied ? "Copied!" : "Copy Link"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full sm:w-auto h-10 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition"
+          >
+            Close
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="p-3.5 rounded-xl bg-gradient-to-br from-rose-50/80 to-white border border-rose-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-2.5">
+            <div className="w-9 h-9 rounded-xl bg-rose-600 text-white grid place-items-center shrink-0 shadow-sm">
+              <Video className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h4 className="text-xs font-bold text-slate-900 truncate">{data.title || "Discovery Call"}</h4>
+              <p className="text-[11px] text-rose-600 font-semibold mt-0.5">
+                📅 {data.date} · ⏰ {data.time}
+              </p>
+            </div>
+          </div>
+
+          <div className="relative flex items-center gap-2 bg-white rounded-xl border border-rose-200 p-2 text-xs font-mono text-slate-700">
+            <Link2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+            <span className="truncate flex-1 select-all">{data.meetLink}</span>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-sans font-bold text-[10px] shrink-0 transition"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">
+            Recipient Phone Number (for WhatsApp)
+          </label>
+          <input
+            type="text"
+            className="w-full h-10 px-3 rounded-xl bg-white border border-rose-100 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 transition"
+            placeholder="+91 98765 43210"
+            value={targetPhone}
+            onChange={(e) => setTargetPhone(e.target.value)}
+          />
+          <p className="text-[10px] text-slate-400 mt-1">
+            Pre-filled with {data.leadName ? `${data.leadName}'s` : "employee"} phone number. You can edit it before opening WhatsApp.
+          </p>
+        </div>
+      </div>
+    </EmpModal>
+  );
+}
+
 function BookMeetingDrawer({
   open,
   form,
@@ -67,6 +187,7 @@ function BookMeetingDrawer({
   onCreate,
   onGenerateLink,
   onCopyLink,
+  onOpenShareModal,
   onConnectGoogle,
 }) {
   return (
@@ -161,14 +282,24 @@ function BookMeetingDrawer({
               </button>
             )}
             {form.meetLink && (
-              <button
-                type="button"
-                onClick={() => onCopyLink(form.meetLink)}
-                className="h-10 w-10 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 hover:bg-rose-100 transition shrink-0 grid place-items-center"
-                aria-label="Copy link"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenShareModal && onOpenShareModal(form.meetLink)}
+                  className="h-10 px-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition shrink-0 inline-flex items-center gap-1 text-xs font-bold"
+                  title="Share via WhatsApp or Copy"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" /> Share
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCopyLink(form.meetLink)}
+                  className="h-10 w-10 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 hover:bg-rose-100 transition shrink-0 grid place-items-center"
+                  aria-label="Copy link"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </>
             )}
           </div>
           {form.platform === "google_meet" && googleConfigured && !googleConnected && (
@@ -218,7 +349,7 @@ function PlatformBadge({ platform }) {
   return <Badge tone={PLATFORM_TONE[platform] || "muted"}>{platform}</Badge>;
 }
 
-function ScheduleItem({ meeting, onJoin, onCopyLink, onDelete }) {
+function ScheduleItem({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
   return (
     <div className="px-3 py-3 hover:bg-rose-50/50 transition group">
       <div className="flex gap-2.5">
@@ -247,9 +378,19 @@ function ScheduleItem({ meeting, onJoin, onCopyLink, onDelete }) {
               <Video className="w-3 h-3" /> Join
             </BtnPrimary>
             {meeting.meetLink && (
-              <BtnSecondary className="!py-1 !px-2 !text-[10px] !rounded-lg" onClick={() => onCopyLink(meeting.meetLink)} aria-label="Copy link">
-                <Copy className="w-3 h-3" />
-              </BtnSecondary>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onShare && onShare(meeting)}
+                  className="px-2 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold inline-flex items-center gap-1 transition"
+                  title="Share via WhatsApp or Copy"
+                >
+                  <MessageCircle className="w-3 h-3" /> Share
+                </button>
+                <BtnSecondary className="!py-1 !px-2 !text-[10px] !rounded-lg" onClick={() => onCopyLink(meeting.meetLink)} aria-label="Copy link">
+                  <Copy className="w-3 h-3" />
+                </BtnSecondary>
+              </>
             )}
           </div>
         </div>
@@ -258,7 +399,7 @@ function ScheduleItem({ meeting, onJoin, onCopyLink, onDelete }) {
   );
 }
 
-function TodaySchedulePanel({ upcoming, history, onJoin, onCopyLink, onDelete }) {
+function TodaySchedulePanel({ upcoming, history, onJoin, onCopyLink, onShare, onDelete }) {
   return (
     <GlassCard className={`p-0 overflow-hidden flex flex-col ${PANEL_HEIGHT}`}>
       <div className="px-4 py-3 border-b border-rose-50 bg-rose-50/40 shrink-0">
@@ -275,7 +416,7 @@ function TodaySchedulePanel({ upcoming, history, onJoin, onCopyLink, onDelete })
           </div>
         ) : (
           upcoming.map((m) => (
-            <ScheduleItem key={m.id} meeting={m} onJoin={onJoin} onCopyLink={onCopyLink} onDelete={onDelete} />
+            <ScheduleItem key={m.id} meeting={m} onJoin={onJoin} onCopyLink={onCopyLink} onShare={onShare} onDelete={onDelete} />
           ))
         )}
 
@@ -300,7 +441,7 @@ function TodaySchedulePanel({ upcoming, history, onJoin, onCopyLink, onDelete })
   );
 }
 
-function UpcomingCard({ meeting, onJoin, onCopyLink, onDelete }) {
+function UpcomingCard({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
   return (
     <article className="group rounded-2xl border border-rose-100/80 bg-white p-4 hover:border-rose-200 hover:shadow-[0_8px_24px_rgba(244,63,94,0.06)] transition-all">
       <div className="flex gap-3">
@@ -338,9 +479,18 @@ function UpcomingCard({ meeting, onJoin, onCopyLink, onDelete }) {
           <Video className="w-3.5 h-3.5" /> Join
         </BtnPrimary>
         {meeting.meetLink && (
-          <BtnSecondary className="!py-1.5 !px-3 !text-[11px] !rounded-xl" onClick={() => onCopyLink(meeting.meetLink)}>
-            <Copy className="w-3.5 h-3.5" /> Copy
-          </BtnSecondary>
+          <>
+            <button
+              type="button"
+              onClick={() => onShare && onShare(meeting)}
+              className="py-1.5 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold inline-flex items-center gap-1.5 transition"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> Share
+            </button>
+            <BtnSecondary className="!py-1.5 !px-3 !text-[11px] !rounded-xl" onClick={() => onCopyLink(meeting.meetLink)}>
+              <Copy className="w-3.5 h-3.5" /> Copy
+            </BtnSecondary>
+          </>
         )}
       </div>
     </article>
@@ -371,6 +521,16 @@ export default function EmployeeMeetings() {
     configured: false,
     connected: false,
     googleEmail: null,
+  });
+
+  const [shareModalData, setShareModalData] = useState({
+    open: false,
+    meetLink: "",
+    title: "",
+    date: "",
+    time: "",
+    leadName: "",
+    leadPhone: "",
   });
 
   const loadGoogleStatus = async () => {
@@ -448,6 +608,32 @@ export default function EmployeeMeetings() {
     if (searchParams.get("action") === "add") setSearchParams({}, { replace: true });
   };
 
+  const handleOpenShareModal = (linkOrMeeting) => {
+    if (typeof linkOrMeeting === "string") {
+      const selectedLead = leads.find((l) => String(l.id) === String(form.leadId));
+      setShareModalData({
+        open: true,
+        title: form.title.trim() || "Discovery Call",
+        date: form.date,
+        time: form.time,
+        meetLink: linkOrMeeting,
+        leadName: selectedLead?.name || "",
+        leadPhone: selectedLead?.phone || employee?.phone || "",
+      });
+    } else if (linkOrMeeting && linkOrMeeting.meetLink) {
+      const foundLead = leads.find((l) => String(l.name || "").toLowerCase() === String(linkOrMeeting.lead || "").toLowerCase());
+      setShareModalData({
+        open: true,
+        title: linkOrMeeting.title || "Meeting",
+        date: linkOrMeeting.date || getEmpAppToday(),
+        time: linkOrMeeting.time || "14:00",
+        meetLink: linkOrMeeting.meetLink,
+        leadName: linkOrMeeting.lead || "",
+        leadPhone: foundLead?.phone || linkOrMeeting.phone || employee?.phone || "",
+      });
+    }
+  };
+
   const handleGenerateMeetLink = async () => {
     if (!form.title.trim()) {
       toast.error("Enter a meeting title first");
@@ -473,6 +659,9 @@ export default function EmployeeMeetings() {
       if (!meetLink) throw new Error(res?.message || "No Meet link returned");
       setForm((f) => ({ ...f, meetLink, platform: "google_meet" }));
       toast.success("Google Meet link generated");
+
+      // Auto-open share modal
+      handleOpenShareModal(meetLink);
     } catch (err) {
       toast.error(err.message || "Could not generate Google Meet link");
     } finally {
@@ -513,9 +702,30 @@ export default function EmployeeMeetings() {
     try {
       const saved = await createMeeting(form);
       if (!saved) return;
+
+      const currentMeetLink = form.meetLink;
+      const currentTitle = form.title.trim();
+      const currentDate = form.date;
+      const currentTime = form.time;
+      const selectedLead = leads.find((l) => String(l.id) === String(form.leadId));
+      const currentLeadName = selectedLead?.name || "";
+      const currentLeadPhone = selectedLead?.phone || employee?.phone || "";
+
       setForm({ ...EMPTY_FORM, date: getEmpAppToday() });
       closeDrawer();
       toast.success(usingApi ? "Meeting saved to database" : "Meeting scheduled");
+
+      if (currentMeetLink) {
+        setShareModalData({
+          open: true,
+          title: currentTitle,
+          date: currentDate,
+          time: currentTime,
+          meetLink: currentMeetLink,
+          leadName: currentLeadName,
+          leadPhone: currentLeadPhone,
+        });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -582,6 +792,7 @@ export default function EmployeeMeetings() {
                         meeting={m}
                         onJoin={handleJoin}
                         onCopyLink={handleCopyLink}
+                        onShare={handleOpenShareModal}
                         onDelete={handleDelete}
                       />
                     ))}
@@ -627,6 +838,7 @@ export default function EmployeeMeetings() {
             history={filteredHistory}
             onJoin={handleJoin}
             onCopyLink={handleCopyLink}
+            onShare={handleOpenShareModal}
             onDelete={handleDelete}
           />
         </div>
@@ -647,7 +859,14 @@ export default function EmployeeMeetings() {
         onCreate={handleCreate}
         onGenerateLink={handleGenerateMeetLink}
         onCopyLink={handleCopyLink}
+        onOpenShareModal={handleOpenShareModal}
         onConnectGoogle={() => navigate("/employee/profile?tab=preferences")}
+      />
+
+      <GoogleMeetShareModal
+        open={shareModalData.open}
+        onClose={() => setShareModalData((s) => ({ ...s, open: false }))}
+        data={shareModalData}
       />
     </div>
   );
