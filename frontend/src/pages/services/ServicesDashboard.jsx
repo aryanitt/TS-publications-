@@ -16,6 +16,7 @@ import {
 } from "../../data/servicesMock.js";
 import { apiGet, apiPost, apiDelete, invalidateCache } from "../../lib/api.js";
 import { formatIndianNumber } from "../../lib/indianFormat.js";
+import { getAdminCrmHeaders } from "../../lib/crmContext.js";
 import { cleanServiceName, extractLeadService, leadBelongsToService } from "../../lib/servicesRegistry.js";
 import AddServiceDrawer from "./AddServiceDrawer.jsx";
 
@@ -69,8 +70,8 @@ export default function ServicesDashboard() {
     (async () => {
       try {
         const [dataRes, leadsRes] = await Promise.allSettled([
-          apiGet("/api/services", { skipCache: true, cacheTtl: 0 }),
-          apiGet("/api/v1/leads?limit=500&page=1"),
+          apiGet("/api/services", { headers: getAdminCrmHeaders(), skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/v1/leads?limit=500&page=1", { headers: getAdminCrmHeaders() }),
         ]);
         
         let services = dataRes.status === "fulfilled" && dataRes.value?.services?.length
@@ -81,34 +82,7 @@ export default function ServicesDashboard() {
           ? (Array.isArray(leadsRes.value) ? leadsRes.value : (leadsRes.value?.data || leadsRes.value?.leads || []))
           : [];
 
-        const existingNames = new Set(services.map((s) => cleanServiceName(s.name).toLowerCase()));
-        
-        const extraServicesMap = new Map();
-        leads.forEach((l) => {
-          const svcName = extractLeadService(l);
-          if (svcName && !existingNames.has(svcName.toLowerCase())) {
-            if (!extraServicesMap.has(svcName.toLowerCase())) {
-              extraServicesMap.set(svcName.toLowerCase(), {
-                id: `svc-${svcName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-                name: svcName,
-                category: "general",
-                categoryLabel: "General Services",
-                status: "ACTIVE",
-                badge: "POPULAR",
-                description: `Auto-created service for ${svcName}`,
-                revenue: 0,
-                leads: 0,
-                converted: 0,
-                convRate: 0,
-                priceNum: 0,
-                price: "Custom",
-                icon: "briefcase",
-              });
-            }
-          }
-        });
-
-        const mergedServices = [...services, ...Array.from(extraServicesMap.values())];
+        const mergedServices = [...services];
 
         if (leads.length > 0) {
           mergedServices.forEach((svc) => {
@@ -181,9 +155,10 @@ export default function ServicesDashboard() {
     if (!window.confirm(`Are you sure you want to delete the service "${service.name}"?`)) return;
     try {
       await apiDelete(`/api/services/${service.id}`);
-      setCatalog((prev) => prev.filter((s) => s.id !== service.id));
+      setCatalog((prev) => prev.filter((s) => s.id !== service.id && s.name.toLowerCase() !== service.name.toLowerCase()));
       invalidateCache("/api/services");
       toast.success(`Service "${service.name}" deleted successfully`);
+      setTimeout(() => window.location.reload(), 300);
     } catch (err) {
       toast.error(`Failed to delete service: ${err.message || String(err)}`);
     }

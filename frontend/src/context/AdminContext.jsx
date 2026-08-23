@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
-import { getStoredAuthUser } from "../lib/crmContext.js";
+import { getStoredAuthUser, getAdminCrmHeaders } from "../lib/crmContext.js";
 import { adminProfileFromAuth } from "../lib/adminProfile.js";
 import { apiGet } from "../lib/api.js";
 import { CANONICAL_SERVICES, getDynamicServicesList, cleanServiceName } from "../lib/servicesRegistry.js";
@@ -63,8 +63,10 @@ export function AdminProvider({ children }) {
   const { user } = useAuth();
   const [admin, setAdmin] = useState(loadProfile);
   const [selectedService, setSelectedService] = useState("All Services");
+  const [selectedEmployee, setSelectedEmployee] = useState("All Employees");
   const [catalogServices, setCatalogServices] = useState([]);
   const [extraServices, setExtraServices] = useState([]);
+  const [employeesList, setEmployeesList] = useState(["All Employees", "Ritik Verma", "Sarita", "Sushmit Verma", "Piyush Dhingra"]);
 
   useEffect(() => {
     if (user?.role === "admin") {
@@ -80,9 +82,10 @@ export function AdminProvider({ children }) {
     let active = true;
     (async () => {
       try {
-        const [svcRes, leadsRes] = await Promise.allSettled([
-          apiGet("/api/services", { skipCache: true, cacheTtl: 0 }),
-          apiGet("/api/v1/leads?limit=500&page=1"),
+        const [svcRes, leadsRes, empRes] = await Promise.allSettled([
+          apiGet("/api/services", { headers: getAdminCrmHeaders(), skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/v1/leads?limit=500&page=1", { headers: getAdminCrmHeaders() }),
+          apiGet("/api/v1/employees", { headers: getAdminCrmHeaders() }),
         ]);
         
         const catalog = svcRes.status === "fulfilled" && Array.isArray(svcRes.value?.services)
@@ -96,9 +99,20 @@ export function AdminProvider({ children }) {
           setCatalogServices(catalog);
           const computed = getDynamicServicesList(catalog, leads);
           setExtraServices(computed);
+
+          if (empRes.status === "fulfilled") {
+            const rawEmps = Array.isArray(empRes.value) ? empRes.value : (empRes.value?.data || empRes.value?.employees || []);
+            const activeNames = rawEmps
+              .filter((e) => e && e.name && String(e.status || "active").toLowerCase() === "active")
+              .map((e) => e.name);
+            if (activeNames.length > 0) {
+              const uniqueNames = Array.from(new Set(activeNames)).sort();
+              setEmployeesList(["All Employees", ...uniqueNames]);
+            }
+          }
         }
       } catch (err) {
-        console.error("Error loading services in AdminContext:", err);
+        console.error("Error loading services/employees in AdminContext:", err);
       }
     })();
     return () => { active = false; };
@@ -130,9 +144,12 @@ export function AdminProvider({ children }) {
       selectedService,
       setSelectedService,
       servicesList,
+      selectedEmployee,
+      setSelectedEmployee,
+      employeesList,
       registerNewService,
     }),
-    [admin, selectedService, servicesList],
+    [admin, selectedService, servicesList, selectedEmployee, employeesList],
   );
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
@@ -145,6 +162,9 @@ const DEFAULT_ADMIN_CONTEXT = {
   selectedService: "All Services",
   setSelectedService: () => {},
   servicesList: ["All Services"],
+  selectedEmployee: "All Employees",
+  setSelectedEmployee: () => {},
+  employeesList: ["All Employees", "Ritik Verma", "Sarita", "Sushmit Verma", "Piyush Dhingra"],
   registerNewService: () => {},
 };
 

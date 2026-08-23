@@ -36,47 +36,49 @@ export {
 /** Mock-only id — never exists in MySQL; must be replaced after API bootstrap. */
 export const MOCK_EMPLOYEE_ID = 101;
 
+/**
+ * Empty shape template for the logged-in employee — NOT sample data.
+ * Real values come from the API; every field here is intentionally blank/zero so
+ * that a field the API doesn't return renders as empty rather than as a
+ * plausible-looking fake number.
+ */
 export const CURRENT_EMPLOYEE = {
-  id: MOCK_EMPLOYEE_ID,
-  name: "Amit Kumar",
-  role: "Sales Manager",
-  initials: "AK",
-  email: "amit.kumar@techsales.in",
-  phone: "+91 98765 43210",
-  department: "Sales",
-  joiningDate: "2024-03-15",
+  id: null,
+  name: "",
+  role: "",
+  initials: "",
+  email: "",
+  phone: "",
+  department: "",
+  joiningDate: null,
   avatarColor: "#2563eb",
-  callsTarget: 60,
-  callsDone: 34,
-  responseTimeMin: 1.6,
-  pickupRate: 69,
-  qualificationRate: 76,
-  objectionHandling: 85,
-  conversionRate: 24,
-  followUpQuality: 79,
-  baseSalary: 45000,
-  incRate: 6,
-  incentivePeriod: "June 2026",
+  callsTarget: 0,
+  callsDone: 0,
+  responseTimeMin: 0,
+  pickupRate: 0,
+  qualificationRate: 0,
+  objectionHandling: 0,
+  conversionRate: 0,
+  followUpQuality: 0,
+  baseSalary: 0,
+  incRate: 0,
+  incentivePeriod: "",
   incentiveStats: {
-    leadsConverted: 18,
-    conversionsTarget: 25,
-    callTargetPct: 88,
-    revenueL: 24,
-    revenueTargetL: 30,
-    qualifiedLeads: 14,
-    meetingsBooked: 6,
+    leadsConverted: 0,
+    conversionsTarget: 0,
+    callTargetPct: 0,
+    revenueL: 0,
+    revenueTargetL: 0,
+    qualifiedLeads: 0,
+    meetingsBooked: 0,
   },
   incentiveTrends: {
-    pickupRate: 4,
-    conversionRate: 2,
-    followUpQuality: 1,
-    responseTimeMin: -0.2,
+    pickupRate: 0,
+    conversionRate: 0,
+    followUpQuality: 0,
+    responseTimeMin: 0,
   },
-  payoutHistory: [
-    { month: "May 2026", incentive: 38500, totalPay: 83500, status: "Paid" },
-    { month: "April 2026", incentive: 35200, totalPay: 80200, status: "Paid" },
-    { month: "March 2026", incentive: 31800, totalPay: 76800, status: "Paid" },
-  ],
+  payoutHistory: [],
 };
 
 export const EMP_NAV_BADGES = {
@@ -884,12 +886,8 @@ export const EMP_SOP_DOCS = [
   ]},
 ];
 
-export const EMP_TEAM = [
-  { name: "Priya Singh", av: "PS", color: "#dc2626" },
-  { name: "Amit Kumar", av: "AK", color: "#2563eb" },
-  { name: "Rohan Verma", av: "RV", color: "#7c3aed" },
-  { name: "Neha Patel", av: "NP", color: "#10b981" },
-];
+/** Real teammates come from the API (`teamEmployees` in EmployeeContext). */
+export const EMP_TEAM = [];
 
 export const LEAD_STATUS_LABELS = {
   hot: "Hot", warm: "Warm", cold: "Cold", converted: "Converted", notpick: "Not Pick", ni: "Not Interested",

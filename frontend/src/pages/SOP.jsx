@@ -532,8 +532,6 @@ function AnalyticsStrip({ sop }) {
 
 /* ─── SOP Detail Drawer (enhanced) ─── */
 function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchive, onAddComment, onUpdateComment, onDeleteComment  }) {
-  const [tab, setTab] = useState("overview");
-  const tabs = ["overview", "activity", "comments", "versions"];
 
   return (
     <Drawer
@@ -609,182 +607,90 @@ function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchiv
           {/* Analytics strip */}
           <AnalyticsStrip sop={sop} />
 
-          {/* Tab switcher */}
-          <div className="flex gap-1 p-1 rounded-xl bg-rose-50/60 border border-rose-500">
-            {tabs.map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={cn(
-                  "flex-1 py-1.5 rounded-lg text-[11px] font-medium capitalize transition-all",
-                  tab === t ? "gradient-primary text-primary-foreground shadow-sm" : "text-gray-700 hover:text-rose-700"
-                )}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          {/* Overview content only */}
+          <div className="space-y-4 pt-1">
+            <div>
+              <div className="text-xs uppercase tracking-wider text-rose-700 mb-2">Description</div>
+              <p className="text-sm text-gray-700">{sop.description}</p>
+            </div>
 
-          {/* Tab content */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={tab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-            >
-            {tab === "overview" && (
-  <div className="space-y-4">
-    <div>
-      <div className="text-xs uppercase tracking-wider text-rose-700 mb-2">Description</div>
-      <p className="text-sm text-gray-700">{sop.description}</p>
-    </div>
-
-    {sop.frameworks?.length > 0 && (
-      <div>
-        <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-          <BookOpen className="w-3 h-3" /> Frameworks (Knowledge)
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {sop.frameworks.map(f => <Badge key={f} tone="info">{f}</Badge>)}
-        </div>
-      </div>
-    )}
-
-    {sop.scripts?.length > 0 ? (
-      <div className="space-y-3">
-        <div className="text-xs uppercase tracking-wider text-rose-700 flex items-center gap-1">
-          <MessageSquare className="w-3 h-3" /> Scripts
-        </div>
-        {sop.scripts.map((scr, idx) => (
-          <div key={idx} className="space-y-1">
-            {scr.heading && (
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide px-1">
-                {scr.heading}
+            {sop.frameworks?.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
+                  <BookOpen className="w-3 h-3" /> Frameworks (Knowledge)
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {sop.frameworks.map(f => <Badge key={f} tone="info">{f}</Badge>)}
+                </div>
               </div>
             )}
-            <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
-              {scr.content}
-            </pre>
-          </div>
-        ))}
-      </div>
-    ) : (
-      sop.script && (
-        <div>
-          <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-            <MessageSquare className="w-3 h-3" /> Script
-          </div>
-          <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
-            {sop.script}
-          </pre>
-        </div>
-      )
-    )}
 
-    {sop.questions?.length > 0 && (
-      <div>
-        <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-          <MessageSquare className="w-3 h-3" /> Questions
-        </div>
-        <ol className="space-y-1.5">
-          {sop.questions.map((q, i) => (
-            <li key={i} className="flex gap-2 text-sm text-gray-700">
-              <span className="text-rose-700 font-semibold shrink-0">{i + 1}.</span>
-              {q}
-            </li>
-          ))}
-        </ol>
-      </div>
-    )}
-
-    <div>
-      <div className="text-xs uppercase tracking-wider text-rose-700 mb-3">Steps</div>
-      <ol className="space-y-2">
-        {sop.steps.map((st, i) => (
-          <li key={i} className="flex gap-3 p-3 rounded-xl bg-rose-50 border border-rose-100">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-rose-600 to-rose-800 grid place-items-center text-[11px] font-semibold shrink-0 text-white">{i + 1}</div>
-            <div className="text-sm text-gray-700">{st}</div>
-          </li>
-        ))}
-      </ol>
-    </div>
-
-    <div>
-      <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-        <Tag className="w-3 h-3" /> Tags
-      </div>
-      <div className="flex flex-wrap gap-1.5">{sop.tags.map(t => <Badge key={t} tone="primary">{t}</Badge>)}</div>
-    </div>
-  </div>
-)}
-
-              {tab === "activity" && (
-                <div className="space-y-3">
-                  <div className="text-xs uppercase tracking-wider text-rose-700 mb-3 flex items-center gap-1"><Activity className="w-3 h-3" /> Activity Timeline</div>
-                  <ActivityTimeline sop={sop} />
+            {sop.scripts?.length > 0 ? (
+              <div className="space-y-3">
+                <div className="text-xs uppercase tracking-wider text-rose-700 flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3" /> Scripts
                 </div>
-              )}
+                {sop.scripts.map((scr, idx) => (
+                  <div key={idx} className="space-y-1">
+                    {scr.heading && (
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide px-1">
+                        {scr.heading}
+                      </div>
+                    )}
+                    <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
+                      {scr.content}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              sop.script && (
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
+                    <MessageSquare className="w-3 h-3" /> Script
+                  </div>
+                  <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
+                    {sop.script}
+                  </pre>
+                </div>
+              )
+            )}
 
-              {tab === "comments" && (
-             <CommentsSection 
-             sop={sop} 
-             onAddComment={onAddComment}
-             onUpdateComment={onUpdateComment}
-             onDeleteComment={onDeleteComment}
-           />
-              )}
+            {sop.questions?.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3" /> Questions
+                </div>
+                <ol className="space-y-1.5">
+                  {sop.questions.map((q, i) => (
+                    <li key={i} className="flex gap-2 text-sm text-gray-700">
+                      <span className="text-rose-700 font-semibold shrink-0">{i + 1}.</span>
+                      {q}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
 
-{tab === "versions" && (
-  <div className="space-y-2">
-    <div className="text-xs uppercase tracking-wider text-rose-700 mb-3 flex items-center gap-1">
-      <GitBranch className="w-3 h-3" /> Revision History
-    </div>
-    {sop.revisions?.length > 0 ? (
-      sop.revisions.map((r, i) => (
-        <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-rose-50/60 border border-rose-700">
-          <Badge tone={i === 0 ? "info" : "muted"}>{r.version}</Badge>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-rose-700">{r.note}</div>
-            <div className="text-[10px] text-gray-700 mt-0.5">{r.author} · {r.date}</div>
-          </div>
-          {i === 0 && <Badge tone="success">Current</Badge>}
-        </div>
-      ))
-    ) : (
-      <div className="space-y-3">
-        {/* Current version derived from sop data */}
-        <div className="flex items-start gap-3 p-3 rounded-xl bg-rose-50/60 border border-rose-200">
-          <Badge tone="info">{sop.version}</Badge>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-rose-700">Current version</div>
-            <div className="text-[10px] text-gray-700 mt-0.5">
-              {sop.creator} · Last updated {sop.updated}
+            <div>
+              <div className="text-xs uppercase tracking-wider text-rose-700 mb-3">Steps</div>
+              <ol className="space-y-2">
+                {sop.steps.map((st, i) => (
+                  <li key={i} className="flex gap-3 p-3 rounded-xl bg-rose-50 border border-rose-100">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-rose-600 to-rose-800 grid place-items-center text-[11px] font-semibold shrink-0 text-white">{i + 1}</div>
+                    <div className="text-sm text-gray-700">{st}</div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <div>
+              <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
+                <Tag className="w-3 h-3" /> Tags
+              </div>
+              <div className="flex flex-wrap gap-1.5">{sop.tags.map(t => <Badge key={t} tone="primary">{t}</Badge>)}</div>
             </div>
           </div>
-          <Badge tone="success">Current</Badge>
-        </div>
-        <div className="flex items-start gap-3 p-3 rounded-xl bg-rose-50/40 border border-dashed border-rose-200">
-          <div className="w-7 h-7 rounded-lg bg-rose-50 border border-rose-200 grid place-items-center shrink-0">
-            <GitBranch className="w-3 h-3 text-rose-400" />
-          </div>
-          <div className="flex-1">
-            <div className="text-xs font-medium text-rose-700">Initial publish</div>
-            <div className="text-[10px] text-gray-700 mt-0.5">
-              {sop.creator} · Created {sop.created}
-            </div>
-          </div>
-        </div>
-        <div className="text-[10px] text-gray-400 text-center pt-1">
-          Full revision history will appear here as this SOP is updated.
-        </div>
-      </div>
-    )}
-  </div>
-)}
-            </motion.div>
-          </AnimatePresence>
         </div>
       )}
     </Drawer>
@@ -834,7 +740,7 @@ function makeBlankForm() {
     priority: "Medium", tags: [], steps: Array.from({ length: 3 }, () => makeStep()),
     department: "", estimatedTime: "", attachments: [],
     script: "", scripts: [{ heading: "", content: "" }], questions: [""], frameworks: [""],
-    service: "All Services",
+    services: ["All Services"],
   };
 }
 function sopToForm(s) {
@@ -847,10 +753,11 @@ function sopToForm(s) {
     scripts: s.scripts?.length ? s.scripts : [{ heading: "", content: "" }],
     questions: s.questions?.length ? s.questions : [""],
     frameworks: s.frameworks?.length ? s.frameworks : [""],
-    service: s.service || "All Services",
+    services: s.services?.length ? s.services : [s.service || "All Services"],
   };
 }
 function formToSop(base, form, isEdit) {
+  const services = form.services?.length ? form.services : ["All Services"];
   return {
     ...base,
     title: form.title.trim(),
@@ -867,7 +774,8 @@ function formToSop(base, form, isEdit) {
     scripts: form.scripts ? form.scripts.filter(scr => scr.heading.trim() || scr.content.trim()) : [],
     questions: form.questions.filter(Boolean),
     frameworks: form.frameworks.filter(Boolean),
-    service: form.service || "All Services",
+    service: services[0],
+    services,
     updated: new Date().toISOString().split("T")[0],
     ...(isEdit ? {} :  {
       id: Date.now(),
@@ -885,25 +793,32 @@ function formToSop(base, form, isEdit) {
 const SOP_STORAGE_KEY = "admin_dashboard_sops";
 
 function normalizeApiSop(sop) {
+  if (!sop) return null;
   return {
     ...sop,
+    title:             sop.title || "Untitled SOP",
+    description:       sop.description || "",
+    category:          sop.category || "Sales Call",
+    status:            sop.status || "Active",
+    priority:          sop.priority || "Medium",
     creator:           sop.creator || "Admin",
     created:           sop.created_at?.split("T")[0] || sop.created || "",
     updated:           sop.updated_at?.split("T")[0] || sop.updated || "",
     service:           sop.service || "All Services",
+    services:          sop.services?.length ? sop.services : [sop.service || "All Services"],
     estimatedTime:     sop.estimated_time || sop.estimatedTime || "",
-    steps:             (sop.instruction_steps || sop.steps || []).map(s => (typeof s === "string" ? s : s.title || "")),
+    steps:             (sop.instruction_steps || sop.steps || []).map(s => (typeof s === "string" ? s : s?.title || "")),
     questions:         sop.questions || [],
     frameworks:        sop.frameworks || [],
-    tags:              sop.tags || [],
+    tags:              Array.isArray(sop.tags) ? sop.tags : [],
     script:            sop.script || "",
     scripts:           sop.scripts || [],
-    comments:          (sop.comments || []).map(c => ({
+    comments:          Array.isArray(sop.comments) ? sop.comments.map(c => ({
       id:     c.id,
       author: c.author || "Unknown",
       text:   c.text || "",
       time:   c.time || (c.created_at ? new Date(c.created_at).toLocaleString() : "Just now"),
-    })),
+    })) : [],
     attachments:       sop.attachments || (sop.attachment_url ? [sop.attachment_url] : []),
     revisions:         sop.revisions || [],
     version:           sop.version || "v1.0",
@@ -945,6 +860,8 @@ function validate(form) {
 
 /* ─── Add/Edit SOP Form ─── */
 function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
+  const { servicesList } = useAdmin();
+  const serviceOptions = servicesList?.length ? servicesList : CANONICAL_SERVICES;
   const [form, setForm] = useState(() => initialData ? sopToForm(initialData) : makeBlankForm());
   const [errors, setErrors] = useState({});
   const [tagInput, setTagInput] = useState("");
@@ -1456,12 +1373,42 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
         <Field label="Estimated Time">
           <input value={form.estimatedTime} onChange={e => set("estimatedTime", e.target.value)} className="sop-input" placeholder="e.g. 45 min" />
         </Field>
-        <Field label="Service">
-          <select value={form.service} onChange={e => set("service", e.target.value)} className="sop-input">
-            {CANONICAL_SERVICES.map(s => <option key={s}>{s}</option>)}
-          </select>
-        </Field>
       </div>
+
+      {/* Services — a SOP can apply to more than one */}
+      <Field label="Services">
+        <div className="flex flex-wrap gap-1.5">
+          {serviceOptions.map(s => {
+            const active = form.services?.includes(s);
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  if (s === "All Services") {
+                    set("services", ["All Services"]);
+                    return;
+                  }
+                  const current = (form.services || []).filter(x => x !== "All Services");
+                  const next = active ? current.filter(x => x !== s) : [...current, s];
+                  set("services", next.length ? next : ["All Services"]);
+                }}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                  active
+                    ? "bg-rose-600 text-white border-rose-600"
+                    : "bg-white text-muted-foreground border-rose-200 hover:border-rose-400"
+                }`}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1.5">
+          Only reps handling one of these services will be guided by this SOP during AI call analysis.
+          Pick specific services, or leave "All Services" selected to apply everywhere.
+        </p>
+      </Field>
 
       {/* Tags */}
       <Field label="Tags">
@@ -1574,54 +1521,8 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
 }
 
 /* ─── Quick Action Dropdown ─── */
-function QuickActions({ sop, onEdit, onDuplicate, onArchive, onDelete, onExport }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative" onClick={e => e.stopPropagation()}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="p-1.5 rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <MoreVertical className="w-3.5 h-3.5" />
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            transition={{ duration: 0.12 }}
-            className="absolute right-0 top-8 z-50 w-44 rounded-xl border border-border bg-card/95 backdrop-blur-xl shadow-2xl overflow-hidden"
-          >
-            {[
-              { label: "Edit", icon: Edit2, action: () => { onEdit(sop); setOpen(false); } },
-              { label: "Duplicate", icon: Copy, action: () => { onDuplicate(sop); setOpen(false); } },
-              { label: "Export", icon: Download, action: () => { onExport(sop); setOpen(false); } },
-              { label: "Archive", icon: Archive, action: () => { onArchive(sop); setOpen(false); }, cls: "text-amber-400" },
-              { label: "Delete", icon: Trash2, action: () => { onDelete(sop); setOpen(false); }, cls: "text-red-400" },
-            ].map(({ label, icon: Icon, action, cls }) => (
-              <button
-                key={label}
-                onClick={action}
-                className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 text-xs hover:bg-secondary/60 transition-colors", cls)}
-              >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
-                {label}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+function QuickActions() {
+  return null;
 }
 
 /* ─── SOP card (matches employee Sales Process layout) ─── */
@@ -1638,19 +1539,6 @@ function AdminSopCard({
 
   return (
     <article className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white overflow-hidden hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition-all group min-w-0 relative">
-      <div
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <QuickActions
-          sop={sop}
-          onEdit={onEdit}
-          onDuplicate={onDuplicate}
-          onArchive={onArchive}
-          onDelete={onDelete}
-          onExport={onExport}
-        />
-      </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4">
         <button
@@ -1799,6 +1687,7 @@ export default function SOP() {
 
       const local = loadLocalSops();
       if (local.length > 0) setSops(local);
+      else setSops(INITIAL_SOPS);
     };
 
     fetchSops();
@@ -1853,33 +1742,38 @@ export default function SOP() {
       addToast("Network error, please try again", "error");
     }
   };
+
   /* ── KPI data (dynamic) ── */
- /* ── KPI data (dynamic) ── */
- const sopCategories = useMemo(() => {
-  const active = sops.filter(s => s.status !== "Archived");
-  return [
-    { name: "All SOPs",       count: active.length },
-    { name: "Sales Call",     count: active.filter(s => s.category === "Sales Call").length },
-    { name: "After Call",     count: active.filter(s => s.category === "After Call").length },
-    { name: "During Meeting", count: active.filter(s => s.category === "During Meeting").length },
-    { name: "After Meeting",  count: active.filter(s => s.category === "After Meeting").length },
-    { name: "After Closing",  count: active.filter(s => s.category === "After Closing").length },
-  ];
-}, [sops]);
+  const sopCategories = useMemo(() => {
+    const active = (sops || []).filter(s => s && s.status !== "Archived");
+    return [
+      { name: "All SOPs",       count: active.length },
+      { name: "Sales Call",     count: active.filter(s => s.category === "Sales Call").length },
+      { name: "After Call",     count: active.filter(s => s.category === "After Call").length },
+      { name: "During Meeting", count: active.filter(s => s.category === "During Meeting").length },
+      { name: "After Meeting",  count: active.filter(s => s.category === "After Meeting").length },
+      { name: "After Closing",  count: active.filter(s => s.category === "After Closing").length },
+    ];
+  }, [sops]);
 
   /* ── Filtered + sorted list ── */
   const filtered = useMemo(() => {
-    let list = sops.filter(s => {
+    let list = (sops || []).filter(s => {
+      if (!s) return false;
       if (filter !== "All" && s.category !== filter) return false;
       if (statusFilter !== "All" && s.status !== statusFilter) return false;
-      if (selectedService && selectedService !== "All Services" && s.service !== selectedService) return false;
-      const qLow = q.toLowerCase();
-      return !qLow || s.title.toLowerCase().includes(qLow) || s.tags.join(" ").toLowerCase().includes(qLow) || s.description.toLowerCase().includes(qLow);
+      const sopServices = s.services?.length ? s.services : [s.service || "All Services"];
+      if (selectedService && selectedService !== "All Services" && !sopServices.includes("All Services") && !sopServices.includes(selectedService)) return false;
+      const qLow = (q || "").toLowerCase();
+      const titleMatch = (s.title || "").toLowerCase().includes(qLow);
+      const tagMatch = Array.isArray(s.tags) && s.tags.join(" ").toLowerCase().includes(qLow);
+      const descMatch = (s.description || "").toLowerCase().includes(qLow);
+      return !qLow || titleMatch || tagMatch || descMatch;
     });
-    if (sortBy === "newest")   list = [...list].sort((a, b) => b.updated?.localeCompare(a.updated));
+    if (sortBy === "newest")   list = [...list].sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
     if (sortBy === "priority") list = [...list].sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9));
-    if (sortBy === "category") list = [...list].sort((a, b) => a.category.localeCompare(b.category));
-    if (sortBy === "title")    list = [...list].sort((a, b) => a.title.localeCompare(b.title));
+    if (sortBy === "category") list = [...list].sort((a, b) => (a.category || "").localeCompare(b.category || ""));
+    if (sortBy === "title")    list = [...list].sort((a, b) => (a.title || "").localeCompare(b.title || ""));
     return list;
   }, [sops, q, filter, statusFilter, sortBy, selectedService]);
 
@@ -1926,7 +1820,8 @@ export default function SOP() {
                            .map((s, i) => ({ step: i + 1, title: s.text }))
                            .filter(s => s.title),
       attachment_url:    null,
-      service:           formData.service || "All Services",
+      services:          formData.services?.length ? formData.services : ["All Services"],
+      service:           (formData.services?.length ? formData.services[0] : formData.service) || "All Services",
     };
   
     if (editSop) {

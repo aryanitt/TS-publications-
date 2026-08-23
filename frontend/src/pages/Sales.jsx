@@ -466,6 +466,9 @@ function SalesPipelineStatus({ service, employee, periodPreset, periodBounds }) 
   const hotData = useMemo(() => STAGES.map(s => stats?.Hot?.[s] ?? 0), [stats]);
   const warmData = useMemo(() => STAGES.map(s => stats?.Warm?.[s] ?? 0), [stats]);
   const coldData = useMemo(() => STAGES.map(s => stats?.Cold?.[s] ?? 0), [stats]);
+  const totalData = useMemo(() => {
+    return STAGES.map((_, i) => (hotData[i] || 0) + (warmData[i] || 0) + (coldData[i] || 0));
+  }, [hotData, warmData, coldData]);
 
   const hotStops = [
     { offset: "0%", color: "#9f1239" },
@@ -486,6 +489,12 @@ function SalesPipelineStatus({ service, employee, periodPreset, periodBounds }) 
     { offset: "100%", color: "#93c5fd" }
   ];
 
+  const totalStops = [
+    { offset: "0%", color: "#0f766e" },
+    { offset: "50%", color: "#14b8a6" },
+    { offset: "100%", color: "#5eead4" }
+  ];
+
   // Skeleton
   if (!stats) return (
     <SectionCard title="Sales Pipeline Status" subtitle="Temperature segmented conversion progression and deal flow" bodyClassName="lg:p-4 lg:pt-3">
@@ -502,8 +511,8 @@ function SalesPipelineStatus({ service, employee, periodPreset, periodBounds }) 
             </div>
           </div>
 
-          {["Hot", "Warm", "Cold"].map((label) => {
-            const cfg = TEMP_CONFIG[label];
+          {["Hot", "Warm", "Cold", "Total"].map((label) => {
+            const cfg = TEMP_CONFIG[label] || { color: "#0d9488", light: "#f0fdf4", border: "#a7f3d0", rgb: "13,148,136" };
             return (
               <div key={label} className="flex items-center gap-2 sm:gap-3 md:gap-4 lg:gap-2.5">
                 <div className="w-9 sm:w-12 md:w-14 lg:w-11 flex-shrink-0 text-right pr-0.5 sm:pr-1">
@@ -622,6 +631,32 @@ function SalesPipelineStatus({ service, employee, periodPreset, periodBounds }) 
             hoveredBubble={hoveredBubble}
             setHoveredBubble={setHoveredBubble}
           />
+
+          {/* Simple Total Summary Row */}
+          <div className="pt-2 sm:pt-2.5 mt-1 border-t border-rose-200/60 flex items-center">
+            <div className="w-9 sm:w-12 md:w-14 lg:w-11 flex-shrink-0 text-right pr-0.5 sm:pr-1">
+              <span className="text-[8px] sm:text-[10px] md:text-xs lg:text-[10px] font-black tracking-wider uppercase text-slate-900">
+                TOTAL
+              </span>
+            </div>
+            <div className="flex-1 relative h-8 sm:h-9 bg-slate-100/80 rounded-lg sm:rounded-xl border border-slate-200 flex items-center">
+              {totalData.map((val, idx) => (
+                <span
+                  key={idx}
+                  className={`absolute -translate-x-1/2 px-2 py-0.5 rounded-md text-[9px] sm:text-xs font-black tabular-nums border shadow-2xs ${
+                    idx === 0
+                      ? "bg-rose-50 text-rose-700 border-rose-200"
+                      : idx === 4
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-white text-slate-800 border-slate-200"
+                  }`}
+                  style={{ left: `${10 + idx * 20}%` }}
+                >
+                  {val}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -894,72 +929,45 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
 
 function SalesAIInsights({ showToast, employee }) {
   const [refreshing, setRefreshing] = useState(false);
+  const [cards, setCards] = useState([]);
+  const [funnelData, setFunnelData] = useState({
+    value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match"
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (employee) params.set("employee", employee);
+
+    apiGet(`/api/sales/emp-leads/sales-ai-insights?${params.toString()}`, { skipCache: true, cacheTtl: 0 })
+      .then((data) => {
+        if (data && data.success) {
+          setCards(data.cards || []);
+          if (data.funnelData) setFunnelData(data.funnelData);
+        }
+      })
+      .catch((err) => console.error("Sales AI Insights fetch error:", err));
+  }, [employee]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-      if (showToast) {
-        showToast("AI insights re-evaluated successfully!");
-      }
-    }, 600);
+    const params = new URLSearchParams();
+    if (employee) params.set("employee", employee);
+
+    apiGet(`/api/sales/emp-leads/sales-ai-insights?${params.toString()}`, { skipCache: true, cacheTtl: 0 })
+      .then((data) => {
+        if (data && data.success) {
+          setCards(data.cards || []);
+          if (data.funnelData) setFunnelData(data.funnelData);
+        }
+      })
+      .catch((err) => console.error("Sales AI Insights refresh error:", err))
+      .finally(() => {
+        setRefreshing(false);
+        if (showToast) showToast("AI insights re-evaluated successfully!");
+      });
   };
 
-  const empLower = String(employee || "All Employees").toLowerCase();
-  const isAryan = empLower.includes("aryan");
-  const isRitik = empLower.includes("ritik");
-
-  const insightsList = useMemo(() => {
-    if (isAryan) return [];
-    if (isRitik) {
-      return [
-        {
-          title: "Ritik",
-          badge: "WARM LEAD",
-          tone: "info",
-          desc: "New lead assigned to you. Initial touchpoint scheduled. High conversion opportunity.",
-          actionText: "Call Lead",
-          actionToast: "Starting call to Ritik..."
-        }
-      ];
-    }
-    return [
-      {
-        title: "Nimbus Labs",
-        badge: "92% WIN PROB",
-        tone: "purple",
-        desc: "Proposal sent. High touchpoint activity from decision makers. Win probability is outstanding.",
-        actionText: "Notify Rep",
-        actionToast: "Rep notified to trigger follow-up workflow"
-      },
-      {
-        title: "Pylon Corp",
-        badge: "HIGH RISK",
-        tone: "warn",
-        desc: "Stalled in Negotiation for 5 days. High lead value (₹2.4L) makes this a priority intervention.",
-        actionText: "Send Reminder",
-        actionToast: "Follow-up email reminder sent to AE"
-      },
-      {
-        title: "Ritu Verma",
-        badge: "98% HOT",
-        tone: "success",
-        desc: "3 separate pricing page visits in last 24h. Unassigned lead in \"New Lead\" stage.",
-        actionText: "Assign AE",
-        actionToast: "Lead successfully assigned to Priya"
-      }
-    ];
-  }, [isAryan, isRitik]);
-
-  const funnelData = useMemo(() => {
-    if (isAryan) {
-      return { value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match" };
-    }
-    if (isRitik) {
-      return { value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match" };
-    }
-    return { value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match" };
-  }, [isAryan, isRitik]);
+  const insightsList = cards;
 
   return (
     <SectionCard

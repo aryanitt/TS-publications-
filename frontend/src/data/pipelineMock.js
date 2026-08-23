@@ -145,21 +145,22 @@ export function leadFromForm(raw) {
 }
 
 export function getPipelineSummary(leads) {
-  const total = leads.length;
+  const list = Array.isArray(leads) ? leads.filter(Boolean) : [];
+  const total = list.length;
   let hot = 0;
   let warm = 0;
   let cold = 0;
-  for (const l of leads) {
+  for (const l of list) {
     const temp = String(l.temperature || l.status || "").toLowerCase();
     if (l.priority === "HOT" || temp.includes("hot")) hot += 1;
     else if (l.priority === "COLD" || temp.includes("cold")) cold += 1;
     else warm += 1;
   }
-  const value = leads.reduce((s, l) => s + (Number(l.value) || 0), 0);
+  const value = list.reduce((s, l) => s + (Number(l.value || l.expectedRevenue || l.expected_revenue) || 0), 0);
   
-  const notInterested = leads.filter((l) => {
+  const notInterested = list.filter((l) => {
     const status = String(l.status || "").toLowerCase().trim();
-    const stage = String(l.stage || "").toLowerCase().trim();
+    const stage = String(l.stage || l.pipelineStage || l.pipeline_stage || "").toLowerCase().trim();
     return (
       status === "not interested" ||
       status === "not_interested" ||

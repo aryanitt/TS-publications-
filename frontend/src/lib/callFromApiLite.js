@@ -36,6 +36,7 @@ function resolveCallDay(apiCall) {
 
 /** Lightweight call mapper for pipeline board (skips per-call period labels). */
 export function callFromApiLite(apiCall, leads = [], resolvedLead = null) {
+  if (!apiCall) return null;
   const lead = resolvedLead ?? resolveLeadForCall({
     leadId: apiCall.leadId ?? apiCall.lead_id,
     phone: apiCall.clientPhone || apiCall.client_phone || apiCall.phone,
@@ -78,12 +79,15 @@ export function callFromApiLite(apiCall, leads = [], resolvedLead = null) {
 export function mapCallsFromApiLite(callsRaw = [], leads = []) {
   const list = Array.isArray(leads) ? leads : [];
   const index = buildLeadLookupIndex(list);
-  const mapped = (Array.isArray(callsRaw) ? callsRaw : []).map((apiCall) => {
-    const lead = resolveLeadForCallFromIndex({
-      leadId: apiCall.leadId ?? apiCall.lead_id,
-      phone: apiCall.clientPhone || apiCall.client_phone || apiCall.phone,
-    }, index, list);
-    return callFromApiLite(apiCall, list, lead);
-  });
+  const mapped = (Array.isArray(callsRaw) ? callsRaw : [])
+    .map((apiCall) => {
+      if (!apiCall) return null;
+      const lead = resolveLeadForCallFromIndex({
+        leadId: apiCall.leadId ?? apiCall.lead_id,
+        phone: apiCall.clientPhone || apiCall.client_phone || apiCall.phone,
+      }, index, list);
+      return callFromApiLite(apiCall, list, lead);
+    })
+    .filter(Boolean);
   return dedupePeriodCalls(mapped);
 }

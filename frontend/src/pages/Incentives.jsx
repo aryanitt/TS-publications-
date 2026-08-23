@@ -18,6 +18,7 @@ import toast from "react-hot-toast";
 import { apiGet } from "../lib/api.js";
 import { apiLeadToEmployee } from "../lib/leadSync.js";
 import { useEmployeeKraMetrics } from "../lib/useEmployeeKraMetrics.js";
+import { useEmployeeCompetencyScores } from "../lib/useEmployeeCompetencyScores.js";
 import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
 import { KRA_PERIODS, kraPeriodLabel } from "../lib/kraPeriod.js";
 import { CustomSelect } from "../components/CustomSelect.jsx";
@@ -569,6 +570,11 @@ export default function Incentives() {
     period: kraPeriod,
     month: kraPeriod === "month" ? selectedMonth : null,
   });
+  const { competency: liveCompetency, callsScored: competencyCallsScored } = useEmployeeCompetencyScores(selectedId, {
+    enabled: Boolean(selectedId),
+    period: kraPeriod,
+    month: kraPeriod === "month" ? selectedMonth : null,
+  });
 
   useEffect(() => {
     (async () => {
@@ -839,8 +845,8 @@ export default function Incentives() {
   );
 
   const radarData = useMemo(
-    () => selected ? Object.entries(selected.competency).map(([skill, score]) => ({ skill, score })) : [],
-    [selected],
+    () => selected ? Object.entries(liveCompetency).map(([skill, score]) => ({ skill, score })) : [],
+    [selected, liveCompetency],
   );
 
   const avgCompetency = useMemo(

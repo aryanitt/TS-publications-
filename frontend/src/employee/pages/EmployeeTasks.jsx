@@ -7,7 +7,7 @@ import {
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { EMP_SOP_CHECKLIST, getEmpAppToday, EMP_TEAM, isTaskAssignedToEmployee, formatTaskDeadlineTime, findEmpTeamMember } from "../../data/employeeMock.js";
+import { EMP_SOP_CHECKLIST, getEmpAppToday, isTaskAssignedToEmployee, formatTaskDeadlineTime, findEmpTeamMember } from "../../data/employeeMock.js";
 import { shouldPersistToApi } from "../../lib/api.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
@@ -154,7 +154,7 @@ function ChecklistItem({ label, checked, onToggle }) {
   );
 }
 
-function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, onClose, onSubmit, currentEmployee, submitting }) {
+function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, onClose, onSubmit, currentEmployee, teamMembers = [], submitting }) {
   return (
     <Drawer open={open} onClose={onClose} title="New Task" width="drawer-panel">
       <p className="text-xs text-slate-500 mb-4 pb-3 border-b border-slate-100">
@@ -212,8 +212,9 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
               value={newTask.assignee}
               onChange={(e) => setNewTask((p) => ({ ...p, assignee: e.target.value }))}
             >
-              {EMP_TEAM.map((member) => (
-                <option key={member.name} value={member.name}>
+              {teamMembers.length === 0 && <option value="">No teammates loaded</option>}
+              {teamMembers.map((member) => (
+                <option key={member.id ?? member.name} value={member.name}>
                   {member.name}
                   {member.name === currentEmployee?.name ? " (You)" : ""}
                 </option>
@@ -237,7 +238,7 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
 
 
 export default function EmployeeTasks() {
-  const { tasks, createTask, updateTaskStatus, removeTask, syncTaskWithFollowUp, employee, usingApi, loading, refreshTasks } = useEmployee();
+  const { tasks, createTask, updateTaskStatus, removeTask, syncTaskWithFollowUp, employee, usingApi, loading, refreshTasks, teamEmployees, refreshTeamEmployees } = useEmployee();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [tab, setTab] = useState("upcoming");
@@ -245,6 +246,13 @@ export default function EmployeeTasks() {
   const [search, setSearch] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(searchParams.get("action") === "add");
   const [submitting, setSubmitting] = useState(false);
+
+  // Load the real team roster for the "Assign To" picker.
+  useEffect(() => {
+    if (drawerOpen && !teamEmployees?.length && refreshTeamEmployees) {
+      refreshTeamEmployees();
+    }
+  }, [drawerOpen, teamEmployees?.length, refreshTeamEmployees]);
   const [newTask, setNewTask] = useState({
     name: "",
     priority: "med",
@@ -384,8 +392,11 @@ export default function EmployeeTasks() {
       return;
     }
 
-    const member = findEmpTeamMember(newTask.assignee) || findEmpTeamMember(employee?.name);
-    const assigneeName = member?.name || employee?.name || "You";
+    // Resolve the picked assignee from the real team roster (never silently
+    // reassign to the current user just because no avatar record was found).
+    const member = (teamEmployees || []).find((m) => m.name === newTask.assignee)
+      || (teamEmployees || []).find((m) => m.name === employee?.name);
+    const assigneeName = newTask.assignee || member?.name || employee?.name || "You";
     setSubmitting(true);
     try {
       const saved = await createTask({
@@ -689,6 +700,7 @@ export default function EmployeeTasks() {
         onClose={closeDrawer}
         onSubmit={addTask}
         currentEmployee={employee}
+        teamMembers={teamEmployees || []}
         submitting={submitting}
       />
     </div>

@@ -67,7 +67,7 @@ function resolvePageMeta(pathname) {
     return { ...base, ctaTo: "/services?action=addService" };
   }
   if (pathname === "/pipeline") {
-    return { ...base, ctaTo: "/pipeline?action=addLead" };
+    return { ...base, ctaTo: null };
   }
   if (pathname === "/sop") {
     return { ...base, ctaTo: "/sop?action=addSOP" };
@@ -120,7 +120,7 @@ export default function Topbar({ onMenu }) {
   const isDenseToolbar = isLeadsPage;
   const showDateRange = !hideDateRange(pathname);
   const navigate     = useNavigate();
-  const { admin, selectedService, setSelectedService, servicesList } = useAdmin();
+  const { admin, selectedService, setSelectedService, servicesList, selectedEmployee, setSelectedEmployee, employeesList } = useAdmin();
   const { logout, user }   = useAuth();
   const meta         = resolvePageMeta(pathname);
   const pipelinePeriod = String(searchParams.get("period") || "month").toLowerCase();
@@ -388,22 +388,7 @@ export default function Topbar({ onMenu }) {
             </div>
           )}
 
-          {isLeadsPage && (
-            <div className="relative hidden md:inline-flex w-auto shrink-0">
-              <select
-                value={selectedService}
-                onChange={(e) => setSelectedService(e.target.value)}
-                className="bg-white border border-[#FFD6E5] hover:border-[#fda4af] text-[11px] md:text-xs font-semibold text-[#111827] px-2.5 md:px-3 h-9 md:h-10 rounded-xl outline-none transition cursor-pointer appearance-none pr-7 md:pr-8 w-[7.5rem] md:w-36 lg:w-40 truncate"
-                style={{
-                  background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23DC143C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 8px center/14px"
-                }}
-              >
-              {(servicesList?.length ? servicesList : CANONICAL_SERVICES).map((s) => (
-                <option key={s} value={s}>{s.length > 28 ? s.slice(0, 26) + "..." : s}</option>
-              ))}
-              </select>
-            </div>
-          )}
+
 
           {meta.ctaTo && (
             <button

@@ -26,7 +26,7 @@ export function StatCard({
   icon: Icon,
   tone = "primary",
   changeTone,
-  sub = "vs last period",
+  sub,
   iconBg,
   iconColor,
   hover = true,
@@ -61,31 +61,34 @@ export function StatCard({
   return (
     <GlassCard
       hover={hover}
-      className={`h-full ${compact ? "p-2.5 sm:p-4 min-h-[88px] sm:min-h-[108px]" : "p-4 sm:p-5 min-h-[108px] sm:min-h-[118px]"} flex flex-col justify-between !bg-white !border-slate-200/80 !from-white !via-white !to-white !shadow-[0_2px_8px_rgba(15,23,42,0.04)] ${className}`}
+      className={`h-full ${compact ? "p-2.5 sm:p-3.5 min-h-[84px] sm:min-h-[96px]" : "p-3.5 sm:p-4 min-h-[96px] sm:min-h-[104px]"} flex flex-col justify-between !bg-white !border-slate-200/80 !from-white !via-white !to-white !shadow-[0_2px_8px_rgba(15,23,42,0.04)] ${className}`}
     >
-      <div className="flex justify-between items-start gap-1.5 sm:gap-2">
-        <div className="min-w-0 flex-1">
-          <p className={`${compact ? "text-[8px] sm:text-[10px]" : "text-[9px] sm:text-[10px]"} font-bold text-slate-500 uppercase tracking-wider leading-tight`}>{label}</p>
-          <h4 className={`${compact ? "text-lg sm:text-2xl" : "text-xl sm:text-2xl"} font-black text-slate-900 mt-0.5 sm:mt-1 tracking-tight leading-none tabular-nums`}>{value}</h4>
+      <div className="flex justify-between items-start gap-1.5 sm:gap-2 w-full">
+        <div className="min-w-0 flex-1 flex flex-col">
+          <div className="h-7 sm:h-8 flex items-center min-w-0">
+            <p className={`${compact ? "text-[8px] sm:text-[10px]" : "text-[9px] sm:text-[10px]"} font-bold text-slate-500 uppercase tracking-wider leading-tight`}>
+              {label}
+            </p>
+          </div>
+          <h4 className={`${compact ? "text-lg sm:text-2xl" : "text-xl sm:text-2xl"} font-black text-slate-900 mt-1 tracking-tight leading-none tabular-nums`}>
+            {value}
+          </h4>
         </div>
         {Icon && (
-          <div className={`${compact ? "w-7 h-7 sm:w-9 sm:h-9" : "w-9 h-9 sm:w-10 sm:h-10"} rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColorClass}`}>
-            <Icon className={compact ? "w-3.5 h-3.5 sm:w-4 sm:h-4" : "w-[16px] h-[16px] sm:w-[18px] sm:h-[18px]"} />
+          <div className={`${compact ? "w-7 h-7 sm:w-8 sm:h-8" : "w-8 h-8 sm:w-9 sm:h-9"} rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColorClass}`}>
+            <Icon className={compact ? "w-3.5 h-3.5 sm:w-4 sm:h-4" : "w-[15px] h-[15px] sm:w-[17px] sm:h-[17px]"} />
           </div>
         )}
       </div>
-      <div className={`flex items-center gap-1.5 ${compact ? "mt-2 sm:mt-3 pt-2" : "mt-3 pt-2.5"} border-t border-slate-100 min-h-[22px] sm:min-h-[26px]`}>
-        {change ? (
-          <>
-            <span className={`text-[9px] sm:text-[10px] font-extrabold ${trendColorClass}`}>{change}</span>
-            {sub ? (
-              <span className={`text-[9px] sm:text-[10px] font-medium text-slate-400 truncate ${compact ? "hidden sm:inline" : ""}`}>{sub}</span>
-            ) : null}
-          </>
-        ) : (
-          <span className="text-[10px] font-medium text-slate-400">&nbsp;</span>
-        )}
-      </div>
+
+      {change && (
+        <div className={`flex items-center gap-1.5 ${compact ? "mt-2 pt-2" : "mt-2.5 pt-2"} border-t border-slate-100 min-h-[22px] sm:min-h-[24px]`}>
+          <span className={`text-[9px] sm:text-[10px] font-extrabold ${trendColorClass}`}>{change}</span>
+          {sub ? (
+            <span className={`text-[9px] sm:text-[10px] font-medium text-slate-400 truncate ${compact ? "hidden sm:inline" : ""}`}>{sub}</span>
+          ) : null}
+        </div>
+      )}
     </GlassCard>
   );
 }

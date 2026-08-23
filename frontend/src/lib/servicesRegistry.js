@@ -105,11 +105,7 @@ export function getDynamicServicesList(catalogServices = [], leads = []) {
   const set = new Set();
   set.add("All Services");
 
-  CANONICAL_SERVICES.forEach((s) => {
-    if (s !== "All Services") set.add(s);
-  });
-
-  if (Array.isArray(catalogServices)) {
+  if (Array.isArray(catalogServices) && catalogServices.length > 0) {
     catalogServices.forEach((s) => {
       const name = typeof s === "string" ? s : s?.name;
       const cleaned = cleanServiceName(name);
@@ -117,14 +113,9 @@ export function getDynamicServicesList(catalogServices = [], leads = []) {
         set.add(cleaned);
       }
     });
-  }
-
-  if (Array.isArray(leads)) {
-    leads.forEach((l) => {
-      const svc = extractLeadService(l);
-      if (svc && svc !== "All Services" && isValidServiceName(svc)) {
-        set.add(svc);
-      }
+  } else {
+    CANONICAL_SERVICES.forEach((s) => {
+      if (s !== "All Services") set.add(s);
     });
   }
 

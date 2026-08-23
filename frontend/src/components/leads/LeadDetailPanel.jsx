@@ -194,7 +194,7 @@ export default function LeadDetailPanel({
         });
         if (cancelled) return;
         const items = unwrapApiList(res) || [];
-        setFetchedCalls(items.map((c) => callFromApiLite(c, [liveLead])));
+        setFetchedCalls(items.map((c) => callFromApiLite(c, [liveLead])).filter(Boolean));
       } catch {
         if (!cancelled) setFetchedCalls([]);
       } finally {
@@ -228,8 +228,17 @@ export default function LeadDetailPanel({
       .sort((a, b) => new Date(b.callAt || b.date || 0) - new Date(a.callAt || a.date || 0));
   }, [resolvedCalls, liveLead]);
 
-  const leadActivities = activities[liveLead.id] || [];
-  const currentAssignee = liveLead.assignee || employee?.name || "—";
+  const currentAssignee = (
+    liveLead.assignee ||
+    liveLead.assignee_name ||
+    liveLead.assigneeName ||
+    liveLead.employeeName ||
+    liveLead.assigned_employee ||
+    liveLead.owner ||
+    (typeof liveLead.assignedTo === "object" ? liveLead.assignedTo?.name : "") ||
+    employee?.name ||
+    "—"
+  );
   const isTemperatureStatus = ["hot", "warm", "cold"].includes(liveLead.status);
 
   const isDirty = useMemo(() => {

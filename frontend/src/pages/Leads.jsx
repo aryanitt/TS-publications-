@@ -340,8 +340,8 @@ const showToast = (message, type = "success") => {
   const metrics = useMemo(() => {
     const total = queueLeads.length;
     const pickup = total;
-    const hotLeads = queueLeads.filter((l) =>
-      String(l.temperature || "").toLowerCase().includes("hot"),
+    const hotLeads = leads.filter((l) =>
+      String(l.temperature || l.status || l.priority || "").toLowerCase().includes("hot"),
     ).length;
     const converted = leads.filter(isConverted).length;
     return { total, pickup, hotLeads, converted, unassigned: total, assigned: leads.length - total };
@@ -382,7 +382,15 @@ const showToast = (message, type = "success") => {
         invalidateCache("/api/v1");
         setLeads((prev) => prev.map((l) => (
           String(getLeadId(l)) === String(getLeadId(lead))
-            ? { ...l, assignedTo: { id: employee.id, name: employee.name } }
+            ? {
+                ...l,
+                assignedTo: { id: employee.id, name: employee.name },
+                assigned_to: employee.id,
+                assignment_status: "assigned",
+                assignee_name: employee.name,
+                owner: employee.name,
+                employeeName: employee.name,
+              }
             : l
         )));
       } catch {
@@ -416,7 +424,17 @@ const showToast = (message, type = "success") => {
     const byLeadId = new Map(newAssignments.map((a) => [String(a.leadId), a.employee]));
     setLeads((prev) => prev.map((l) => {
       const emp = byLeadId.get(String(getLeadId(l)));
-      return emp ? { ...l, assignedTo: { id: emp.id, name: emp.name } } : l;
+      return emp
+        ? {
+            ...l,
+            assignedTo: { id: emp.id, name: emp.name },
+            assigned_to: emp.id,
+            assignment_status: "assigned",
+            assignee_name: emp.name,
+            owner: emp.name,
+            employeeName: emp.name,
+          }
+        : l;
     }));
   }, []);
 
@@ -584,16 +602,13 @@ const showToast = (message, type = "success") => {
           </div>
           <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 w-full md:w-auto md:justify-end">
             <div className={`${SEGMENT_WRAP} w-full md:w-auto`}>
-            {(["round-robin", "workload", "skill"]).map((m) => (
               <button
-                key={m}
                 type="button"
-                onClick={() => setAssignState(setDistributionMode(assignState, m))}
-                className={`${SEGMENT_BTN} ${assignState.distribution.mode === m ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE}`}
+                onClick={() => setAssignState(setDistributionMode(assignState, "round-robin"))}
+                className={`${SEGMENT_BTN} ${SEGMENT_BTN_ACTIVE}`}
               >
-                {modeLabels[m]}
+                Round Robin
               </button>
-            ))}
             </div>
             <button
               type="button"

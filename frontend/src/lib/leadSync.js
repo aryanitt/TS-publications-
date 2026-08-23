@@ -180,9 +180,18 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
     email: lead.email || "",
     city: lead.city || "",
     country: lead.country || "India",
-    assignee: typeof lead.assignedTo === "object"
-      ? lead.assignedTo.name
-      : (lead.assignee_name || lead.assigneeName || ""),
+    assignee: (
+      (typeof lead.assignedTo === "object" && lead.assignedTo?.name) ||
+      lead.assignee_name ||
+      lead.assigneeName ||
+      lead.assigned_employee ||
+      lead.employee_name ||
+      lead.employeeName ||
+      lead.owner ||
+      lead.assignee ||
+      (typeof lead.assignedTo === "string" ? lead.assignedTo : "") ||
+      "—"
+    ),
     assigneeId: (() => {
       const raw = lead.assignedTo ?? lead.assigned_to ?? lead.assigneeId ?? lead.assignee_id;
       if (raw == null) return null;
@@ -212,7 +221,13 @@ export function apiLeadToAdmin(lead) {
     (typeof assignedTo === "object" && assignedTo?.name) ||
     lead.assigneeName ||
     lead.assignee_name ||
-    "";
+    lead.assigned_employee ||
+    lead.employee_name ||
+    lead.employeeName ||
+    lead.owner ||
+    lead.assignee ||
+    (typeof assignedTo === "string" ? assignedTo : "") ||
+    "—";
   return {
     id: lead.id,
     lead_name: lead.leadName || lead.lead_name,
@@ -238,6 +253,9 @@ export function apiLeadToAdmin(lead) {
     assignedTo,
     assignee_name: employeeName,
     employeeName,
+    assigned_employee: employeeName,
+    owner: employeeName,
+    assignee: employeeName,
     assignment_status: lead.assignmentStatus || lead.assignment_status,
     is_bulk_uploaded: lead.sourceMeta?.integration === "bulk_upload" || lead.source_meta?.integration === "bulk_upload" || false,
   };
@@ -333,19 +351,9 @@ export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPage
 }
 
 /** Leads Assign page: two parallel filtered requests instead of full catalog pagination. */
-export async function fetchLeadsForAssignPage(apiGetFn, { headers, queueLimit = 500, assignedLimit = 500 } = {}) {
-  const cacheOpts = { headers, cacheTtl: 60_000, skipCache: false };
-  const [unassignedRes, assignedRes] = await Promise.all([
-    apiGetFn(`/api/v1/leads?assignmentStatus=unassigned&limit=${queueLimit}&page=1`, cacheOpts),
-    apiGetFn(`/api/v1/leads?assignmentStatus=assigned&limit=${assignedLimit}&page=1`, cacheOpts),
-  ]);
-  const unassigned = unwrapApiData(unassignedRes) || [];
-  const assigned = unwrapApiData(assignedRes) || [];
-  const byId = new Map();
-  for (const lead of [...unassigned, ...assigned]) {
-    if (lead?.id != null) byId.set(String(lead.id), lead);
-  }
-  return [...byId.values()];
+export async function fetchLeadsForAssignPage(apiGetFn, { headers, skipCache = true } = {}) {
+  const all = await fetchAllLeads(apiGetFn, { headers, pageSize: 500, skipCache });
+  return all;
 }
 
 /** Fetch all leads for an employee (paginates when API returns partial pages). */
@@ -393,6 +401,7 @@ export async function fetchAllEmployeeLeads(apiGetFn, employeeId, { headers, pag
 }
 
 export function apiLeadToPipeline(lead) {
+  if (!lead) return null;
   const stageRaw = lead.pipelineStage || lead.pipeline_stage || lead.status || "Lead";
   const stage = mapStageToId(stageRaw, lead.status);
   const temp = String(lead.temperature || "").toLowerCase();
@@ -401,8 +410,13 @@ export function apiLeadToPipeline(lead) {
   const owner = (typeof assignedTo === "object" && assignedTo?.name)
     || lead.assigneeName
     || lead.assignee_name
+    || lead.assigned_employee
+    || lead.employee_name
     || lead.employeeName
-    || "";
+    || lead.owner
+    || lead.assignee
+    || (typeof assignedTo === "string" ? assignedTo : "")
+    || "—";
 
   const rawName = lead.leadName || lead.lead_name || lead.name;
   const phoneNum = lead.phone || lead.phone_number || "";
@@ -433,7 +447,6 @@ export function apiLeadToPipeline(lead) {
     acceptedAt: lead.acceptedAt || lead.accepted_at || null,
     createdAt: lead.createdAt || lead.created_at || null,
     updatedAt: lead.updatedAt || lead.updated_at || lead.createdAt || new Date().toISOString(),
-    phone: lead.phone || "",
     email: lead.email || "",
     city: lead.city || "",
     source: lead.source || "Website",
@@ -442,6 +455,7 @@ export function apiLeadToPipeline(lead) {
     owner,
     assignee: owner,
     employeeName: owner,
+    assigned_employee: owner,
     winProbability: lead.winProbability ?? lead.win_probability ?? 50,
     activities: [],
     tasks: [],

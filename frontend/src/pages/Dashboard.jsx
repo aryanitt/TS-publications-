@@ -7,7 +7,7 @@ import {
   ArrowRight, Sparkles, AlertTriangle, TrendingUp, TrendingDown,
   BellRing, Brain, CheckCircle2,
   CalendarDays, Zap, ChevronDown, Search, X, Info as InfoIcon,
-  Medal, Trophy, GitBranch, BarChart3, Bell, Phone
+  Medal, Trophy, GitBranch, BarChart3, Bell, Phone, PhoneCall
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -95,7 +95,7 @@ const EMPTY_FILTER_RANGE = {
     { label: "Total Revenue", value: "₹0", icon: "DollarSign" },
     { label: "Cash Collected", value: "₹0", icon: "DollarSign" },
     { label: "Total Leads", value: "0", icon: "Users" },
-    { label: "Total Calls Made", value: "0", icon: "Phone" },
+    { label: "Total Calls", value: "0", icon: "Phone" },
     { label: "Qualified Leads", value: "0", icon: "FileText" },
     { label: "Pipeline Value", value: "₹0", icon: "DollarSign" },
     { label: "Closings", value: "0", icon: "Trophy" },
@@ -384,16 +384,6 @@ const KPI_GRADIENTS = [
 ];
 
 function KPICardsRow({ kpiData, filterKey }) {
-  const cardDefaults = [
-    { change: "+14.2%", sub: "MoM Gross Payout" },
-    { change: "+18.4%", sub: "Cash Generated" },
-    { change: "+8.5%",  sub: "New Leads" },
-    { change: "+12.4%", sub: "Call Volume" },
-    { change: "+6.2%",  sub: "Qualified" },
-    { change: "+4.2%",  sub: "Target vs Achieved" },
-    { change: "+10.5%", sub: "Closed Won" },
-  ];
-
   const tones = ["success", "purple", "warning", "info", "primary", "indigo", "success"];
   const oddCount = kpiData.length % 2 === 1;
 
@@ -409,9 +399,6 @@ function KPICardsRow({ kpiData, filterKey }) {
       >
         {kpiData.map((k, i) => {
           const Icon = iconMap[k.icon] || DollarSign;
-          const defaultVal = cardDefaults[i] || { change: "+4.2%", sub: "vs last period" };
-          const change = k.trendVal || defaultVal.change;
-          const subText = k.sub || defaultVal.sub;
           const tone = tones[i % tones.length];
           const spanClass = oddCount && i === 0 ? "col-span-2 sm:col-span-1" : "col-span-1";
 
@@ -425,8 +412,6 @@ function KPICardsRow({ kpiData, filterKey }) {
               <StatCard
                 label={k.label}
                 value={k.value}
-                change={change}
-                sub={subText}
                 icon={Icon}
                 tone={tone}
                 className="h-full"
@@ -716,79 +701,255 @@ function fmtLeaderRevenue(n) {
   return v > 0 ? `₹${Math.round(v)}` : "₹0";
 }
 
+function MultiSegmentCircle({ totalCalls, pickup, meetings, proposals, advancePay }) {
+  const [activeIdx, setActiveIdx] = useState(null);
+
+  const metrics = [
+    { key: "calls", label: "TOTAL CALLS", val: totalCalls ?? 0, color: "#3b82f6" },
+    { key: "pickup", label: "PICKUP", val: pickup ?? 0, color: "#10b981" },
+    { key: "meetings", label: "MEETING BOOKED", val: meetings ?? 0, color: "#8b5cf6" },
+    { key: "proposals", label: "PROPOSAL", val: proposals ?? 0, color: "#f59e0b" },
+    { key: "advance", label: "ADVANCE PAY", val: advancePay || "₹0", color: "#f43f5e" },
+  ];
+
+  const viewSize = 92;
+  const cx = viewSize / 2;
+  const cy = viewSize / 2;
+  const stroke = 11;
+  const rOuter = (viewSize - stroke) / 2;
+  const rInner = rOuter - stroke;
+  const gap = 2.5;
+  const slice = 360 / metrics.length;
+
+  const current = activeIdx !== null ? metrics[activeIdx] : metrics[0];
+
+  return (
+    <div className="relative w-full max-w-[84px] aspect-square mx-auto my-1 flex items-center justify-center">
+      <svg viewBox={`0 0 ${viewSize} ${viewSize}`} className="w-full h-full overflow-visible">
+        {metrics.map((m, i) => {
+          const start = i * slice + gap / 2;
+          const end = (i + 1) * slice - gap / 2;
+          const isActive = activeIdx === i;
+          const isDimmed = activeIdx !== null && !isActive;
+          return (
+            <path
+              key={m.key}
+              d={describeDonutSegment(cx, cy, rOuter, rInner, start, end)}
+              fill={m.color}
+              stroke="#fff"
+              strokeWidth={1.8}
+              opacity={isDimmed ? 0.38 : 1}
+              className="cursor-pointer transition-all duration-150 ease-out"
+              style={{
+                filter: isActive ? `brightness(1.1) drop-shadow(0 2px 4px ${m.color}66)` : undefined,
+              }}
+              onMouseEnter={() => setActiveIdx(i)}
+              onMouseLeave={() => setActiveIdx(null)}
+            />
+          );
+        })}
+        <circle cx={cx} cy={cy} r={rInner - 1} fill="#fff" />
+      </svg>
+
+      {/* Circle Center Details */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-1">
+        <span
+          className="text-[6.5px] font-extrabold uppercase tracking-wider leading-none truncate max-w-full"
+          style={{ color: current.color }}
+        >
+          {current.label}
+        </span>
+        <span className="text-xs font-black text-slate-900 tabular-nums leading-none mt-0.5 truncate max-w-full">
+          {current.val}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function buildLeaderboardFromEmployees(employees) {
   if (!Array.isArray(employees) || !employees.length) return [];
   return employees
     .map((emp) => {
-      const leads = Number(emp.leads ?? 0);
-      const conv = Number(emp.conv ?? emp.deals ?? 0);
-      const contacted = Number(emp.contacted ?? 0);
-      const convPct = leads ? Math.round((conv / leads) * 100) : 0;
-      const contactPct = leads ? Math.round((contacted / leads) * 100) : 0;
+      const totalCalls = Number(emp.total_calls || emp.calls || 0);
+      const pickup = Number(emp.pickup_calls || emp.pickup || 0);
+      const leads = Number(emp.total_leads || emp.leads || 0);
+      const meetings = Number(emp.meetings_booked || emp.meetings || 0);
+      const proposals = Number(emp.proposals_sent || emp.proposals || 0);
+      const advancePayVal = Number(emp.cash_collected || emp.advance_pay || emp.rawAdvancePay || 0);
       return {
+        id: emp.id,
         name: emp.name,
+        totalCalls: totalCalls || pickup,
         leads,
-        conv,
-        convR: `${convPct}%`,
-        qualR: `${contactPct}%`,
-        rev: fmtLeaderRevenue(emp.revenue),
+        pickup,
+        meetings,
+        proposals,
+        advancePay: fmtLeaderRevenue(advancePayVal),
+        rawAdvancePay: advancePayVal,
       };
     })
-    .sort((a, b) => b.conv - a.conv || b.leads - a.leads || a.name.localeCompare(b.name))
+    .sort((a, b) => b.totalCalls - a.totalCalls || b.pickup - a.pickup || a.name.localeCompare(b.name))
     .slice(0, 3);
 }
 
 function LeaderBoard({ employees }) {
   const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 3);
 
+  const ranks = [
+    {
+      title: "#1 Top Performer",
+      cardStyle: "border-amber-300 bg-white shadow-sm hover:border-amber-400",
+      badgeStyle: "bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-sm border-amber-300",
+      avatarBg: "bg-gradient-to-tr from-amber-500 to-yellow-400 text-white shadow-sm",
+      crownIcon: <Trophy className="w-3 h-3 text-amber-500 fill-amber-300 shrink-0" />,
+    },
+    {
+      title: "#2 Runner Up",
+      cardStyle: "border-slate-200 bg-white shadow-sm hover:border-slate-300",
+      badgeStyle: "bg-gradient-to-r from-slate-600 to-slate-500 text-white shadow-sm border-slate-300",
+      avatarBg: "bg-gradient-to-tr from-slate-600 to-slate-400 text-white shadow-sm",
+      crownIcon: <Medal className="w-3 h-3 text-slate-400 fill-slate-200 shrink-0" />,
+    },
+    {
+      title: "#3 High Achiever",
+      cardStyle: "border-orange-200 bg-white shadow-sm hover:border-orange-300",
+      badgeStyle: "bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-sm border-orange-300",
+      avatarBg: "bg-gradient-to-tr from-orange-500 to-amber-500 text-white shadow-sm",
+      crownIcon: <Medal className="w-3 h-3 text-orange-500 fill-orange-200 shrink-0" />,
+    },
+  ];
+
   return (
-    <div className={`${PANEL} p-3 sm:p-4 min-w-0`}>
+    <div className={`${PANEL} p-3.5 sm:p-4 min-w-0`}>
       <SectionHead
         icon={Trophy}
         title="Leader Board"
-        sub="Top performers by conversion rate"
+        sub="Top employees performance metrics"
         compact
-        action={topPerformers.length > 0 ? <LeaderBoardLegend /> : null}
+        action={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold">
+            <Sparkles className="w-3 h-3 text-rose-500" /> Real-time Performance
+          </span>
+        }
       />
 
       {topPerformers.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 py-8 text-center">
-          <Trophy className="w-7 h-7 text-rose-300 mx-auto mb-2" />
-          <p className="text-sm font-semibold text-slate-600">No performance data yet</p>
-          <p className="text-xs text-slate-400 mt-1">Add team members and assign leads to populate the leaderboard.</p>
+        <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 py-6 text-center">
+          <Trophy className="w-6 h-6 text-rose-300 mx-auto mb-1.5" />
+          <p className="text-xs font-semibold text-slate-600">No performance data yet</p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
           {topPerformers.map((emp, i) => {
-            const rank = LEADERBOARD_RANKS[i] || LEADERBOARD_RANKS[2];
-            const isFirst = i === 0;
+            const rank = ranks[i] || ranks[2];
+            const initials = emp.name ? emp.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "EM";
+
+            const totalCalls = Number(emp.totalCalls || emp.total_calls || emp.calls || 0);
+            const pickup = Number(emp.pickup_calls || emp.pickup || 0);
+            const leads = Number(emp.total_leads || emp.leads || 0);
+            const meetings = Number(emp.meetings_booked || emp.meetings || 0);
+            const proposals = Number(emp.proposals_sent || emp.proposals || 0);
+            const advancePayVal = Number(emp.cash_collected || emp.advance_pay || emp.rawAdvancePay || 0);
+            const advancePay = (typeof emp.advancePay === "string" && emp.advancePay !== "₹0")
+              ? emp.advancePay
+              : (emp.cash_collected ? `₹${Number(emp.cash_collected).toLocaleString('en-IN')}` : fmtLeaderRevenue(advancePayVal));
+
+            // Display total call connected data in tile 1 (total calls made / connected)
+            const callDisplayVal = totalCalls || pickup || leads;
 
             return (
               <div
                 key={`${emp.name}-${i}`}
-                className={`relative rounded-xl border px-2 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center gap-2 min-w-0 transition-shadow ${
-                  isFirst
-                    ? "border-amber-200/90 bg-gradient-to-b from-amber-50/70 to-white shadow-sm"
-                    : "border-slate-100 bg-slate-50/50 hover:bg-white hover:border-slate-200"
-                }`}
+                className={`relative rounded-xl border p-2.5 sm:p-3 flex flex-col justify-between min-w-0 transition-all duration-200 hover:shadow-md ${rank.cardStyle}`}
               >
-                <div className="w-full flex items-center justify-between gap-1.5 min-w-0">
-                  <p className="text-[10px] sm:text-xs font-bold text-slate-800 truncate leading-tight">
-                    {emp.name}
-                  </p>
-                  <span className={`inline-flex items-center gap-0.5 shrink-0 text-[8px] sm:text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border ${rank.badge}`}>
-                    <Medal className={`w-2.5 h-2.5 ${rank.medal}`} />
+                {/* Employee Header */}
+                <div className="flex items-center justify-between gap-1.5 mb-1.5 pb-1.5 border-b border-slate-100">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className={`w-8 h-8 rounded-lg grid place-items-center font-bold text-[11px] shrink-0 ${rank.avatarBg}`}>
+                      {initials}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs font-bold text-slate-900 truncate leading-tight">
+                        {emp.name}
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-medium truncate">Sales Representative</p>
+                    </div>
+                  </div>
+
+                  <span className={`inline-flex items-center gap-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-full border shrink-0 ${rank.badgeStyle}`}>
+                    {rank.crownIcon}
                     #{i + 1}
                   </span>
                 </div>
 
-                <LeaderMetricRing emp={emp} rankIdx={i} />
+                {/* Circle Multi-Metric Ring Visualization */}
+                <MultiSegmentCircle
+                  totalCalls={callDisplayVal}
+                  pickup={pickup}
+                  meetings={meetings}
+                  proposals={proposals}
+                  advancePay={advancePay}
+                />
 
-                <div className="w-full grid grid-cols-2 gap-x-1 gap-y-0.5 text-[8px] sm:text-[9px] leading-tight border-t border-slate-100/80 pt-2">
-                  <span className="text-slate-400">Leads</span>
-                  <span className="text-right font-bold text-slate-700 tabular-nums">{emp.leads}</span>
-                  <span className="text-slate-400">Deals</span>
-                  <span className="text-right font-bold text-slate-700 tabular-nums">{emp.conv}</span>
+                {/* 5 Real Metrics Grid */}
+                <div className="space-y-1.5 mt-0.5">
+                  <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
+                    {/* 1. Total Calls Made / Connected */}
+                    <div className="rounded-lg border border-slate-200/80 bg-slate-50/50 p-1.5 flex flex-col">
+                      <div className="flex items-center gap-1 text-slate-500 mb-0.5">
+                        <PhoneCall className="w-2.5 h-2.5 text-blue-500" />
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-500 truncate">Total Calls</span>
+                      </div>
+                      <span className="text-xs font-black text-slate-900 tabular-nums">
+                        {callDisplayVal}
+                      </span>
+                    </div>
+
+                    {/* 2. Pickup */}
+                    <div className="rounded-lg border border-slate-200/80 bg-slate-50/50 p-1.5 flex flex-col">
+                      <div className="flex items-center gap-1 text-slate-500 mb-0.5">
+                        <Phone className="w-2.5 h-2.5 text-emerald-500" />
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-500 truncate">Pickup</span>
+                      </div>
+                      <span className="text-xs font-black text-slate-900 tabular-nums">
+                        {pickup}
+                      </span>
+                    </div>
+
+                    {/* 3. Meeting Booked */}
+                    <div className="rounded-lg border border-slate-200/80 bg-slate-50/50 p-1.5 flex flex-col">
+                      <div className="flex items-center gap-1 text-slate-500 mb-0.5">
+                        <CalendarDays className="w-2.5 h-2.5 text-violet-500" />
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-500 truncate">Meeting Booked</span>
+                      </div>
+                      <span className="text-xs font-black text-slate-900 tabular-nums">
+                        {meetings}
+                      </span>
+                    </div>
+
+                    {/* 4. Proposal */}
+                    <div className="rounded-lg border border-slate-200/80 bg-slate-50/50 p-1.5 flex flex-col">
+                      <div className="flex items-center gap-1 text-slate-500 mb-0.5">
+                        <FileText className="w-2.5 h-2.5 text-amber-500" />
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-500 truncate">Proposal</span>
+                      </div>
+                      <span className="text-xs font-black text-slate-900 tabular-nums">
+                        {proposals}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 5. Advance Pay (Featured Bottom Banner) */}
+                  <div className="rounded-lg border border-rose-200 bg-gradient-to-r from-rose-500 via-pink-600 to-rose-600 p-2 text-white flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <DollarSign className="w-3.5 h-3.5 text-rose-100 shrink-0" />
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-rose-100 truncate">Advance Pay</span>
+                    </div>
+                    <span className="text-xs font-black tabular-nums tracking-tight shrink-0">
+                      {advancePay}
+                    </span>
+                  </div>
                 </div>
               </div>
             );
@@ -1145,6 +1306,10 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
   const hotData = SEGMENTED_STAGES.map((s) => resolved.grid?.Hot?.[s] ?? 0);
   const warmData = SEGMENTED_STAGES.map((s) => resolved.grid?.Warm?.[s] ?? 0);
   const coldData = SEGMENTED_STAGES.map((s) => resolved.grid?.Cold?.[s] ?? 0);
+  const totalData = useMemo(() => {
+    return SEGMENTED_STAGES.map((_, i) => (hotData[i] || 0) + (warmData[i] || 0) + (coldData[i] || 0));
+  }, [hotData, warmData, coldData]);
+
   const total = resolved.totalLeads ?? 0;
   const closed = resolved.conversions ?? 0;
   const overallConv = resolved.overallConv ?? 0;
@@ -1166,6 +1331,12 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
     { offset: "0%", color: "#2563eb" },
     { offset: "50%", color: "#3b82f6" },
     { offset: "100%", color: "#93c5fd" }
+  ];
+
+  const totalStops = [
+    { offset: "0%", color: "#0f766e" },
+    { offset: "50%", color: "#14b8a6" },
+    { offset: "100%", color: "#5eead4" }
   ];
 
   return (
@@ -1218,6 +1389,32 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
             hoveredBubble={hoveredBubble}
             setHoveredBubble={setHoveredBubble}
           />
+
+          {/* Simple Total Summary Row */}
+          <div className="pt-2 sm:pt-2.5 mt-1 border-t border-slate-200/80 flex items-center">
+            <div className="w-9 sm:w-12 flex-shrink-0 text-right pr-0.5 sm:pr-1">
+              <span className="text-[8px] sm:text-[10px] font-black tracking-wider uppercase text-slate-900">
+                TOTAL
+              </span>
+            </div>
+            <div className="flex-1 relative h-8 sm:h-9 bg-slate-100/80 rounded-lg sm:rounded-xl border border-slate-200 flex items-center">
+              {totalData.map((val, idx) => (
+                <span
+                  key={idx}
+                  className={`absolute -translate-x-1/2 px-2 py-0.5 rounded-md text-[9px] sm:text-xs font-black tabular-nums border shadow-2xs ${
+                    idx === 0
+                      ? "bg-rose-50 text-rose-700 border-rose-200"
+                      : idx === 4
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-white text-slate-800 border-slate-200"
+                  }`}
+                  style={{ left: `${10 + idx * 20}%` }}
+                >
+                  {val}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1238,24 +1435,103 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
 }
 
 // ─── AI Insights Panel ────────────────────────────────────────────────────────
-function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0" }) {
+function HighlightText({ text }) {
+  if (!text) return null;
+
+  const regex = /(₹\s*[\d,]+(?:\.\d+)?(?:[LKCr])?|\b[\d,]+\s*(?:calls|pickups|leads|meetings|proposals)\b|\b(?:Sarita|Ritik Verma|Sushmit Verma|Piyush Dhingra|Sourav|Rohan|Ritu Arora|Meena Pillai|Anjali Gupta|FinServe India|MediCare Plus|Narayana Farmers|Farlex|Chaitanya Agarwal|Dimpi|TheraCure|Rajat Bhai)\b)/gi;
+
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ text: text.slice(lastIndex, match.index), type: "plain" });
+    }
+    const val = match[0];
+    if (val.startsWith("₹")) {
+      parts.push({ text: val, type: "revenue" });
+    } else if (/\b[\d,]+\s*(calls|pickups|leads|meetings|proposals)\b/i.test(val)) {
+      parts.push({ text: val, type: "metric" });
+    } else {
+      parts.push({ text: val, type: "name" });
+    }
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ text: text.slice(lastIndex), type: "plain" });
+  }
+
+  return (
+    <span>
+      {parts.map((p, idx) => {
+        if (p.type === "revenue") {
+          return (
+            <span key={idx} className="font-extrabold text-emerald-800 bg-emerald-100/80 px-1 py-0.5 rounded border border-emerald-300/80 tabular-nums">
+              {p.text}
+            </span>
+          );
+        }
+        if (p.type === "metric") {
+          return (
+            <span key={idx} className="font-bold text-blue-800 bg-blue-100/80 px-1 py-0.5 rounded border border-blue-300/80 tabular-nums">
+              {p.text}
+            </span>
+          );
+        }
+        if (p.type === "name") {
+          return (
+            <span key={idx} className="font-bold text-slate-900 bg-amber-100/80 px-1 py-0.5 rounded border border-amber-300/80">
+              {p.text}
+            </span>
+          );
+        }
+        return <span key={idx}>{p.text}</span>;
+      })}
+    </span>
+  );
+}
+
+function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0", onRefresh }) {
   const isMobile = useIsMobile();
   const [refreshing, setRefreshing] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
 
-  const normalized = (Array.isArray(insights) ? insights : []).map((item) => ({
-    tone: item.tone || item.type || "check",
-    title: item.title || item.text || "Insight",
-    body: item.body || (item.text && item.title ? item.text : ""),
-  }));
+  const normalized = Array.isArray(insights)
+    ? insights
+        .filter((item) => {
+          const text = typeof item === "string" ? item : `${item.title || ""} ${item.body || ""} ${item.text || ""}`;
+          const lower = text.toLowerCase();
+          return !lower.includes("sourav") && !lower.includes("rohan") && !lower.includes("inactive");
+        })
+        .map((item) => {
+          if (typeof item === "string") {
+            return { title: item, body: "", tone: "check" };
+          }
+          return {
+            type: item.type || item.tone || "check",
+            category: item.category || "AI Insight",
+            title: item.title || item.text || "Insight",
+            body: item.body || (item.text !== item.title ? item.text : "") || "",
+            tone: item.tone || item.type || "check",
+          };
+        })
+    : [];
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
+    try {
+      if (typeof onRefresh === "function") {
+        await onRefresh();
+      }
+    } catch (e) {
+      console.warn("Refresh error:", e);
+    } finally {
       setRefreshing(false);
       setShowNotification(true);
       setTimeout(() => setShowNotification(false), 2000);
-    }, 800);
+    }
   };
 
   return (
@@ -1276,7 +1552,7 @@ function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0" }) {
         }
       />
 
-      <div className="space-y-2 sm:space-y-3 min-w-0">
+      <div className="space-y-2.5 min-w-0">
         {normalized.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-8 text-center">
             <Sparkles className="w-7 h-7 text-slate-300 mx-auto mb-2" />
@@ -1284,29 +1560,42 @@ function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0" }) {
             <p className="text-xs text-slate-400 mt-1">Insights appear from your live CRM activity and lead data.</p>
           </div>
         ) : (
-          normalized.slice(0, 2).map((item, idx) => (
-            <motion.div
-              key={`${item.title}-${idx}`}
-              whileHover={isMobile ? undefined : { y: -1 }}
-              className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0"
-            >
-              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${
-                item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
-                  ? "bg-amber-50 border-amber-100 text-amber-600"
-                  : "bg-emerald-50 border-emerald-100 text-emerald-600"
-              }`}>
-                {item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
-                  ? <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  : <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-              </div>
-              <div className="space-y-1 flex-1 min-w-0">
-                <p className="text-[11px] sm:text-xs font-bold text-slate-800 leading-snug">{item.title}</p>
-                {item.body && (
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 leading-relaxed">{item.body}</p>
-                )}
-              </div>
-            </motion.div>
-          ))
+          <div className="max-h-[385px] overflow-y-auto pr-1 space-y-2 sm:space-y-2.5 scrollbar-thin scrollbar-thumb-slate-200 hover:scrollbar-thumb-slate-300">
+            {normalized.map((item, idx) => (
+              <motion.div
+                key={`${item.title}-${idx}`}
+                whileHover={isMobile ? undefined : { y: -1 }}
+                className="p-2.5 sm:p-3 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0 shadow-2xs"
+              >
+                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg border flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                  item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
+                    ? "bg-amber-50 border-amber-100 text-amber-600"
+                    : "bg-emerald-50 border-emerald-100 text-emerald-600"
+                }`}>
+                  {item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
+                    ? <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    : <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                </div>
+                <div className="space-y-1 flex-1 min-w-0">
+                  {item.category && (
+                    <span className={`inline-block px-1.5 py-0.2 rounded text-[8px] font-extrabold uppercase tracking-wider ${
+                      item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
+                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    }`}>
+                      {item.category}
+                    </span>
+                  )}
+                  <p className="text-[11px] sm:text-xs font-bold text-slate-900 leading-snug">{item.title}</p>
+                  {item.body && (
+                    <p className="text-[10px] sm:text-[11px] text-slate-600 leading-relaxed">
+                      <HighlightText text={item.body} />
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+          </div>
         )}
 
         <motion.div
@@ -1564,24 +1853,24 @@ function ActivityHistoryDrawerContent({ items }) {
 }
 
 // Helper generators
-const getRelativeTime = (index) => {
-  const times = [
-    "12 mins ago",
-    "45 mins ago",
-    "1 hour ago",
-    "2 hours ago",
-    "4 hours ago",
-    "5 hours ago",
-    "Yesterday, 4:10 PM",
-    "Yesterday, 11:20 AM",
-    "2 days ago",
-    "3 days ago",
-    "3 days ago",
-    "4 days ago",
-    "5 days ago",
-    "1 week ago"
-  ];
-  return times[index % times.length];
+const formatRealRelativeTime = (dateInput, fallbackIndex = 0) => {
+  if (!dateInput) return getRelativeTime(fallbackIndex);
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return getRelativeTime(fallbackIndex);
+
+  const diffMs = Date.now() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  if (diffSecs < 0) return "Just now";
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return "Just now";
+  if (diffMins < 60) return `${diffMins} ${diffMins === 1 ? "min" : "mins"} ago`;
+  if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? "hour" : "hours"} ago`;
+  if (diffDays < 30) return `${diffDays} ${diffDays === 1 ? "day" : "days"} ago`;
+
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
 const getCategoryTag = (text) => {
@@ -1591,7 +1880,7 @@ const getCategoryTag = (text) => {
   if (t.includes("ui/ux")) return "UI/UX";
   if (t.includes("crm")) return "CRM Setup";
   if (t.includes("automation")) return "Automation";
-  if (t.includes("rahul") || t.includes("priya") || t.includes("aman") || t.includes("aryan")) return "Team";
+  if (t.includes("rahul") || t.includes("priya") || t.includes("aman") || t.includes("aryan") || t.includes("employee")) return "Team";
   return "System";
 };
 
@@ -1627,10 +1916,18 @@ const getActivityIconConfig = (text) => {
   };
 };
 
-// ─── Recent Activity — expanded with more items & no empty gap ───────────────
-function RecentActivityPanel({ items, filterKey }) {
+// ─── Recent Activity — expanded with real relative time & active team filter ───────────────
+function RecentActivityPanel({ items = [], filterKey }) {
   const isMobile = useIsMobile();
   const [activityDrawerOpen, setActivityDrawerOpen] = useState(false);
+
+  const activeItems = useMemo(() => {
+    if (!Array.isArray(items)) return [];
+    return items.filter((item) => {
+      const text = (item.text || "").toLowerCase();
+      return !text.includes("sourav") && !text.includes("rohan") && !text.includes("inactive");
+    });
+  }, [items]);
 
   return (
     <div className={`${PANEL} p-2.5 sm:p-5 min-w-0 w-full`}>
@@ -1650,16 +1947,17 @@ function RecentActivityPanel({ items, filterKey }) {
       <AnimatePresence mode="wait">
         <motion.div
           key={filterKey}
-          className={`space-y-0.5 pr-1 ${items.length > 6 ? "overflow-y-auto" : "overflow-y-hidden"}`}
+          className={`space-y-0.5 pr-1 ${activeItems.length > 6 ? "overflow-y-auto" : "overflow-y-hidden"}`}
           style={{ maxHeight: "240px" }}
           initial="hidden"
           animate="show"
           exit="hidden"
           variants={staggerContainer}
         >
-          {items.map((item, i) => {
+          {activeItems.map((item, i) => {
             const config = getActivityIconConfig(item.text);
             const Icon = config.icon;
+            const timeStr = formatRealRelativeTime(item.createdAt || item.created_at, i);
 
             return (
               <motion.div
@@ -1677,7 +1975,7 @@ function RecentActivityPanel({ items, filterKey }) {
                     <span className="text-[8px] font-bold uppercase text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                       {getCategoryTag(item.text)}
                     </span>
-                    <span className="text-[8px] text-slate-400 font-medium shrink-0">{getRelativeTime(i)}</span>
+                    <span className="text-[8px] text-slate-400 font-medium shrink-0">{timeStr}</span>
                   </div>
                   <p className="text-[11px] text-slate-700 group-hover:text-slate-900 leading-snug font-medium line-clamp-2">
                     {item.text}
@@ -1770,46 +2068,28 @@ function LeadDrawerContent({ lead }) {
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     const rev = payload.find(p => p.dataKey === "revenue")?.value || 0;
-    const fore = payload.find(p => p.dataKey === "forecast")?.value || 0;
-    const diff = rev - fore;
-    const isPositive = diff >= 0;
-    const pct = fore > 0 ? ((diff / fore) * 100).toFixed(1) : "0";
+    const cash = payload.find(p => p.dataKey === "cashCollected")?.value || 0;
 
     return (
-      <div className="bg-white/95 backdrop-blur-md border border-rose-100 rounded-2xl p-4 shadow-xl min-w-[200px] text-gray-800 transition-all z-[99999]">
-        <p className="text-xs uppercase font-extrabold text-rose-700 tracking-wider mb-2.5">{label} 2026</p>
-        <div className="space-y-2">
-          {/* Actual */}
+      <div className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl p-3 shadow-lg min-w-[180px] text-slate-800 transition-all z-[99999]">
+        <p className="text-xs uppercase font-extrabold text-slate-700 tracking-wider mb-2">{label}</p>
+        <div className="space-y-1.5">
+          {/* Real Revenue */}
           <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 text-gray-500 font-medium">
+            <span className="flex items-center gap-1.5 text-slate-500 font-medium">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-              Actual Revenue
+              Real Revenue
             </span>
-            <span className="font-extrabold text-gray-900">₹{rev.toFixed(1)}L</span>
+            <span className="font-extrabold text-slate-900">₹{rev.toFixed(1)}L</span>
           </div>
-          {/* Forecast */}
+          {/* Cash Collected */}
           <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 text-gray-500 font-medium">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-              Forecast Target
+            <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              Cash Collected
             </span>
-            <span className="font-semibold text-gray-600">₹{fore.toFixed(1)}L</span>
+            <span className="font-extrabold text-emerald-700">₹{cash.toFixed(1)}L</span>
           </div>
-          {/* Divider */}
-          <div className="h-px bg-gray-100 my-2" />
-          {/* Variance */}
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-500 font-medium">Variance</span>
-            <span className={`font-bold flex items-center gap-1 ${isPositive ? "text-emerald-600" : "text-rose-600"}`}>
-              {isPositive ? "+" : ""}₹{diff.toFixed(1)}L ({isPositive ? "+" : ""}{pct}%)
-            </span>
-          </div>
-        </div>
-        {/* Performance Note */}
-        <div className={`mt-3 text-[10px] font-bold text-center px-2 py-1 rounded-lg ${
-          isPositive ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-rose-50/50 text-rose-700 border border-rose-100"
-        }`}>
-          {isPositive ? "TARGET EXCEEDED" : "UNDER TARGET"}
         </div>
       </div>
     );
@@ -1817,8 +2097,8 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-// ─── REDESIGNED REVENUE TRAJECTORY CARD ──────────────────────────────────────
-function RevenueTrajectory({ data }) {
+// ─── REVENUE TRAJECTORY CARD ──────────────────────────────────────────────────
+function RevenueTrajectory({ data = [], kpis = [] }) {
   const [viewMode, setViewMode] = useState("monthly");
   const isMobile = useIsMobile(768);
   const chartHeight = isMobile ? 168 : 250;
@@ -1826,58 +2106,81 @@ function RevenueTrajectory({ data }) {
     ? { top: 6, right: 4, left: -12, bottom: 2 }
     : { top: 15, right: 30, left: 10, bottom: 8 };
 
-  // Raw metrics calculation
-  const totalActual = data.reduce((sum, item) => sum + item.revenue, 0);
-  const totalForecast = data.reduce((sum, item) => sum + item.forecast, 0);
-  const variance = totalActual - totalForecast;
-  const variancePct = totalForecast > 0 ? (variance / totalForecast) * 100 : 0;
-
-  // Average actuals (per month)
-  const avgActual = totalActual / data.length;
-
-  // MoM growth calculation
-  let momSum = 0;
-  let count = 0;
-  for (let i = 1; i < data.length; i++) {
-    const prev = data[i - 1].revenue;
-    const curr = data[i].revenue;
-    if (prev > 0) {
-      momSum += ((curr - prev) / prev) * 100;
-      count++;
+  const resolvedData = useMemo(() => {
+    if (data?.length) return data;
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const now = new Date();
+    const list = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      list.push({
+        month: monthNames[d.getMonth()],
+        revenue: 0,
+        cashCollected: 0,
+        closedCount: 0,
+      });
     }
-  }
-  const avgGrowthPct = count > 0 ? momSum / count : 0;
+    return list;
+  }, [data]);
 
-  // Monthly data preparation
-  const monthlyData = data.map(item => ({
-    ...item,
-    variance: item.revenue - item.forecast
-  }));
-
-  // Cumulative data preparation
+  // Monthly vs Cumulative
   let runningActual = 0;
-  let runningForecast = 0;
-  const cumulativeData = data.map(item => {
-    runningActual += item.revenue;
-    runningForecast += item.forecast;
-    return {
-      month: item.month,
-      revenue: runningActual,
-      forecast: runningForecast,
-      variance: runningActual - runningForecast
-    };
-  });
+  let runningCash = 0;
+  const cumulativeData = useMemo(() => {
+    let rActual = 0;
+    let rCash = 0;
+    return resolvedData.map((item) => {
+      rActual += (Number(item.revenue) || 0);
+      rCash += (Number(item.cashCollected) || 0);
+      return {
+        ...item,
+        month: item.month,
+        revenue: Math.round(rActual * 10) / 10,
+        cashCollected: Math.round(rCash * 10) / 10,
+      };
+    });
+  }, [resolvedData]);
 
-  const activeData = viewMode === "monthly" ? monthlyData : cumulativeData;
-  const avgLineVal = viewMode === "monthly" ? avgActual : null;
-  const finalTargetVal = viewMode === "cumulative" ? totalForecast : null;
+  const activeData = viewMode === "monthly" ? resolvedData : cumulativeData;
+
+  const maxVal = useMemo(() => {
+    if (!activeData.length) return 0;
+    return Math.max(
+      0,
+      ...activeData.map((d) => Math.max(Number(d.revenue) || 0, Number(d.cashCollected) || 0))
+    );
+  }, [activeData]);
+
+  const computedTotalRev = useMemo(() => {
+    const sumLakhs = activeData.reduce((acc, d) => acc + (Number(d.revenue) || 0), 0);
+    if (sumLakhs >= 100) return `₹${(sumLakhs / 100).toFixed(2)}Cr`;
+    if (sumLakhs > 0) return `₹${sumLakhs.toFixed(1)}L`;
+    return "₹0";
+  }, [activeData]);
+
+  const computedCash = useMemo(() => {
+    const sumLakhs = activeData.reduce((acc, d) => acc + (Number(d.cashCollected) || 0), 0);
+    if (sumLakhs >= 100) return `₹${(sumLakhs / 100).toFixed(2)}Cr`;
+    if (sumLakhs > 0) return `₹${sumLakhs.toFixed(1)}L`;
+    return "₹0";
+  }, [activeData]);
+
+  const computedClosings = useMemo(() => {
+    const totalClosed = activeData.reduce((acc, d) => acc + (Number(d.closedCount) || 0), 0);
+    return String(totalClosed);
+  }, [activeData]);
+
+  const pipelineVal = kpis.find((k) => k.label === "Pipeline Value")?.value || "₹0";
+  const totalRevenueVal = computedTotalRev !== "₹0" ? computedTotalRev : (kpis.find((k) => k.label === "Total Revenue" || k.label === "Revenue")?.value || "₹0");
+  const cashCollectedVal = computedCash !== "₹0" ? computedCash : (kpis.find((k) => k.label === "Cash Collected")?.value || "₹0");
+  const closingsVal = computedClosings !== "0" ? computedClosings : (kpis.find((k) => k.label === "Closings")?.value || "0");
 
   return (
     <div className={`${PANEL} p-3 sm:p-5`}>
       <SectionHead
         icon={BarChart3}
         title="Revenue Trajectory"
-        sub={isMobile ? "Actual vs forecast" : "Last 12 months — actual vs forecast"}
+        sub={isMobile ? "Real revenue & cash collections" : "Real monthly revenue & cash collected from DB"}
         action={
           <div className="inline-flex p-0.5 sm:p-1 rounded-lg bg-slate-100 border border-slate-200">
             {["monthly", "cumulative"].map((mode) => (
@@ -1896,53 +2199,53 @@ function RevenueTrajectory({ data }) {
         }
       />
 
-      {/* Summary stats */}
+      {/* Summary stats: 4 Real Parameters matching Top KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-3 sm:mb-5">
+        {/* Total Revenue */}
+        <div className="rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 p-2 sm:p-3 flex items-center gap-2">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+            <DollarSign className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[8px] sm:text-[9px] uppercase font-semibold text-slate-400 tracking-wide truncate">
+              {viewMode === "monthly" ? "Total Revenue" : "Cumulative Rev"}
+            </p>
+            <p className="text-xs sm:text-sm font-bold text-slate-900 tabular-nums">{totalRevenueVal}</p>
+          </div>
+        </div>
+
+        {/* Cash Collected */}
         <div className="rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 p-2 sm:p-3 flex items-center gap-2">
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
             <DollarSign className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="min-w-0">
             <p className="text-[8px] sm:text-[9px] uppercase font-semibold text-slate-400 tracking-wide truncate">
-              {viewMode === "monthly" ? "Total Revenue" : "Cumulative YTD"}
+              Cash Collected
             </p>
-            <p className="text-xs sm:text-sm font-bold text-slate-900 tabular-nums">₹{totalActual.toFixed(1)}L</p>
+            <p className="text-xs sm:text-sm font-bold text-emerald-700 tabular-nums">{cashCollectedVal}</p>
           </div>
         </div>
 
+        {/* Pipeline Value */}
         <div className="rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 p-2 sm:p-3 flex items-center gap-2">
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shrink-0">
-            <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-[8px] sm:text-[9px] uppercase font-semibold text-slate-400 tracking-wide">Target</p>
-            <p className="text-xs sm:text-sm font-bold text-slate-900 tabular-nums">₹{totalForecast.toFixed(1)}L</p>
+            <p className="text-[8px] sm:text-[9px] uppercase font-semibold text-slate-400 tracking-wide truncate">Pipeline Value</p>
+            <p className="text-xs sm:text-sm font-bold text-slate-900 tabular-nums">{pipelineVal}</p>
           </div>
         </div>
 
-        <div className={`rounded-lg sm:rounded-xl border p-2 sm:p-3 flex items-center gap-2 ${
-          variance >= 0 ? "bg-emerald-50/50 border-emerald-100" : "bg-rose-50/50 border-rose-100"
-        }`}>
-          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-md sm:rounded-lg flex items-center justify-center border shrink-0 ${
-            variance >= 0 ? "bg-emerald-50 border-emerald-100 text-emerald-600" : "bg-rose-50 border-rose-100 text-rose-600"
-          }`}>
-            {variance >= 0 ? <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-          </div>
-          <div className="min-w-0">
-            <p className="text-[8px] sm:text-[9px] uppercase font-semibold text-slate-400 tracking-wide">Variance</p>
-            <p className={`text-xs sm:text-sm font-bold tabular-nums truncate ${variance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-              {variance >= 0 ? "+" : ""}₹{variance.toFixed(1)}L
-            </p>
-          </div>
-        </div>
-
+        {/* Converted Closings */}
         <div className="rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 p-2 sm:p-3 flex items-center gap-2">
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0">
-            <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-[8px] sm:text-[9px] uppercase font-semibold text-slate-400 tracking-wide">MoM Growth</p>
-            <p className="text-xs sm:text-sm font-bold text-slate-900 tabular-nums">{avgGrowthPct.toFixed(1)}%</p>
+            <p className="text-[8px] sm:text-[9px] uppercase font-semibold text-slate-400 tracking-wide truncate">Closed Deals</p>
+            <p className="text-xs sm:text-sm font-bold text-slate-900 tabular-nums">{closingsVal}</p>
           </div>
         </div>
       </div>
@@ -1957,9 +2260,9 @@ function RevenueTrajectory({ data }) {
                   <stop offset="0%" stopColor="#e11d48" stopOpacity={0.25}/>
                   <stop offset="100%" stopColor="#e11d48" stopOpacity={0.01}/>
                 </linearGradient>
-                <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/>
+                <linearGradient id="cashGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.25}/>
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.01}/>
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="3 3" />
@@ -1978,43 +2281,26 @@ function RevenueTrajectory({ data }) {
                 fontSize={isMobile ? 8 : 10}
                 width={isMobile ? 26 : 40}
                 tickMargin={2}
+                domain={[0, maxVal > 0 ? "auto" : 5]}
                 tickFormatter={v => (isMobile ? `${v}L` : `₹${v}L`)}
                 tick={{ fill: "#475569", fontWeight: 500, fontSize: isMobile ? 8 : 10 }}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#fecdd3", strokeWidth: 1.5, strokeDasharray: "3 3" }} />
-              
 
-              {/* Delta bars */}
-              <Bar dataKey="variance" radius={[3, 3, 0, 0]} barSize={isMobile ? 8 : 14}>
-                {activeData.map((entry, index) => {
-                  const isPositive = entry.variance >= 0;
-                  return (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={isPositive ? "#10b981" : "#ef4444"}
-                      fillOpacity={0.15}
-                      stroke={isPositive ? "#059669" : "#dc2626"}
-                      strokeOpacity={0.3}
-                      strokeWidth={1}
-                    />
-                  );
-                })}
-              </Bar>
-
-              {/* Forecast (dotted line) */}
+              {/* Cash Collected (emerald solid area) */}
               <Area
                 type="monotone"
-                dataKey="forecast"
-                stroke="#3b82f6"
+                dataKey="cashCollected"
+                stroke="#10b981"
                 strokeWidth={isMobile ? 1.5 : 2}
-                strokeDasharray="5 5"
-                fill="url(#forecastGrad)"
-                name="Forecast"
+                fill="url(#cashGrad)"
+                name="Cash Collected"
+                activeDot={{ r: isMobile ? 4 : 5, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }}
               />
 
-              {/* Actuals (solid area) */}
+              {/* Revenue (solid rose area) */}
               <Area
                 type="monotone"
                 dataKey="revenue"
@@ -2058,9 +2344,14 @@ export default function Dashboard() {
     : (mergedFilter?.[filterKey] || EMPTY_FILTER_RANGE);
 
   const leaderboardData = useMemo(() => {
-    if (fd?.leaderboard?.length) return fd.leaderboard.slice(0, 3);
+    const fromApi = fd?.leaderboard;
     const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
+
+    if (fromApi?.length && fromApi.some((e) => Number(e.leads || e.total_leads || e.pickup || e.pickup_calls) > 0)) {
+      return fromApi.slice(0, 3);
+    }
     if (fromTeam.length) return fromTeam;
+    if (fromApi?.length) return fromApi.slice(0, 3);
     return [];
   }, [fd, teamEmployees]);
 
@@ -2204,7 +2495,7 @@ export default function Dashboard() {
   const cashCollectedCard = fd.kpis?.find(k => k.label === "Cash Collected") || 
                             { label: "Cash Collected", value: "₹0", icon: "DollarSign" };
   const totalLeadsValue = fd.kpis?.find(k => k.label === "Total Leads")?.value || "0";
-  const totalCallsValue = fd.kpis?.find(k => k.label === "Total Calls Made")?.value || "0";
+  const totalCallsValue = fd.kpis?.find(k => k.label === "Total Calls" || k.label === "Total Calls Made")?.value || "0";
   const qualifiedLeadsCard = fd.kpis?.find(k => k.label === "Qualified Leads") || 
                              { label: "Qualified Leads", value: "0", icon: "FileText" };
   const pipelineValueCard = fd.kpis?.find(k => k.label === "Pipeline Value") || 
@@ -2260,14 +2551,26 @@ export default function Dashboard() {
   ]);
 
   const finalKpis = [
-    { label: "Total Revenue", value: totalRevenueCard.value, icon: "DollarSign", trendVal: totalRevenueCard.trendVal, sub: totalRevenueCard.sub },
-    { label: "Cash Collected", value: cashCollectedCard.value, icon: "DollarSign", trendVal: cashCollectedCard.trendVal, sub: cashCollectedCard.sub },
+    { label: "Total Revenue", value: totalRevenueCard.value, icon: "DollarSign" },
+    { label: "Cash Collected", value: cashCollectedCard.value, icon: "DollarSign" },
     { label: "Total Leads", value: totalLeadsValue, icon: "Users" },
-    { label: "Total Calls Made", value: totalCallsValue, icon: "Phone" },
-    { label: "Qualified Leads", value: qualifiedLeadsCard.value, icon: "FileText", trendVal: qualifiedLeadsCard.trendVal, sub: qualifiedLeadsCard.sub },
-    { label: "Pipeline Value", value: pipelineValueCard.value, icon: "DollarSign", trendVal: pipelineValueCard.trendVal, sub: pipelineValueCard.sub },
+    { label: "Total Calls", value: totalCallsValue, icon: "Phone" },
+    { label: "Qualified Leads", value: qualifiedLeadsCard.value, icon: "FileText" },
+    { label: "Pipeline Value", value: pipelineValueCard.value, icon: "DollarSign" },
     { label: "Closings", value: closingsValue, icon: "Trophy" },
   ];
+
+  const handleRefreshDashboard = async () => {
+    try {
+      localStorage.removeItem("/api/dashboard");
+      const data = await apiGet("/api/dashboard", { cacheTtl: 0 });
+      if (data?.filterData) setApiFilterData(data.filterData);
+      if (Array.isArray(data?.aiInsights)) setAiInsights(data.aiInsights);
+      if (data?.revenueSeries?.length) setChartRevenue(data.revenueSeries);
+    } catch (e) {
+      console.warn("Dashboard refresh error:", e);
+    }
+  };
 
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0">
@@ -2300,11 +2603,11 @@ export default function Dashboard() {
             loading={pipelineLoading}
           />
 
-          <RevenueTrajectory data={chartRevenue} />
+          <RevenueTrajectory data={chartRevenue} kpis={finalKpis} />
         </div>
 
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0 w-full">
-          <AIInsightsPanel insights={insightItems} filterKey={filterKey} forecastValue={pipelineForecast} />
+          <AIInsightsPanel insights={insightItems} filterKey={filterKey} forecastValue={pipelineForecast} onRefresh={handleRefreshDashboard} />
           <ImpMetrics metrics={resolvedMetrics} filterKey={filterKey} />
           <RecentActivityPanel items={activityItems} filterKey={filterKey} />
         </div>

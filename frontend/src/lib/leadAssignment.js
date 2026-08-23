@@ -69,13 +69,9 @@ export function normalizeSource(raw = "") {
   return s.replace(/\s+/g, "_");
 }
 
-/** Leads Assign queue: n8n webhooks + admin manual entry only. */
-export const QUEUE_ELIGIBLE_SOURCES = new Set(["manual", "n8n"]);
-
 export function isQueueEligibleLead(lead) {
   if (!lead) return false;
-  const key = normalizeSource(lead.source || lead.form_name);
-  return QUEUE_ELIGIBLE_SOURCES.has(key);
+  return true;
 }
 
 export function isConverted(lead) {
@@ -280,18 +276,54 @@ function skillMatch(lead, emp) {
 export function computeWorkload(employees, assignments, leads) {
   const byEmp = {};
   for (const emp of employees) {
-    byEmp[emp.id] = { assigned: 0, active: 0, converted: 0, followUps: 0 };
+    if (emp && emp.id != null) {
+      byEmp[emp.id] = { assigned: 0, active: 0, converted: 0, followUps: 0 };
+    }
   }
+  const empList = Array.isArray(employees) ? employees : [];
+
   for (const lead of leads) {
+    if (!lead) continue;
     const lid = String(getLeadId(lead));
-    const a = assignments[lid];
-    if (!a) continue;
-    const eid = Number(a.employeeId) || a.employeeId;
+    const a = assignments ? assignments[lid] : null;
+
+    let targetEmp = null;
+    if (a?.employeeId) {
+      targetEmp = empList.find((e) => String(e.id) === String(a.employeeId));
+    }
+
+    if (!targetEmp) {
+      const dbAssign = lead.assignedTo;
+      if (dbAssign && typeof dbAssign === "object" && dbAssign.id != null) {
+        targetEmp = empList.find((e) => String(e.id) === String(dbAssign.id));
+      } else if (dbAssign && typeof dbAssign !== "object") {
+        targetEmp = empList.find((e) => String(e.id) === String(dbAssign));
+      }
+    }
+
+    if (!targetEmp) {
+      const rawAssigneeId = lead.assigned_to ?? lead.assignedTo ?? lead.assigneeId;
+      if (rawAssigneeId != null && rawAssigneeId !== "") {
+        targetEmp = empList.find((e) => String(e.id) === String(rawAssigneeId));
+      }
+    }
+
+    if (!targetEmp) {
+      const empName = lead.assignee_name || lead.assigneeName || lead.assignee || lead.employeeName || lead.owner;
+      if (empName) {
+        const lower = String(empName).toLowerCase().trim();
+        targetEmp = empList.find((e) => e.name && String(e.name).toLowerCase().trim() === lower);
+      }
+    }
+
+    if (!targetEmp) continue;
+
+    const eid = targetEmp.id;
     if (!byEmp[eid]) byEmp[eid] = { assigned: 0, active: 0, converted: 0, followUps: 0 };
     byEmp[eid].assigned += 1;
     if (isConverted(lead)) byEmp[eid].converted += 1;
     else if (isActiveLead(lead)) byEmp[eid].active += 1;
-    if (lead.next_followup_date) byEmp[eid].followUps += 1;
+    if (lead.next_followup_date || lead.nextFollowUp || lead.next_followup) byEmp[eid].followUps += 1;
   }
   return byEmp;
 }
@@ -460,18 +492,39 @@ export function getAssignmentForLead(state, lead) {
 
 export function isLeadUnassigned(state, lead) {
   if (!lead) return false;
-  if (getAssignmentForLead(state, lead)) return false;
 
-  const status = String(lead.assignment_status || lead.assignmentStatus || "unassigned").toLowerCase();
+  // Local localStorage state assignment check
+  const lid = String(getLeadId(lead));
+  if (state?.assignments?.[lid]) return false;
+
+  // Assignment status check
+  const status = String(lead.assignment_status || lead.assignmentStatus || "").toLowerCase().trim();
   if (["assigned", "accepted", "in_progress"].includes(status)) return false;
 
-  const raw = lead.assigned_to ?? lead.assignedTo;
-  if (raw != null && raw !== "" && raw !== 0) {
+  // Assigned rep ID or object check
+  const raw = lead.assigned_to ?? lead.assignedTo ?? lead.assigneeId;
+  if (raw != null && raw !== "" && raw !== 0 && raw !== "0") {
     if (typeof raw === "object") {
-      if (raw.id != null && raw.id !== "") return false;
+      if (raw.id != null && raw.id !== "" && raw.id !== 0 && raw.id !== "0") {
+        return false;
+      }
     } else {
       return false;
     }
+  }
+
+  // Assigned rep name string check
+  const empName = String(
+    lead.assignee_name ||
+    lead.assigneeName ||
+    lead.assignee ||
+    lead.employeeName ||
+    lead.owner ||
+    ""
+  ).trim();
+
+  if (empName && empName !== "—" && empName.toLowerCase() !== "unassigned" && empName.toLowerCase() !== "null") {
+    return false;
   }
 
   return true;

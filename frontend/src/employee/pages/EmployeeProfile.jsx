@@ -13,6 +13,10 @@ import {
   Users,
   Video,
 } from "lucide-react";
+import {
+  Tooltip, ResponsiveContainer,
+  RadarChart, PolarGrid, PolarAngleAxis, Radar,
+} from "recharts";
 import { Badge, StatCard } from "../../components/Primitives.jsx";
 import {
   SettingsSidebar,
@@ -30,6 +34,7 @@ import { CALL_CONVERSATION_LABEL, countConversationCalls } from "../../lib/callM
 import { apiDelete, apiGet } from "../../lib/api.js";
 import { getCrmHeaders } from "../../lib/crmContext.js";
 import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
+import { useEmployeeCompetencyScores } from "../../lib/useEmployeeCompetencyScores.js";
 import EmployeeProfileHeader, { DashboardScrollbarStyles } from "../components/EmployeeProfileHeader.jsx";
 
 const tabs = [
@@ -140,6 +145,11 @@ export default function EmployeeProfile() {
   }, [searchParams]);
 
   const { stats: callyzerStats } = useCallyzerStats(employee?.id, "This Month", Boolean(employee?.id));
+  const { competency, callsScored: competencyCallsScored } = useEmployeeCompetencyScores(employee?.id, {
+    enabled: Boolean(employee?.id),
+    period: "month",
+  });
+  const radarData = useMemo(() => Object.entries(competency).map(([skill, score]) => ({ skill, score })), [competency]);
 
   const stats = useMemo(() => {
     const openFollowUps = followUps.filter((f) => !f.done).length;
@@ -363,6 +373,34 @@ export default function EmployeeProfile() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="p-4 border border-rose-100/50 rounded-2xl bg-white mt-4">
+                <div className="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-[#be123c]" />
+                    <span className="text-xs font-black text-[#be123c] uppercase">Call quality (AI-scored)</span>
+                  </div>
+                  <Badge tone={competencyCallsScored ? "muted" : "warning"}>
+                    {competencyCallsScored ? `${competencyCallsScored} calls scored` : "No scored calls yet"}
+                  </Badge>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-1.5">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <RadarChart cx="50%" cy="52%" outerRadius="70%" data={radarData}>
+                      <PolarGrid stroke="#cbd5e1" />
+                      <PolarAngleAxis dataKey="skill" tick={{ fontSize: 9, fill: "#64748b" }} />
+                      <Radar name="Score" dataKey="score" stroke="#be123c" fill="#be123c" fillOpacity={0.22} strokeWidth={2} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 10, border: "1px solid #fecdd3", fontSize: 11 }}
+                        formatter={(v) => [`${v}%`, "Score"]}
+                      />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-2">
+                  Scored automatically from your recorded calls against the SOP for each lead's service. Averaged over this month.
+                </p>
               </div>
             </PanelSection>
           )}

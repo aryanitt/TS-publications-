@@ -26,6 +26,7 @@ import { usePipelineSync, invalidatePipelineBoardCache } from "../lib/usePipelin
 import { resolveLeadKanbanColumn, getPipelineStagePillCount } from "../lib/leadKanban.js";
 import { buildLeadActivityLabelMap } from "../lib/callDisplay.js";
 import { onLeadChanged, onDashboardRefresh, markLocalLeadChange } from "../lib/realtime.js";
+import { CANONICAL_SERVICES } from "../lib/servicesRegistry.js";
 
 function startLeadCardDrag(e, leadId, onDragStart) {
   e.dataTransfer.setData("text/plain", String(leadId));
@@ -232,7 +233,7 @@ export default function Pipeline() {
     }
   };
 
-  const { selectedService } = useAdmin();
+  const { selectedService, setSelectedService, servicesList, selectedEmployee, setSelectedEmployee, employeesList } = useAdmin();
 
   const filtered = useMemo(() => {
     let list = leads || [];
@@ -247,8 +248,17 @@ export default function Pipeline() {
     if (selectedService && selectedService !== "All Services") {
       list = list.filter((l) => l.service === selectedService || l.requirements === selectedService);
     }
+    if (selectedEmployee && selectedEmployee !== "All Employees") {
+      const empLower = selectedEmployee.toLowerCase();
+      list = list.filter((l) => {
+        const ownerName = String(
+          l.owner || l.assignee || l.employeeName || l.assigned_employee || (typeof l.assignedTo === "object" ? l.assignedTo?.name : "") || ""
+        ).toLowerCase();
+        return ownerName.includes(empLower) || empLower.includes(ownerName);
+      });
+    }
     return list;
-  }, [leads, search, selectedService]);
+  }, [leads, search, selectedService, selectedEmployee]);
 
   const deferredFiltered = useDeferredValue(filtered);
 
@@ -465,6 +475,37 @@ export default function Pipeline() {
               className="w-full h-10 pl-9 pr-3 rounded-xl border border-rose-100 bg-white text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
             />
           </div>
+
+          <div className="relative w-full sm:w-44 shrink-0">
+            <select
+              value={selectedEmployee}
+              onChange={(e) => setSelectedEmployee(e.target.value)}
+              className="w-full h-10 bg-white border border-rose-200 hover:border-rose-400 text-xs font-bold text-slate-800 px-3 rounded-xl outline-none transition cursor-pointer appearance-none pr-8 shadow-xs"
+              style={{
+                background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23be123c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 10px center/14px"
+              }}
+            >
+              {(employeesList?.length ? employeesList : ["All Employees", "Ritik Verma", "Sarita", "Sushmit Verma", "Piyush Dhingra"]).map((empName) => (
+                <option key={empName} value={empName}>{empName}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="relative w-full sm:w-44 shrink-0">
+            <select
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+              className="w-full h-10 bg-white border border-rose-200 hover:border-rose-400 text-xs font-bold text-slate-800 px-3 rounded-xl outline-none transition cursor-pointer appearance-none pr-8 shadow-xs truncate"
+              style={{
+                background: "url(\"data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23be123c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 10px center/14px"
+              }}
+            >
+              {(servicesList?.length ? servicesList : CANONICAL_SERVICES).map((s) => (
+                <option key={s} value={s}>{s.length > 24 ? s.slice(0, 22) + "..." : s}</option>
+              ))}
+            </select>
+          </div>
+
           <button
             type="button"
             onClick={() => setAddOpen(true)}

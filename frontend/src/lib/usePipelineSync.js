@@ -27,12 +27,13 @@ function scopeKey(scope, employeeId) {
 }
 
 function mapAdminLead(lead) {
+  if (!lead) return null;
   const mapped = apiLeadToPipeline(lead);
+  if (!mapped) return null;
   const assignmentState = getAssignmentState();
   const employeeName = getLeadEmployeeName(lead, assignmentState);
-  return employeeName
-    ? { ...mapped, owner: employeeName, assignee: employeeName, employeeName }
-    : mapped;
+  const resolvedOwner = employeeName || mapped.owner || mapped.assignee || mapped.employeeName || (typeof lead.assignedTo === "object" ? lead.assignedTo?.name : "") || "—";
+  return { ...mapped, owner: resolvedOwner, assignee: resolvedOwner, employeeName: resolvedOwner };
 }
 
 function mapTenantMeeting(row) {
@@ -63,7 +64,7 @@ function statsFromCalls(calls = []) {
 function normalizeMasterPayload(raw, { mapLeads = true, attachLeads = [] } = {}) {
   const data = raw?.data ?? raw ?? {};
   const apiLeads = mapLeads
-    ? (data.leads || []).map(mapAdminLead)
+    ? (data.leads || []).map(mapAdminLead).filter(Boolean)
     : (data.leads || []);
   const leadsForMapping = attachLeads.length ? attachLeads : apiLeads;
   const callsRaw = data.calls || [];
@@ -82,10 +83,12 @@ function normalizeMasterPayload(raw, { mapLeads = true, attachLeads = [] } = {})
 function boardSignature(board) {
   const c = board?.calls || [];
   const leads = board?.leads || [];
-  const leadParts = new Array(leads.length);
+  const leadParts = [];
   for (let i = 0; i < leads.length; i++) {
     const l = leads[i];
-    leadParts[i] = l ? `${l.id}:${l.pipelineStage || l.stage}:${l.stageOverride ? 1 : 0}` : "";
+    if (l && l.id) {
+      leadParts.push(`${l.id}:${l.pipelineStage || l.stage || ""}:${l.stageOverride ? 1 : 0}`);
+    }
   }
   return `${c.length}:${c[0]?.id ?? ""}:${c[c.length - 1]?.id ?? ""}:${board?.syncedAt ?? ""}:${leadParts.join(";")}`;
 }
