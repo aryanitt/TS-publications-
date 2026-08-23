@@ -350,6 +350,7 @@ function PlatformBadge({ platform }) {
 }
 
 function ScheduleItem({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
+  const isLeadMeeting = meeting.source === "lead" || Boolean(meeting.leadId) || (meeting.lead && meeting.lead !== "—");
   return (
     <div className="px-3 py-3 hover:bg-rose-50/50 transition group">
       <div className="flex gap-2.5">
@@ -357,7 +358,12 @@ function ScheduleItem({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <p className="text-[11px] font-bold text-slate-900 truncate">{meeting.title}</p>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+              {isLeadMeeting && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[9px] font-bold border border-rose-200" title="Meeting from Lead">
+                  Source: Lead
+                </span>
+              )}
               <PlatformBadge platform={meeting.platform} />
               {onDelete && (
                 <button
@@ -372,7 +378,10 @@ function ScheduleItem({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
             </div>
           </div>
           <p className="text-[10px] text-slate-500 mt-0.5">{meeting.time}</p>
-          <p className="text-[10px] font-semibold text-slate-700 mt-0.5 truncate">{meeting.lead}</p>
+          <p className="text-[10px] font-semibold text-slate-700 mt-0.5 truncate">
+            {meeting.lead}
+            {meeting.leadService && <span className="text-rose-600 font-normal"> · {meeting.leadService}</span>}
+          </p>
           <div className="flex gap-1.5 mt-2">
             <BtnPrimary className="!py-1 !px-2.5 !text-[10px] !rounded-lg" onClick={() => onJoin(meeting)}>
               <Video className="w-3 h-3" /> Join
@@ -442,6 +451,7 @@ function TodaySchedulePanel({ upcoming, history, onJoin, onCopyLink, onShare, on
 }
 
 function UpcomingCard({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
+  const isLeadMeeting = meeting.source === "lead" || Boolean(meeting.leadId) || (meeting.lead && meeting.lead !== "—");
   return (
     <article className="group rounded-2xl border border-rose-100/80 bg-white p-4 hover:border-rose-200 hover:shadow-[0_8px_24px_rgba(244,63,94,0.06)] transition-all">
       <div className="flex gap-3">
@@ -454,7 +464,13 @@ function UpcomingCard({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
               <p className="text-sm font-bold text-slate-900 truncate group-hover:text-rose-900 transition">{meeting.title}</p>
               <p className="text-[11px] text-slate-500 mt-0.5">{meeting.time}</p>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+              {isLeadMeeting && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold tracking-wide border border-rose-200 shadow-2xs" title="Meeting associated with a Lead">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse"></span>
+                  Source: Lead
+                </span>
+              )}
               <PlatformBadge platform={meeting.platform} />
               {onDelete && (
                 <button
@@ -470,8 +486,16 @@ function UpcomingCard({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
           </div>
           <p className="text-[11px] mt-2 truncate">
             <span className="font-semibold text-slate-800">{meeting.lead}</span>
-            <span className="text-slate-400"> · {meeting.company}</span>
+            {meeting.company && meeting.company !== "—" && <span className="text-slate-400"> · {meeting.company}</span>}
+            {meeting.leadService && <span className="text-rose-600 font-semibold"> ({meeting.leadService})</span>}
           </p>
+          {(meeting.leadPhone || meeting.leadEmail) && (
+            <p className="text-[10px] text-slate-500 mt-1 font-mono">
+              {meeting.leadPhone && <span>📞 {meeting.leadPhone}</span>}
+              {meeting.leadPhone && meeting.leadEmail && <span> · </span>}
+              {meeting.leadEmail && <span>✉️ {meeting.leadEmail}</span>}
+            </p>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-rose-50">

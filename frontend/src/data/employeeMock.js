@@ -667,6 +667,8 @@ export function meetingFromApi(apiMeeting, leads = []) {
 
   const platform = apiMeeting.location || "Google Meet";
   const mom = typeof apiMeeting.mom === "object" && apiMeeting.mom ? apiMeeting.mom : {};
+  const leadName = apiMeeting.leadName || lead?.name || lead?.leadName || (apiMeeting.leadId ? `Lead #${apiMeeting.leadId}` : "—");
+  const source = apiMeeting.source || (apiMeeting.leadId || leadName !== "—" ? "lead" : "direct");
 
   return {
     id: apiMeeting.id,
@@ -676,8 +678,12 @@ export function meetingFromApi(apiMeeting, leads = []) {
     date: schedDay,
     scheduledAt: apiMeeting.scheduledAt,
     platform,
-    lead: lead?.name || "—",
-    company: lead?.company || "—",
+    lead: leadName,
+    company: apiMeeting.leadCompany || lead?.company || "—",
+    leadPhone: apiMeeting.leadPhone || lead?.phone || "",
+    leadEmail: apiMeeting.leadEmail || lead?.email || "",
+    leadService: apiMeeting.leadService || lead?.service || lead?.formName || "",
+    source,
     color: lead?.color || "#e11d48",
     meetLink: apiMeeting.meetLink || "",
     status: apiMeeting.status || "scheduled",
