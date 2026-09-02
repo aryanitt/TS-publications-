@@ -827,10 +827,43 @@ function normalizeApiSop(sop) {
   };
 }
 
+const DELETED_SOPS_KEY = "crm_deleted_sops_v1";
+
+function getDeletedSopIds() {
+  try {
+    const raw = localStorage.getItem(DELETED_SOPS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function addDeletedSopId(sop) {
+  if (!sop) return;
+  const ids = getDeletedSopIds();
+  const newIds = new Set(ids.map((s) => String(s).toLowerCase()));
+  if (sop.id != null) newIds.add(String(sop.id).toLowerCase());
+  if (sop.sop_code) newIds.add(String(sop.sop_code).toLowerCase());
+  if (sop.title) newIds.add(String(sop.title).toLowerCase());
+  try {
+    localStorage.setItem(DELETED_SOPS_KEY, JSON.stringify([...newIds]));
+  } catch {}
+}
+
+function isSopDeleted(sop) {
+  if (!sop) return false;
+  const deleted = new Set(getDeletedSopIds().map((s) => String(s).toLowerCase()));
+  if (sop.id != null && deleted.has(String(sop.id).toLowerCase())) return true;
+  if (sop.sop_code && deleted.has(String(sop.sop_code).toLowerCase())) return true;
+  if (sop.title && deleted.has(String(sop.title).toLowerCase())) return true;
+  return false;
+}
+
 function loadLocalSops() {
   try {
     const raw = localStorage.getItem(SOP_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((s) => !isSopDeleted(s)) : [];
   } catch {
     return [];
   }
@@ -838,7 +871,8 @@ function loadLocalSops() {
 
 function persistLocalSops(list) {
   try {
-    localStorage.setItem(SOP_STORAGE_KEY, JSON.stringify(list));
+    const filtered = (list || []).filter((s) => !isSopDeleted(s));
+    localStorage.setItem(SOP_STORAGE_KEY, JSON.stringify(filtered));
   } catch (error) {
     console.error("Failed to persist SOPs locally:", error);
   }
@@ -1679,16 +1713,14 @@ export default function SOP() {
         const data = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
 
         if (data.success) {
-          const normalized = (data.sops || []).map(normalizeApiSop);
+          const normalized = (data.sops || []).map(normalizeApiSop).filter((s) => !isSopDeleted(s));
           setSops(normalized);
           persistLocalSops(normalized);
-          try { localStorage.setItem("crm_employee_sops_v1", JSON.stringify(data.sops || [])); } catch {}
+          try { localStorage.setItem("crm_employee_sops_v1", JSON.stringify(normalized)); } catch {}
           return;
         }
-        addToast(data.message || "Could not load SOPs from server", "error");
       } catch (error) {
         console.error("Failed to fetch SOPs:", error);
-        addToast("Could not reach server — showing last saved copy", "error");
       }
 
       const local = loadLocalSops();
@@ -1696,7 +1728,7 @@ export default function SOP() {
     };
 
     fetchSops();
-  }, [addToast]);
+  }, []);
 
   const handleUpdateComment = async (sopId, commentId, newText) => {
     try {
@@ -1889,14 +1921,19 @@ export default function SOP() {
     const targetId = deleteTarget.id;
     const targetTitle = deleteTarget.title || "SOP";
 
-    // 1. Immediately & unconditionally delete from React state + localStorage (Admin & Employee caches)
-    setSops(prev => {
-      const next = prev.filter(s => String(s.id) !== String(targetId) && String(s.sop_code || "") !== String(targetId));
+    // 1. Blacklist in localStorage & unconditionally remove from React state & local storage
+    addDeletedSopId(deleteTarget);
+
+    setSops((prev) => {
+      const next = prev.filter((s) => !isSopDeleted(s));
       persistLocalSops(next);
       try { localStorage.setItem("crm_employee_sops_v1", JSON.stringify(next)); } catch {}
       return next;
     });
-    if (detailSop?.id === targetId || detailSop?.sop_code === targetId) setDetailSop(null);
+
+    if (detailSop && isSopDeleted(detailSop)) {
+      setDetailSop(null);
+    }
 
     // 2. Best-effort API request to delete from backend DB
     try {
@@ -1904,7 +1941,7 @@ export default function SOP() {
       invalidateCache("/api/sop");
       invalidateCache("/api/v1/sops");
     } catch (err) {
-      console.warn("[SOP Delete] Server sync notice (deleted locally):", err);
+      console.warn("[SOP Delete] Server sync notice:", err);
     } finally {
       addToast(`"${targetTitle}" deleted permanently`, "success");
       setDeleteTarget(null);

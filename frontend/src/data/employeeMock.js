@@ -1968,13 +1968,31 @@ export function extractApiSopList(response) {
 
 export function readCachedEmployeeSops() {
   if (typeof window === "undefined") return [];
+  const deleted = new Set(
+    (() => {
+      try {
+        const raw = window.localStorage.getItem("crm_deleted_sops_v1");
+        return raw ? JSON.parse(raw).map((s) => String(s).toLowerCase()) : [];
+      } catch {
+        return [];
+      }
+    })()
+  );
   const keys = [EMP_SOP_CACHE_KEY, ADMIN_SOP_STORAGE_KEY];
   for (const key of keys) {
     try {
       const raw = window.localStorage.getItem(key);
       if (!raw) continue;
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((s) => {
+          if (!s) return false;
+          if (s.id != null && deleted.has(String(s.id).toLowerCase())) return false;
+          if (s.sop_code && deleted.has(String(s.sop_code).toLowerCase())) return false;
+          if (s.title && deleted.has(String(s.title).toLowerCase())) return false;
+          return true;
+        });
+      }
     } catch {
       /* try next key */
     }
