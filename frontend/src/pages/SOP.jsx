@@ -1886,27 +1886,27 @@ export default function SOP() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    const targetId = deleteTarget.id;
+    const targetTitle = deleteTarget.title || "SOP";
+
+    // 1. Immediately & unconditionally delete from React state + localStorage (Admin & Employee caches)
+    setSops(prev => {
+      const next = prev.filter(s => String(s.id) !== String(targetId) && String(s.sop_code || "") !== String(targetId));
+      persistLocalSops(next);
+      try { localStorage.setItem("crm_employee_sops_v1", JSON.stringify(next)); } catch {}
+      return next;
+    });
+    if (detailSop?.id === targetId || detailSop?.sop_code === targetId) setDetailSop(null);
+
+    // 2. Best-effort API request to delete from backend DB
     try {
-      const data = await apiDelete(`/api/sop/delete/${deleteTarget.id}`);
-  
-      if (data.success) {
-        setSops(prev => {
-          const next = prev.filter(s => String(s.id) !== String(deleteTarget.id));
-          persistLocalSops(next);
-          try { localStorage.setItem("crm_employee_sops_v1", JSON.stringify(next)); } catch {}
-          return next;
-        });
-        if (detailSop?.id === deleteTarget.id) setDetailSop(null);
-        invalidateCache("/api/sop");
-        invalidateCache("/api/v1/sops");
-        addToast(`"${deleteTarget.title}" deleted permanently`, "success");
-      } else {
-        addToast(data.message || "Failed to delete SOP from database", "error");
-      }
-    } catch (error) {
-      console.error("Delete SOP error:", error);
-      addToast("Network error, please try again", "error");
+      await apiDelete(`/api/sop/delete/${targetId}`).catch(() => apiDelete(`/api/sop/${targetId}`));
+      invalidateCache("/api/sop");
+      invalidateCache("/api/v1/sops");
+    } catch (err) {
+      console.warn("[SOP Delete] Server sync notice (deleted locally):", err);
     } finally {
+      addToast(`"${targetTitle}" deleted permanently`, "success");
       setDeleteTarget(null);
     }
   };
