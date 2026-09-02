@@ -228,6 +228,31 @@ export default function LeadDetailPanel({
       .sort((a, b) => new Date(b.callAt || b.date || 0) - new Date(a.callAt || a.date || 0));
   }, [resolvedCalls, liveLead]);
 
+  const patchDraft = (key) => (val) => setDraft((prev) => ({ ...prev, [key]: typeof val === "function" ? val(prev[key]) : val }));
+
+  const leadActivities = useMemo(() => {
+    if (!liveLead?.id) return [];
+    const key1 = String(liveLead.id);
+    const key2 = liveLead._dbId ? String(liveLead._dbId) : null;
+    const list = (activities && (activities[key1] || (key2 && activities[key2]))) || [];
+    return Array.isArray(list) ? list : [];
+  }, [activities, liveLead]);
+
+  const handleTemperatureChange = async (newTemp) => {
+    if (!liveLead?.id) return;
+    try {
+      if (updateLeadTemperature) {
+        await updateLeadTemperature(liveLead.id, newTemp);
+      }
+      if (onTemperatureChange) {
+        onTemperatureChange(newTemp);
+      }
+      toast.success(`Temperature updated to ${newTemp}`);
+    } catch (err) {
+      toast.error(err.message || "Failed to update temperature");
+    }
+  };
+
   const currentAssignee = (
     liveLead.assignee ||
     liveLead.assignee_name ||
@@ -361,20 +386,6 @@ export default function LeadDetailPanel({
     toast.error("Call attempt: No Answer");
     setTimeout(handleAutoReassign, 1200);
   };
-
-  const handleTemperatureChange = (nextStatus) => {
-    if (!updateLeadTemperature || nextStatus === liveLead.status) return;
-    const prevLabel = LEAD_STATUS_LABELS[liveLead.status] || liveLead.status;
-    updateLeadTemperature(liveLead.id, nextStatus);
-    addActivityRecord?.(liveLead.id, {
-      type: "note",
-      text: `Lead temperature changed from ${prevLabel} to ${LEAD_STATUS_LABELS[nextStatus]}`,
-      time: "Just now",
-    });
-    toast.success(`Lead marked as ${LEAD_STATUS_LABELS[nextStatus]}`);
-  };
-
-  const patchDraft = (key) => (val) => setDraft((prev) => ({ ...prev, [key]: val }));
 
   return (
     <div className="space-y-5 animate-fade-in pb-6">

@@ -1550,10 +1550,15 @@ function AdminSopCard({
             <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
           </div>
           <div className="flex-1 min-w-0 pr-6 sm:pr-0">
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
               <p className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-slate-700">
                 {sop.title}
               </p>
+              {(sop.sop_code || sop.sopCode || sop.id) && (
+                <span className="shrink-0 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-rose-100/80 text-rose-800 border border-rose-200" title="Unique SOP ID">
+                  {sop.sop_code || sop.sopCode || (typeof sop.id === "number" ? `SOP-${String(sop.id).padStart(3, "0")}` : sop.id)}
+                </span>
+              )}
               <span className="shrink-0 sm:hidden text-[7px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-sky-50 text-sky-700 border-sky-100">
                 {sop.category}
               </span>
@@ -1676,7 +1681,8 @@ export default function SOP() {
         if (data.success) {
           const normalized = (data.sops || []).map(normalizeApiSop);
           setSops(normalized);
-          if (normalized.length) persistLocalSops(normalized);
+          persistLocalSops(normalized);
+          try { localStorage.setItem("crm_employee_sops_v1", JSON.stringify(data.sops || [])); } catch {}
           return;
         }
         addToast(data.message || "Could not load SOPs from server", "error");
@@ -1686,8 +1692,7 @@ export default function SOP() {
       }
 
       const local = loadLocalSops();
-      if (local.length > 0) setSops(local);
-      else setSops(INITIAL_SOPS);
+      setSops(local);
     };
 
     fetchSops();
@@ -1886,31 +1891,21 @@ export default function SOP() {
   
       if (data.success) {
         setSops(prev => {
-          const next = prev.filter(s => s.id !== deleteTarget.id);
+          const next = prev.filter(s => String(s.id) !== String(deleteTarget.id));
           persistLocalSops(next);
+          try { localStorage.setItem("crm_employee_sops_v1", JSON.stringify(next)); } catch {}
           return next;
         });
         if (detailSop?.id === deleteTarget.id) setDetailSop(null);
         invalidateCache("/api/sop");
-        addToast(`"${deleteTarget.title}" deleted`, "error");
+        invalidateCache("/api/v1/sops");
+        addToast(`"${deleteTarget.title}" deleted permanently`, "success");
       } else {
-        setSops(prev => {
-          const next = prev.filter(s => s.id !== deleteTarget.id);
-          persistLocalSops(next);
-          return next;
-        });
-        if (detailSop?.id === deleteTarget.id) setDetailSop(null);
-        addToast(`"${deleteTarget.title}" deleted locally`, "info");
+        addToast(data.message || "Failed to delete SOP from database", "error");
       }
     } catch (error) {
       console.error("Delete SOP error:", error);
-      setSops(prev => {
-        const next = prev.filter(s => s.id !== deleteTarget.id);
-        persistLocalSops(next);
-        return next;
-      });
-      if (detailSop?.id === deleteTarget.id) setDetailSop(null);
-      addToast(`"${deleteTarget.title}" deleted locally`, "info");
+      addToast("Network error, please try again", "error");
     } finally {
       setDeleteTarget(null);
     }

@@ -347,7 +347,8 @@ export function resolveLeadKanbanColumn(lead, calls = [], options = {}) {
 export function filterPipelineLeadsForPeriod(leads = [], periodCalls = [], period = "month", meetings = [], kanbanIndex = null, options = {}) {
   const { adminScope = false, includeUncontactedAssignments = true, employeeId = null, scopeCallsByAssignee = false } = options;
   const list = Array.isArray(leads) ? leads : [];
-  if (adminScope) return list;
+  const pKey = String(period || "month").toLowerCase();
+  if (adminScope && pKey === "all") return list;
 
   const periodMeetings = filterMeetingsForPeriod(meetings, period);
   const meetingLeadIds = new Set(

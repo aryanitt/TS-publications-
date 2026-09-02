@@ -24,6 +24,7 @@ import { CALL_CONVERSATION_LABEL, CALL_SHORT_LABEL } from "../lib/callMetrics.js
 import { usePipelineBoard, visibleKanbanColumnLeads, hiddenKanbanColumnCount } from "../lib/usePipelineBoard.js";
 import { usePipelineSync, invalidatePipelineBoardCache } from "../lib/usePipelineSync.js";
 import { resolveLeadKanbanColumn, getPipelineStagePillCount } from "../lib/leadKanban.js";
+import { filterLeadsByActivityPeriod } from "../lib/periodFilter.js";
 import { buildLeadActivityLabelMap } from "../lib/callDisplay.js";
 import { onLeadChanged, onDashboardRefresh, markLocalLeadChange } from "../lib/realtime.js";
 import { CANONICAL_SERVICES } from "../lib/servicesRegistry.js";
@@ -304,9 +305,14 @@ export default function Pipeline() {
     return out;
   }, [grouped]);
 
-  const summary = useMemo(
-    () => getPipelineSummary(period === "month" ? filtered : kanbanLeads),
+  const summaryLeads = useMemo(
+    () => (period === "all" ? filtered : (kanbanLeads.length > 0 ? kanbanLeads : filterLeadsByActivityPeriod(filtered, period))),
     [period, filtered, kanbanLeads],
+  );
+
+  const summary = useMemo(
+    () => getPipelineSummary(summaryLeads),
+    [summaryLeads],
   );
 
   const getColumnCount = (stageId, columnLeads) => columnLeads.length;

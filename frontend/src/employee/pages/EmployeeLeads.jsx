@@ -18,6 +18,7 @@ import { CALL_CONVERSATION_LABEL, CALL_SHORT_LABEL } from "../../lib/callMetrics
 import { usePipelineBoard, visibleKanbanColumnLeads, hiddenKanbanColumnCount } from "../../lib/usePipelineBoard.js";
 import { usePipelineSync } from "../../lib/usePipelineSync.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
+import { filterLeadsByActivityPeriod } from "../../lib/periodFilter.js";
 import useIsMobile from "../../lib/useIsMobile.js";
 import EmployeeLeadDrawer from "../components/EmployeeLeadDrawer.jsx";
 import { LeadStatusBadge } from "../components/EmpUI.jsx";
@@ -320,7 +321,13 @@ export default function EmployeeLeads() {
     [grouped, periodCalls],
   );
 
-  const summary = useMemo(() => getEmpPipelineSummary(filtered), [filtered]);
+  const summaryLeads = useMemo(() => {
+    if (deferredPeriod === "all") return filtered;
+    const kanbanList = Object.values(grouped).flat();
+    return kanbanList.length > 0 ? kanbanList : filterLeadsByActivityPeriod(filtered, deferredPeriod);
+  }, [deferredPeriod, filtered, grouped]);
+
+  const summary = useMemo(() => getEmpPipelineSummary(summaryLeads), [summaryLeads]);
 
   const scrollToStage = (stageId) => {
     setActiveStage(stageId);

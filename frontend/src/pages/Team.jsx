@@ -2508,10 +2508,9 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
         {[
           { label: "Response Time", value: `${activeEmp.responseTimeMin ?? 1.8} min`, sub: "Avg first reply", icon: Clock },
           { label: "Pickup Rate", value: `${activeEmp.pickupRate ?? (assigned ? Math.round((calls / assigned) * 100) : 0)}%`, sub: "Calls answered", icon: PhoneCall },
-          { label: "Qualification Rate", value: `${activeEmp.qualificationRate ?? (assigned ? Math.round((qualified / assigned) * 100) : 0)}%`, sub: "Qualified vs total", icon: Target },
+          { label: "Qualification Rate", value: `${activeEmp.qualificationRate ?? (calls ? Math.round((meetings / calls) * 100) : (assigned ? Math.round((qualified / assigned) * 100) : 0))}%`, sub: "Meetings done vs total", icon: Target },
           { label: "Objection Handling", value: `${activeEmp.objectionHandling ?? (assigned ? Math.min(99, Math.round((qualified / assigned) * 95)) : 0)}%`, sub: "Handling score", icon: MessageSquare },
           { label: "Conversion Rate", value: `${activeEmp.conversionRate ?? (assigned ? ((converted / assigned) * 100).toFixed(1) : "0.0")}%`, sub: "Closed vs assigned", icon: TrendingUp },
-          { label: "Follow-up Quality", value: `${activeEmp.followUpQuality ?? (assigned ? Math.max(0, 100 - Math.round((followups / assigned) * 100)) : 0)}%`, sub: "On-time follow-ups", icon: Repeat },
         ].map(({ label, value, sub, icon: Icon }) => (
           <div
             key={label}

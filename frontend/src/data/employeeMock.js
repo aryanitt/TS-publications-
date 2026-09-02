@@ -685,7 +685,7 @@ export function meetingFromApi(apiMeeting, leads = []) {
     leadService: apiMeeting.leadService || lead?.service || lead?.formName || "",
     source,
     color: lead?.color || "#e11d48",
-    meetLink: apiMeeting.meetLink || "",
+    meetLink: apiMeeting.meetLink || apiMeeting.meet_link || apiMeeting.meetingLink || apiMeeting.meeting_link || apiMeeting.meeting_url || (typeof apiMeeting.location === "string" && apiMeeting.location.startsWith("http") ? apiMeeting.location : ""),
     status: apiMeeting.status || "scheduled",
     outcome: mom.outcome || undefined,
     agenda: mom.agenda || "",

@@ -259,6 +259,27 @@ function BookMeetingDrawer({
           </Field>
         </div>
 
+        {form.leadId === "__custom__" && (
+          <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-rose-50/60 border border-rose-200 animate-fade-in">
+            <Field label="Custom Lead Name">
+              <input
+                className={INPUT}
+                placeholder="e.g. John Doe"
+                value={form.customName || ""}
+                onChange={(e) => setForm((f) => ({ ...f, customName: e.target.value }))}
+              />
+            </Field>
+            <Field label="Custom Lead Phone">
+              <input
+                className={INPUT}
+                placeholder="+91 98765 43210"
+                value={form.customPhone || ""}
+                onChange={(e) => setForm((f) => ({ ...f, customPhone: e.target.value }))}
+              />
+            </Field>
+          </div>
+        )}
+
         <Field label={form.platform === "google_meet" ? "Google Meet Link" : "Meeting Link"}>
           <div className="flex gap-2">
             <div className="relative flex-1 min-w-0">
@@ -383,9 +404,20 @@ function ScheduleItem({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
             {meeting.leadService && <span className="text-rose-600 font-normal"> · {meeting.leadService}</span>}
           </p>
           <div className="flex gap-1.5 mt-2">
-            <BtnPrimary className="!py-1 !px-2.5 !text-[10px] !rounded-lg" onClick={() => onJoin(meeting)}>
-              <Video className="w-3 h-3" /> Join
-            </BtnPrimary>
+            {meeting.meetLink ? (
+              <a
+                href={meeting.meetLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-1 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold shadow-xs inline-flex items-center gap-1 transition"
+              >
+                <Video className="w-3 h-3 fill-white" /> Join Meet
+              </a>
+            ) : (
+              <BtnPrimary className="!py-1 !px-2.5 !text-[10px] !rounded-lg" onClick={() => onJoin(meeting)}>
+                <Video className="w-3 h-3" /> Join
+              </BtnPrimary>
+            )}
             {meeting.meetLink && (
               <>
                 <button
@@ -499,9 +531,20 @@ function UpcomingCard({ meeting, onJoin, onCopyLink, onShare, onDelete }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-rose-50">
-        <BtnPrimary className="!py-1.5 !px-3 !text-[11px] !rounded-xl" onClick={() => onJoin(meeting)}>
-          <Video className="w-3.5 h-3.5" /> Join
-        </BtnPrimary>
+        {meeting.meetLink ? (
+          <a
+            href={meeting.meetLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="py-1.5 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold shadow-xs inline-flex items-center gap-1.5 transition"
+          >
+            <Video className="w-3.5 h-3.5 fill-white animate-pulse" /> Join Meet
+          </a>
+        ) : (
+          <BtnPrimary className="!py-1.5 !px-3 !text-[11px] !rounded-xl" onClick={() => onJoin(meeting)}>
+            <Video className="w-3.5 h-3.5" /> Join
+          </BtnPrimary>
+        )}
         {meeting.meetLink && (
           <>
             <button
@@ -529,6 +572,7 @@ export default function EmployeeMeetings() {
     meetingsHistory,
     createMeeting,
     cancelMeeting,
+    addLead,
     refreshLeads,
     refreshMeetings,
     usingApi,
@@ -585,7 +629,13 @@ export default function EmployeeMeetings() {
   const selectedPlatform = MEETING_PLATFORMS.find((p) => p.id === form.platform) || MEETING_PLATFORMS[0];
 
   const leadOptions = useMemo(() => {
-    return [...leads]
+    const customOpt = {
+      value: "__custom__",
+      label: "➕ Custom Lead / Manual Phone Number",
+      subtitle: "Enter contact details manually for this meeting",
+      searchText: "custom new manual add phone contact lead",
+    };
+    const scopedLeads = [...leads]
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" }))
       .map((l) => {
         const phone = formatIndianPhone(l.phone);
@@ -597,6 +647,7 @@ export default function EmployeeMeetings() {
           searchText: `${l.name || ""} ${l.phone || ""} ${l.company || ""}`,
         };
       });
+    return [customOpt, ...scopedLeads];
   }, [leads]);
 
   const stats = useMemo(() => ({
@@ -724,16 +775,39 @@ export default function EmployeeMeetings() {
     }
     setSubmitting(true);
     try {
-      const saved = await createMeeting(form);
+      let activeForm = { ...form };
+      if (form.leadId === "__custom__") {
+        if (!form.customName?.trim() && !form.customPhone?.trim()) {
+          toast.error("Enter a custom lead name or phone number");
+          setSubmitting(false);
+          return;
+        }
+        try {
+          const newLead = await addLead?.({
+            lead_name: form.customName?.trim() || "Custom Lead",
+            firstName: form.customName?.trim() || "Custom Lead",
+            phone: form.customPhone?.trim() || "",
+            source: "Manual Meeting Booking",
+            stage: "Meeting Booked",
+          });
+          if (newLead?.id) {
+            activeForm.leadId = String(newLead.id);
+          }
+        } catch (err) {
+          console.error("Auto-create lead error:", err);
+        }
+      }
+
+      const saved = await createMeeting(activeForm);
       if (!saved) return;
 
-      const currentMeetLink = form.meetLink;
-      const currentTitle = form.title.trim();
-      const currentDate = form.date;
-      const currentTime = form.time;
-      const selectedLead = leads.find((l) => String(l.id) === String(form.leadId));
-      const currentLeadName = selectedLead?.name || "";
-      const currentLeadPhone = selectedLead?.phone || employee?.phone || "";
+      const currentMeetLink = activeForm.meetLink;
+      const currentTitle = activeForm.title.trim();
+      const currentDate = activeForm.date;
+      const currentTime = activeForm.time;
+      const selectedLead = leads.find((l) => String(l.id) === String(activeForm.leadId));
+      const currentLeadName = selectedLead?.name || activeForm.customName || "";
+      const currentLeadPhone = selectedLead?.phone || activeForm.customPhone || employee?.phone || "";
 
       setForm({ ...EMPTY_FORM, date: getEmpAppToday() });
       closeDrawer();

@@ -426,9 +426,16 @@ export default function ServicesDashboard() {
                     </button>
                   </div>
                 </div>
-                <h3 className="text-xs font-black text-slate-900 group-hover:text-rose-800 transition leading-snug">
-                  {service.name}
-                </h3>
+                <div className="flex items-center justify-between gap-1.5 min-w-0">
+                  <h3 className="text-xs font-black text-slate-900 group-hover:text-rose-800 transition leading-snug truncate">
+                    {service.name}
+                  </h3>
+                  {(service.serviceId || service.serviceCode || service.id) && (
+                    <span className="shrink-0 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-rose-100/80 text-rose-800 border border-rose-200" title="Unique Service ID">
+                      {service.serviceId || service.serviceCode || service.id}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] text-slate-500 mt-1 line-clamp-2 flex-1 leading-relaxed">{service.description}</p>
                 <div className="flex flex-wrap gap-1 mt-2">
                   {service.tags.map((tag) => (
