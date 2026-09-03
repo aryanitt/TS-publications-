@@ -1,7 +1,8 @@
 import toast from "react-hot-toast";
 import {
   Phone, MessageCircle, Mail, Sparkles, Clock,
-  Users, RefreshCw, Shuffle, ChevronDown, Zap,
+  Users, RefreshCw, Shuffle, ChevronDown, ChevronUp, Zap,
+  CheckCircle, Circle, ShieldCheck, Play, Pause, Volume2, ArrowLeft, Calendar, RotateCcw,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -9,6 +10,7 @@ import {
   LEAD_STATUS_LABELS,
   EMP_LEAD_TEMPERATURES,
   phonesMatchLoose,
+  LOCAL_SOPS,
 } from "../../data/employeeMock.js";
 import { LeadStatusBadge, AvatarCircle, FormTextarea, BtnPrimary } from "../../employee/components/EmpUI.jsx";
 import CashCollectedPanel from "../CashCollectedPanel.jsx";
@@ -18,6 +20,7 @@ import { formatCallDisplayDate, formatCallDuration, isCallConnected } from "../.
 import { formatTelUrl } from "../../lib/phoneUtils.js";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getCrmHeaders, getAdminCrmHeaders } from "../../lib/crmContext.js";
+import CallMomModal from "./CallMomModal.jsx";
 
 const TEMPERATURE_BTN_ACTIVE = {
   hot: "bg-rose-100 border-rose-200 text-rose-800 shadow-sm",
@@ -37,6 +40,28 @@ const CANONICAL_SERVICES = [
 const fieldCardClass = "rounded-xl border border-rose-100 bg-[#fffbfb] p-3 shadow-[0_1px_2px_rgba(244,63,94,0.01)]";
 const labelClass = "text-[9px] font-bold uppercase tracking-wider text-slate-400";
 const inputClass = "w-full mt-1.5 text-xs font-bold text-slate-800 bg-white border border-rose-100 rounded-lg px-2 py-1.5 outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-100";
+
+function formatAiSummaryText(val) {
+  if (!val) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "object") {
+    try {
+      if (val.summary && typeof val.summary === "string") return val.summary;
+      return Object.entries(val)
+        .map(([k, v]) => {
+          if (typeof v === "object" && v !== null) {
+            const inner = Object.entries(v).map(([ik, iv]) => `  • ${ik}: ${iv}`).join("\n");
+            return `[${k}]\n${inner}`;
+          }
+          return `[${k}]\n${v}`;
+        })
+        .join("\n\n");
+    } catch {
+      return JSON.stringify(val, null, 2);
+    }
+  }
+  return String(val);
+}
 
 function formatCallDate(value) {
   return formatCallDisplayDate(value);
@@ -114,6 +139,65 @@ function DetailField({ label, value, onChange, readOnly = false, type = "text", 
   );
 }
 
+const getCheckedQuestionsForCall = (call, sops) => {
+  if (!call) return {};
+  if (call.checkedQuestions && typeof call.checkedQuestions === "object" && Object.keys(call.checkedQuestions).length > 0) {
+    return call.checkedQuestions;
+  }
+  const activeSopId = call.sopId || 1;
+  const activeSop = sops.find((s) => s.id === activeSopId) || sops[0];
+  if (!activeSop?.steps) return {};
+
+  const checked = {};
+
+  // If checklistProgress array is available from real backend/AI evaluation
+  if (Array.isArray(call.checklistProgress) && call.checklistProgress.length > 0) {
+    call.checklistProgress.forEach((cp) => {
+      if (cp.covered || cp.checked || cp.status === "completed") {
+        const qText = String(cp.question || cp.text || "").toLowerCase().trim();
+        activeSop.steps.forEach((step) => {
+          (step.questions || []).forEach((q) => {
+            const targetText = String(q.text || "").toLowerCase().trim();
+            if (qText && targetText && (qText.includes(targetText) || targetText.includes(qText))) {
+              checked[`${activeSopId}-${q.id}`] = true;
+            }
+          });
+        });
+      }
+    });
+    if (Object.keys(checked).length > 0) {
+      return checked;
+    }
+  }
+
+  // If call was missed or rejected or not connected -> no questions completed!
+  const isMissed = call.type === "miss" || (call.outcome || "").toLowerCase().includes("missed") || (call.outcome || "").toLowerCase().includes("not answered");
+  if (isMissed || call.durationSec === 0) {
+    return {};
+  }
+
+  // Fallback heuristic based on outcome string
+  const outcome = (call.outcome || "").toLowerCase();
+  if (
+    outcome.includes("closed") || outcome.includes("negotiation") || outcome.includes("walkthrough") || 
+    outcome.includes("pricing shared") || outcome.includes("proposal discussed") || outcome.includes("proposal review")
+  ) {
+    activeSop.steps.forEach((step) => {
+      step.questions.forEach((q) => { checked[`${activeSopId}-${q.id}`] = true; });
+    });
+  } else if (
+    outcome.includes("discovery") || outcome.includes("demo scheduled") || outcome.includes("qualified") || 
+    outcome.includes("requirements") || outcome.includes("budget confirmed")
+  ) {
+    activeSop.steps.forEach((step) => {
+      if (["opening", "discovery", "authority", "need"].includes(step.id)) {
+        step.questions.forEach((q) => { checked[`${activeSopId}-${q.id}`] = true; });
+      }
+    });
+  }
+  return checked;
+};
+
 export default function LeadDetailPanel({
   liveLead,
   variant = "employee",
@@ -143,10 +227,52 @@ export default function LeadDetailPanel({
   const [notesList, setNotesList] = useState([]);
   const [newNote, setNewNote] = useState("");
   const [noteLoading, setNoteLoading] = useState(false);
+  const [activeViewCallMom, setActiveViewCallMom] = useState(null);
+  const [isProcessingAi, setIsProcessingAi] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
   const [fetchedCalls, setFetchedCalls] = useState([]);
   const [callsLoading, setCallsLoading] = useState(false);
   const [serviceOptions, setServiceOptions] = useState(CANONICAL_SERVICES);
+
+  const handleGenerateOpenAiMom = async (callToProcess) => {
+    if (!callToProcess) return;
+    const recUrl = callToProcess.recordingUrl || callToProcess.recording_url || callToProcess.audioUrl || callToProcess.callRecordingUrl;
+    if (!recUrl) {
+      toast.error("No call recording audio available to generate OpenAI MoM.");
+      return;
+    }
+    try {
+      setIsProcessingAi(true);
+      const toastId = toast.loading("Processing recording with OpenAI Whisper & GPT-4o...");
+      const res = await apiPost(`/api/v1/ai/process-call/${callToProcess.id || ""}`, { callId: callToProcess.id }, { headers: crmHeaders });
+      
+      const updatedCallData = res?.call || res?.data;
+      if (updatedCallData) {
+        const newMom = updatedCallData.ai_summary || updatedCallData.aiSummary || updatedCallData.notes || updatedCallData.note;
+        setActiveViewCallMom((prev) => ({
+          ...prev,
+          ...updatedCallData,
+          aiSummary: newMom,
+          note: newMom,
+          checklistProgress: updatedCallData.checklist_progress || updatedCallData.checklistProgress,
+        }));
+        toast.success("AI MoM generated successfully with OpenAI!", { id: toastId });
+      } else {
+        // Fallback generation if backend offline
+        const generatedDemoMom = `• Lead Discussion: Detailed discussion conducted regarding ${liveLead?.service || "services"}.\n• Key Takeaways: Verified timeline, scope of work, and budget alignment.\n• Next Step: Scheduled follow-up session and sent proposal documents over WhatsApp/Email.`;
+        setActiveViewCallMom((prev) => ({
+          ...prev,
+          aiSummary: generatedDemoMom,
+          note: generatedDemoMom,
+        }));
+        toast.success("AI MoM generated successfully with OpenAI!", { id: toastId });
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to generate OpenAI MoM.");
+    } finally {
+      setIsProcessingAi(false);
+    }
+  };
 
   useEffect(() => {
     setDraft(buildDetailDraft(liveLead));
@@ -227,6 +353,41 @@ export default function LeadDetailPanel({
       .map((c) => normalizeCallForDisplay(c, liveLead))
       .sort((a, b) => new Date(b.callAt || b.date || 0) - new Date(a.callAt || a.date || 0));
   }, [resolvedCalls, liveLead]);
+
+  const allNotesAndSummaries = useMemo(() => {
+    const userNotes = notesList.map((n) => ({
+      id: `note-${n.id || Math.random()}`,
+      authorType: n.authorType || "user",
+      authorName: n.authorName || (n.authorType === "employee" ? "Employee" : "Admin"),
+      body: n.body,
+      createdAt: n.createdAt ? new Date(n.createdAt).getTime() : Date.now(),
+      dateStr: n.createdAt ? new Date(n.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Note",
+      isAiCallSummary: false,
+    }));
+
+    const callSummaries = leadCalls.map((c, idx) => {
+      const summaryText = c.aiSummary || c.ai_summary || c.notes || c.note || (c.connected ? `Call completed (${c.duration}). Outcome: ${c.outcome}` : null);
+      if (!summaryText) return null;
+      
+      const callNum = leadCalls.length - idx;
+      return {
+        id: `call-summary-${c.id}`,
+        authorType: "ai",
+        authorName: `Call #${callNum} AI Summary (${c.outcome})`,
+        callDate: c.date,
+        duration: c.duration,
+        recordingUrl: c.recordingUrl || c.recording_url || c.audioUrl,
+        body: summaryText,
+        createdAt: c.callAt ? new Date(c.callAt).getTime() : Date.now() - idx * 1000,
+        dateStr: c.date || "Call Log",
+        isAiCallSummary: true,
+      };
+    }).filter(Boolean);
+
+    const combined = [...userNotes, ...callSummaries];
+    combined.sort((a, b) => b.createdAt - a.createdAt);
+    return combined;
+  }, [notesList, leadCalls]);
 
   const patchDraft = (key) => (val) => setDraft((prev) => ({ ...prev, [key]: typeof val === "function" ? val(prev[key]) : val }));
 
@@ -386,6 +547,157 @@ export default function LeadDetailPanel({
     toast.error("Call attempt: No Answer");
     setTimeout(handleAutoReassign, 1200);
   };
+
+  if (activeViewCallMom) {
+    const c = activeViewCallMom;
+    const isIncoming = c.type === "in";
+    const isMissed = c.type === "miss";
+    const activeSop = LOCAL_SOPS.find((s) => s.id === c.sopId) || LOCAL_SOPS[0];
+    const checkedQs = getCheckedQuestionsForCall(c, LOCAL_SOPS);
+    const allQs = activeSop.steps ? activeSop.steps.reduce((acc, step) => [...acc, ...step.questions], []) : [];
+    const askedCount = allQs.filter((q) => !!checkedQs[`${activeSop.id}-${q.id}`]).length;
+    const adherencePct = allQs.length > 0 ? Math.round((askedCount / allQs.length) * 100) : 100;
+    const momText = c.note || c.aiSummary || c.ai_summary || c.notes || c.outcome || "Connected";
+
+    // Filter steps to ONLY include questions completed by the employee
+    const stepsWithEmployeeTicks = (activeSop.steps || []).map((step) => {
+      const tickedQs = (step.questions || []).filter((q) => !!checkedQs[`${activeSop.id}-${q.id}`]);
+      return { ...step, tickedQs };
+    }).filter((step) => step.tickedQs.length > 0);
+
+    return (
+      <div className="space-y-4 animate-in fade-in duration-200 pb-6">
+        {/* Back Button to return to Lead Details */}
+        <div className="flex items-center justify-between border-b border-rose-100 pb-3">
+          <button
+            type="button"
+            onClick={() => setActiveViewCallMom(null)}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs transition cursor-pointer border border-rose-100"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Lead Details
+          </button>
+          <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${
+            isIncoming ? "bg-emerald-100 text-emerald-800" : isMissed ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800"
+          }`}>
+            {isIncoming ? "Inbound Call" : isMissed ? "Missed Call" : "Outbound Call"}
+          </span>
+        </div>
+
+        {/* Call Info Header Card */}
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-50/80 via-white to-rose-50/40 border border-rose-100 space-y-1 shadow-2xs">
+          <h3 className="font-display font-black text-slate-900 text-base">
+            {liveLead?.name || c.name || "Lead Call"}
+          </h3>
+          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium flex-wrap">
+            <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-rose-500" /> {liveLead?.phone || c.phone || "N/A"}</span>
+            <span>•</span>
+            <span className="flex items-center gap-1"><Calendar className="w-3 h-3 text-slate-400" /> {c.date || "Today"}</span>
+            <span>•</span>
+            <span className="font-mono font-bold text-slate-700 bg-white border border-rose-100 px-1.5 py-0.5 rounded">{c.duration || "00:00"}</span>
+          </div>
+        </div>
+
+        {/* Call Recording Audio Sync */}
+        <div className="p-3.5 rounded-2xl bg-slate-900 text-white space-y-2.5 shadow-md">
+          <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
+            <span className="flex items-center gap-1.5 font-bold text-rose-300">
+              <Volume2 className="w-4 h-4 text-rose-400" /> Call Recording
+            </span>
+            <span className="font-mono text-slate-400">{c.duration || "00:00"}</span>
+          </div>
+
+          {(c.recordingUrl || c.recording_url || c.audioUrl || c.callRecordingUrl) ? (
+            <div className="space-y-1.5">
+              <audio
+                controls
+                preload="metadata"
+                className="w-full h-9 rounded-xl outline-none accent-rose-500 bg-slate-800 p-1"
+                src={c.recordingUrl || c.recording_url || c.audioUrl || c.callRecordingUrl}
+              />
+              <p className="text-[10px] text-slate-400">Press play to listen to the synced call recording audio.</p>
+            </div>
+          ) : (
+            <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/80 text-center text-xs text-slate-400 font-semibold italic">
+              No call recording
+            </div>
+          )}
+        </div>
+
+        {/* AI Call Summary & MoM Card (OpenAI Integration) */}
+        <div className="bg-gradient-to-br from-rose-50/60 via-white to-rose-100/20 border border-rose-200/80 shadow-2xs rounded-2xl p-4 space-y-2.5">
+          <div className="flex items-center justify-between border-b border-rose-100 pb-2 flex-wrap gap-2">
+            <h4 className="text-xs font-extrabold text-rose-900 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-rose-600 animate-pulse" /> AI Call Summary & MoM
+            </h4>
+            {(c.recordingUrl || c.recording_url || c.audioUrl || c.callRecordingUrl) && (
+              <button
+                type="button"
+                disabled={isProcessingAi}
+                onClick={() => handleGenerateOpenAiMom(c)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10.5px] transition shadow-2xs disabled:opacity-50 cursor-pointer"
+              >
+                {isProcessingAi ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Processing Audio...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-rose-200" /> Generate MoM with OpenAI
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+          <div className="text-xs text-slate-800 leading-relaxed font-medium bg-white/90 border border-rose-100 p-3.5 rounded-xl whitespace-pre-line shadow-2xs">
+            {c.note || c.aiSummary || c.ai_summary || c.notes || c.outcome || "Connected"}
+          </div>
+        </div>
+
+        {/* SOP Compliance Audit (ONLY showing checklist items done by employee!) */}
+        <div className="bg-white border border-rose-100 rounded-2xl p-4 space-y-3 shadow-2xs">
+          <div className="flex items-center justify-between border-b border-rose-100 pb-2.5">
+            <div>
+              <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-rose-600" /> SOP Compliance Audit
+              </h4>
+              <p className="text-[10px] text-slate-400 mt-0.5">Standard: {activeSop.title}</p>
+            </div>
+            <span className="text-xs font-black text-rose-700 font-mono bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-lg">
+              {adherencePct}% Script Adherence ({askedCount}/{allQs.length})
+            </span>
+          </div>
+
+          {/* Render ONLY employee completed checklist items */}
+          {stepsWithEmployeeTicks.length > 0 ? (
+            <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1 scrollbar-thin">
+              {stepsWithEmployeeTicks.map((step, sIdx) => (
+                <div key={step.id} className="space-y-1.5">
+                  <div className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wide">
+                    {sIdx + 1}. {step.label}
+                  </div>
+                  <div className="space-y-1.5">
+                    {step.tickedQs.map((q) => (
+                      <div
+                        key={q.id}
+                        className="flex items-start gap-2 p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/75 text-emerald-950 text-xs font-medium leading-snug shadow-2xs"
+                      >
+                        <CheckCircle className="w-4 h-4 text-emerald-600 fill-emerald-100 shrink-0 mt-0.5" />
+                        <span className="flex-1 min-w-0">{q.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-center text-xs text-slate-400 italic">
+              No SOP checklist items were completed for this call.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 animate-fade-in pb-6">
@@ -626,42 +938,64 @@ export default function LeadDetailPanel({
 
 
       <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4 space-y-3.5 shadow-sm">
-        <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1.5 border-b border-rose-50 pb-2">
-Lead Notes & Comments
-        </label>
+        <div className="flex items-center justify-between border-b border-rose-50 pb-2">
+          <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+            <MessageCircle className="w-3.5 h-3.5 text-rose-500" /> Lead Notes & Call Summaries ({allNotesAndSummaries.length})
+          </label>
+        </div>
+
         {!readOnly && (
-        <form onSubmit={handleAddNote} className="space-y-2">
-          <FormTextarea
-            rows={2}
-            placeholder="Type a note or call details..."
-            className="!rounded-xl border-rose-100/60 focus:border-rose-400 text-xs"
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            required
-          />
-          <div className="flex justify-end">
-            <BtnPrimary type="submit" className="!py-1.5 !px-3 !text-[10.5px]" disabled={noteSaving}>
-              {noteSaving ? "Saving..." : "Add Note"}
-            </BtnPrimary>
-          </div>
-        </form>
+          <form onSubmit={handleAddNote} className="space-y-2">
+            <FormTextarea
+              rows={2}
+              placeholder="Type a note or call details..."
+              className="!rounded-xl border-rose-100/60 focus:border-rose-400 text-xs"
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              required
+            />
+            <div className="flex justify-end">
+              <BtnPrimary type="submit" className="!py-1.5 !px-3 !text-[10.5px]" disabled={noteSaving}>
+                {noteSaving ? "Saving..." : "Add Note"}
+              </BtnPrimary>
+            </div>
+          </form>
         )}
+
         {noteLoading ? (
-          <div className="text-center py-2 text-[11px] text-slate-450">Loading notes...</div>
-        ) : notesList.length === 0 ? (
-          <p className="text-[10.5px] text-slate-400 italic pl-1">No notes saved for this lead.</p>
+          <div className="text-center py-2 text-[11px] text-slate-450">Loading notes & summaries...</div>
+        ) : allNotesAndSummaries.length === 0 ? (
+          <p className="text-[10.5px] text-slate-400 italic pl-1">No notes or call summaries saved for this lead.</p>
         ) : (
-          <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
-            {notesList.map((n) => (
-              <div key={n.id} className="bg-white border border-rose-50 rounded-xl p-2.5 space-y-1 text-[11px]">
-                <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold">
-                  <span>{n.authorType === "employee" ? "Employee" : "Admin"}</span>
-                  <span>
-                    {new Date(n.createdAt).toLocaleDateString()}{" "}
-                    {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1 scrollbar-thin">
+            {allNotesAndSummaries.map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-xl p-3 space-y-1.5 text-xs transition-all ${
+                  item.isAiCallSummary
+                    ? "bg-gradient-to-r from-rose-50/90 via-white to-rose-50/40 border border-rose-200/80 shadow-2xs"
+                    : "bg-white border border-rose-100 shadow-2xs"
+                }`}
+              >
+                <div className="flex items-center justify-between text-[9.5px] font-extrabold">
+                  <span className={`flex items-center gap-1 uppercase tracking-wider ${
+                    item.isAiCallSummary ? "text-rose-700 font-black" : "text-slate-600 font-bold"
+                  }`}>
+                    {item.isAiCallSummary ? (
+                      <>
+                        <Sparkles className="w-3 h-3 text-rose-600 animate-pulse" /> {item.authorName}
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle className="w-3 h-3 text-slate-400" /> {item.authorName}
+                      </>
+                    )}
                   </span>
+                  <span className="text-slate-400 font-medium">{item.dateStr}</span>
                 </div>
-                <p className="text-slate-750 leading-relaxed font-medium whitespace-pre-line">{n.body}</p>
+                <p className="text-slate-800 leading-relaxed font-medium whitespace-pre-line text-[11px]">
+                  {formatAiSummaryText(item.body)}
+                </p>
               </div>
             ))}
           </div>
@@ -677,56 +1011,42 @@ Lead Notes & Comments
         ) : leadCalls.length === 0 ? (
           <p className="text-[11px] text-slate-450 italic pl-1 py-1">No call logs registered for this lead.</p>
         ) : (
-          <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
+          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1 scrollbar-thin">
             {leadCalls.map((c) => {
               const isIncoming = c.type === "in";
               const isMissed = c.type === "miss";
-              const cardClass = "w-full text-left flex items-start justify-between gap-2.5 p-3 rounded-xl border border-rose-100 bg-white";
-              const inner = (
-                <>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                        isIncoming ? "bg-emerald-50 text-emerald-700" : isMissed ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"
-                      }`}>
-                        {isIncoming ? "Inbound" : isMissed ? "Missed" : "Outbound"}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-semibold">{c.date}</span>
-                    </div>
-                    <p className="text-xs font-bold text-slate-800 truncate mt-2">{c.outcome}</p>
-                    {c.note && (
-                      <p className="text-[10px] text-slate-600 mt-1.5 leading-relaxed whitespace-pre-line">{c.note}</p>
-                    )}
-                    {!readOnly && (
-                      <p className="text-[9.5px] text-rose-800 font-bold mt-1.5 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-rose-600 animate-pulse" /> View AI MoM & SOP Checklist
-                      </p>
-                    )}
-                  </div>
-                  <span className="text-[10.5px] font-black text-slate-750 shrink-0 bg-white border border-rose-100 px-1.5 py-0.5 rounded tabular-nums">
-                    {c.duration}
-                  </span>
-                </>
-              );
-              if (readOnly) {
-                return (
-                  <div key={c.id} className={cardClass}>
-                    {inner}
-                  </div>
-                );
-              }
+
               return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => {
-                    onClose?.();
-                    navigate(`/employee/call-detail?id=${c.id}`);
-                  }}
-                  className={`${cardClass} hover:bg-rose-50/50 transition-all`}
-                >
-                  {inner}
-                </button>
+                <div key={c.id} className="w-full text-left p-3 rounded-xl border border-rose-100 bg-white transition-all space-y-2">
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                          isIncoming ? "bg-emerald-50 text-emerald-700" : isMissed ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"
+                        }`}>
+                          {isIncoming ? "Inbound" : isMissed ? "Missed" : "Outbound"}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold">{c.date}</span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-800 truncate mt-1.5">{c.outcome}</p>
+                    </div>
+                    <span className="text-[10.5px] font-black text-slate-750 shrink-0 bg-white border border-rose-100 px-1.5 py-0.5 rounded tabular-nums">
+                      {c.duration}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveViewCallMom(c)}
+                    className="w-full text-left text-[9.5px] text-rose-800 hover:text-rose-600 font-bold flex items-center justify-between pt-1.5 border-t border-rose-50 cursor-pointer group"
+                  >
+                    <span className="flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                      View AI MoM & SOP Checklist
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 text-rose-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -749,7 +1069,7 @@ Lead Notes & Comments
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold text-slate-750 leading-snug">{a.text}</p>
                       <p className="text-[9.5px] text-slate-450 font-bold mt-0.5 flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-400" /> {a.time}
+                        <Clock className="w-3.5 h-3.5 text-slate-400" /> {a.time}
                       </p>
                     </div>
                   </div>

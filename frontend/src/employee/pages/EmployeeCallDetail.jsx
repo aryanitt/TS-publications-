@@ -145,18 +145,45 @@ const getSopForCall = (call) => {
   return 1; // Intro & Cold Outreach (default)
 };
 
-// Helper to rebuild checklist questions asked vs unasked for historical calls
 const getCheckedQuestionsForCall = (call, sops) => {
-  if (call.checkedQuestions && Object.keys(call.checkedQuestions).length > 0) {
+  if (!call) return {};
+  if (call.checkedQuestions && typeof call.checkedQuestions === "object" && Object.keys(call.checkedQuestions).length > 0) {
     return call.checkedQuestions;
   }
-
   const activeSopId = getSopForCall(call);
   const activeSop = sops.find((s) => s.id === activeSopId) || sops[0];
   if (!activeSop?.steps) return {};
+
   const checked = {};
+
+  // If checklistProgress array is available from real backend/AI evaluation
+  if (Array.isArray(call.checklistProgress) && call.checklistProgress.length > 0) {
+    call.checklistProgress.forEach((cp) => {
+      if (cp.covered || cp.checked || cp.status === "completed") {
+        const qText = String(cp.question || cp.text || "").toLowerCase().trim();
+        activeSop.steps.forEach((step) => {
+          (step.questions || []).forEach((q) => {
+            const targetText = String(q.text || "").toLowerCase().trim();
+            if (qText && targetText && (qText.includes(targetText) || targetText.includes(qText))) {
+              checked[`${activeSopId}-${q.id}`] = true;
+            }
+          });
+        });
+      }
+    });
+    if (Object.keys(checked).length > 0) {
+      return checked;
+    }
+  }
+
+  // If call was missed or rejected or not connected -> no questions completed!
+  const isMissed = call.type === "miss" || (call.outcome || "").toLowerCase().includes("missed") || (call.outcome || "").toLowerCase().includes("not answered");
+  if (isMissed || call.durationSec === 0) {
+    return {};
+  }
+
+  // Fallback heuristic based on outcome string
   const outcome = (call.outcome || "").toLowerCase();
-  
   if (
     outcome.includes("closed") || 
     outcome.includes("negotiation") || 
@@ -165,7 +192,6 @@ const getCheckedQuestionsForCall = (call, sops) => {
     outcome.includes("proposal discussed") || 
     outcome.includes("proposal review")
   ) {
-    // Check all questions
     activeSop.steps.forEach((step) => {
       step.questions.forEach((q) => {
         checked[`${activeSopId}-${q.id}`] = true;
@@ -178,31 +204,14 @@ const getCheckedQuestionsForCall = (call, sops) => {
     outcome.includes("requirements") || 
     outcome.includes("budget confirmed")
   ) {
-    // Check Opening & Discovery steps
     activeSop.steps.forEach((step) => {
-      if (step.id === "opening" || step.id === "discovery" || step.id === "authority" || step.id === "need") {
-        step.questions.forEach((q) => {
-          checked[`${activeSopId}-${q.id}`] = true;
-        });
-      }
-    });
-  } else if (
-    outcome.includes("intro") || 
-    outcome.includes("engaged") || 
-    outcome.includes("check-in") || 
-    outcome.includes("attempted") || 
-    outcome.includes("confirmed")
-  ) {
-    // Check Opening step only
-    activeSop.steps.forEach((step) => {
-      if (step.id === "opening") {
+      if (["opening", "discovery", "authority", "need"].includes(step.id)) {
         step.questions.forEach((q) => {
           checked[`${activeSopId}-${q.id}`] = true;
         });
       }
     });
   }
-
   return checked;
 };
 

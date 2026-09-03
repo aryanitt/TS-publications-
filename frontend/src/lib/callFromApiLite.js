@@ -72,6 +72,13 @@ export function callFromApiLite(apiCall, leads = [], resolvedLead = null) {
     date: callAt ? formatCallDisplayDate(callAt) : "—",
     callAt,
     callDay: resolveCallDay(apiCall),
+    note: apiCall.notes || apiCall.note || apiCall.aiSummary || apiCall.ai_summary || null,
+    notes: apiCall.notes || apiCall.note || null,
+    aiSummary: apiCall.aiSummary || apiCall.ai_summary || null,
+    recordingUrl: apiCall.recordingUrl || apiCall.recording_url || null,
+    checklistProgress: apiCall.checklistProgress || apiCall.checklist_progress || null,
+    checkedQuestions: apiCall.checkedQuestions || apiCall.checked_questions || null,
+    sopId: apiCall.sopId || apiCall.sop_id || null,
   };
 }
 
