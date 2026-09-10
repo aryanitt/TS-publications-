@@ -1,7 +1,7 @@
 export const RANGE_TABS = [
   { id: "today", label: "Today", shortLabel: "Today" },
-  { id: "week", label: "This Week", shortLabel: "Week" },
-  { id: "month", label: "This Month", shortLabel: "Month" },
+  { id: "week", label: "Week", shortLabel: "Week" },
+  { id: "month", label: "Month", shortLabel: "Month" },
   { id: "custom", label: "Custom", shortLabel: "Custom" },
 ];
 
@@ -16,7 +16,7 @@ export const PERIOD_PILL_INACTIVE =
 const LABEL_BY_ID = Object.fromEntries(RANGE_TABS.map((t) => [t.id, t.label]));
 
 export function presetToApiLabel(preset) {
-  return LABEL_BY_ID[preset] || "This Month";
+  return LABEL_BY_ID[preset] || "Month";
 }
 
 export function defaultPresetForRoute(pathname) {
@@ -29,35 +29,43 @@ export function emptyRangeState(pathname) {
   return { preset: defaultPresetForRoute(pathname), fromDate: "", toDate: "" };
 }
 
-function startOfDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+function formatLocalYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-function endOfDay(d) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
-/** Resolve preset + optional custom dates to ISO date strings (YYYY-MM-DD). */
+/** Resolve preset + optional custom dates to local ISO date strings (YYYY-MM-DD). */
 export function getDateBounds(preset, fromDate = "", toDate = "") {
   const now = new Date();
   if (preset === "custom" && fromDate && toDate) {
     return { start: fromDate, end: toDate };
   }
-  if (preset === "today") {
-    const s = startOfDay(now);
-    return { start: s.toISOString().slice(0, 10), end: endOfDay(now).toISOString().slice(0, 10) };
+
+  const todayStr = formatLocalYMD(now);
+
+  if (preset === "today" || preset === "day") {
+    return { start: todayStr, end: todayStr };
   }
-  if (preset === "week") {
-    const s = startOfDay(now);
-    const day = s.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    s.setDate(s.getDate() + diff);
-    return { start: s.toISOString().slice(0, 10), end: endOfDay(now).toISOString().slice(0, 10) };
+
+  // Monday of the current week
+  const dayOfWeek = now.getDay();
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMonday);
+  const weekStartStr = formatLocalYMD(weekStart);
+
+  if (preset === "week" || preset === "this_week") {
+    return { start: weekStartStr, end: todayStr };
   }
-  const s = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
-  return { start: s.toISOString().slice(0, 10), end: endOfDay(now).toISOString().slice(0, 10) };
+
+  // Hierarchical month: begins at the earlier of the 1st of month or Monday of current week
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const hierStart = weekStart.getTime() < monthStart.getTime() ? weekStart : monthStart;
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  return {
+    start: formatLocalYMD(hierStart),
+    end: formatLocalYMD(monthEnd),
+  };
 }

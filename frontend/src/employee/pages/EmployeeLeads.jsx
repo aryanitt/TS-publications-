@@ -278,13 +278,28 @@ export default function EmployeeLeads() {
   const filtered = useMemo(() => {
     let list = statusFiltered;
     const q = search.trim().toLowerCase();
+    const qDigits = q.replace(/\D/g, "");
     if (q) {
-      list = list.filter(
-        (l) =>
-          l.name.toLowerCase().includes(q) ||
-          l.company.toLowerCase().includes(q) ||
-          l.source.toLowerCase().includes(q),
-      );
+      list = list.filter((l) => {
+        const name = String(l?.name || "").toLowerCase();
+        const company = String(l?.company || "").toLowerCase();
+        const phone = String(l?.phone || "").toLowerCase();
+        const phoneDigits = phone.replace(/\D/g, "");
+        const source = String(l?.source || "").toLowerCase();
+
+        if (name.includes(q) || company.includes(q) || source.includes(q)) return true;
+        if (phone && phone.includes(q)) return true;
+        if (qDigits && phoneDigits) {
+          if (
+            phoneDigits.includes(qDigits) ||
+            qDigits.includes(phoneDigits.slice(-10)) ||
+            phoneDigits.slice(-10).includes(qDigits)
+          ) {
+            return true;
+          }
+        }
+        return false;
+      });
     }
     if (selectedService && selectedService !== "All Services") {
       list = list.filter((l) => l.service === selectedService || l.requirements === selectedService);

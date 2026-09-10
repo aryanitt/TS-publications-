@@ -3,7 +3,7 @@
  * Configure production API via VITE_API_URL (see .env.example).
  */
 
-import { getAuthHeaders } from "./crmContext.js";
+import { getAuthHeaders, getCrmHeaders } from "./crmContext.js";
 
 const CACHE_PREFIX = "crm_cache:";
 const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
@@ -208,6 +208,7 @@ async function performFetch(url, options = {}) {
     signal: controller?.signal,
     headers: {
       Accept: "application/json",
+      ...getCrmHeaders(),
       ...getAuthHeaders(),
       ...(fetchOptions.body && !(fetchOptions.body instanceof FormData)
         ? { "Content-Type": "application/json" }

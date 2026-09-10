@@ -26,7 +26,7 @@ function mapLead(row, assignedEmployee) {
     city: row.city,
     country: row.country,
     source: row.source,
-    sourceMeta: row.source_meta || {},
+    sourceMeta: typeof row.source_meta === "string" ? (() => { try { return JSON.parse(row.source_meta || "{}"); } catch { return {}; } })() : (row.source_meta || {}),
     formName: row.form_name,
     pipelineStage: row.pipeline_stage,
     stageIsManual: Boolean(row.stage_is_manual),

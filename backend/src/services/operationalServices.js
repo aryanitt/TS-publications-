@@ -21,18 +21,51 @@ function actor(req) {
 
 function normalizeLeadInput(input = {}) {
   const name = input.leadName || input.lead_name || input.name || input.contactName;
-  const rawServices = input.services || input.service || input.serviceName || input.service_name || "";
+  const rawServices = input.services || input.service || input.serviceName || input.service_name || input.serviceTitle || input.service_title || input.serviceId || input.service_id || "";
   const servicesFormatted = Array.isArray(rawServices) ? rawServices.join(", ") : String(rawServices || "");
+  
+  const rawSop = input.sop || input.sopName || input.sop_name || input.sopTitle || input.sop_title || input.sopId || input.sop_id || "";
   
   const reqParts = [];
   if (input.requirements) reqParts.push(String(input.requirements));
   if (input.notes && String(input.notes) !== String(input.requirements)) reqParts.push(`Notes: ${input.notes}`);
-  if (input.sop || input.sopName) reqParts.push(`SOP: ${input.sop || input.sopName}`);
+  if (rawSop) reqParts.push(`SOP: ${rawSop}`);
   
   let notesAndReqs = reqParts.join(" | ");
   if (servicesFormatted && !notesAndReqs.includes(servicesFormatted)) {
     notesAndReqs = notesAndReqs ? `[Service: ${servicesFormatted}] ${notesAndReqs}` : `Service: ${servicesFormatted}`;
   }
+
+  const utmSource = input.utm_source || input.utmSource || "";
+  const utmMedium = input.utm_medium || input.utmMedium || "";
+  const utmCampaign = input.utm_campaign || input.utmCampaign || "";
+  const utmTerm = input.utm_term || input.utmTerm || "";
+  const utmContent = input.utm_content || input.utmContent || "";
+  const serviceId = input.serviceId || input.service_id || "";
+  const sopId = input.sopId || input.sop_id || "";
+
+  // Prioritize genuine marketing sources over generic "n8n"
+  const candidateSource = (input.source && input.source !== "n8n") 
+    ? input.source 
+    : (utmSource || input.channel || input.source || "n8n");
+
+  const sourceMetaObj = {
+    ...(input.sourceMeta || input.rawPayload || {}),
+    ...(input.channel ? { channel: input.channel } : {}),
+    ...(candidateSource ? { source: candidateSource } : {}),
+    ...(utmSource ? { utm_source: utmSource } : {}),
+    ...(utmMedium ? { utm_medium: utmMedium } : {}),
+    ...(utmCampaign ? { utm_campaign: utmCampaign } : {}),
+    ...(utmTerm ? { utm_term: utmTerm } : {}),
+    ...(utmContent ? { utm_content: utmContent } : {}),
+    ...(serviceId ? { serviceId } : {}),
+    ...(servicesFormatted ? { service: servicesFormatted, services: servicesFormatted } : {}),
+    ...(sopId ? { sopId } : {}),
+    ...(rawSop ? { sop: rawSop } : {}),
+    ...(input.meetLink || input.meet_link ? { meetLink: input.meetLink || input.meet_link } : {}),
+    ...(input.scheduledAt || input.scheduled_at ? { scheduledAt: input.scheduledAt || input.scheduled_at } : {}),
+    ...(input.employeeName || input.employee_name ? { employeeName: input.employeeName || input.employee_name } : {}),
+  };
 
   return {
     leadName: name || "Unknown Lead",
@@ -41,8 +74,8 @@ function normalizeLeadInput(input = {}) {
     email: input.email || "",
     city: input.city || "",
     country: input.country || "India",
-    source: normalizeSource(input.source || input.utm_source || input.channel || "n8n"),
-    formName: input.formName || input.form_name || (servicesFormatted ? servicesFormatted : "n8n Webhook"),
+    source: normalizeSource(candidateSource),
+    formName: input.formName || input.form_name || (servicesFormatted ? servicesFormatted : (utmCampaign ? utmCampaign : "n8n Webhook")),
     pipelineStage: input.pipelineStage || input.pipeline_stage || "new",
     temperature: normalizeTemperature(input.temperature || input.status || input.priority),
     status: input.status || "New Lead",
@@ -51,39 +84,25 @@ function normalizeLeadInput(input = {}) {
     priority: normalizePriority(input.priority),
     requirements: notesAndReqs,
     insights: input.insights || "",
-    sourceMeta: {
-      ...(input.sourceMeta || input.rawPayload || {}),
-      ...(input.channel ? { channel: input.channel } : {}),
-      ...(input.source ? { source: input.source } : {}),
-      ...(input.utm_source ? { utm_source: input.utm_source } : {}),
-      ...(input.utm_medium ? { utm_medium: input.utm_medium } : {}),
-      ...(input.utm_campaign ? { utm_campaign: input.utm_campaign } : {}),
-      ...(input.utm_term ? { utm_term: input.utm_term } : {}),
-      ...(input.utm_content ? { utm_content: input.utm_content } : {}),
-      ...(servicesFormatted ? { services: servicesFormatted } : {}),
-      ...(input.sop || input.sopName ? { sop: input.sop || input.sopName } : {}),
-      ...(input.meetLink || input.meet_link ? { meetLink: input.meetLink || input.meet_link } : {}),
-      ...(input.scheduledAt || input.scheduled_at ? { scheduledAt: input.scheduledAt || input.scheduled_at } : {}),
-      ...(input.employeeName || input.employee_name ? { employeeName: input.employeeName || input.employee_name } : {}),
-    },
+    sourceMeta: sourceMetaObj,
   };
 }
 
 function normalizeSource(value) {
   const s = String(value || "").toLowerCase();
-  if (s.includes("n8n") || s.includes("webhook")) return "n8n";
+  if (s.includes("meta") || s.includes("facebook") || s.includes("instagram") || s.includes("fb") || s.includes("ig")) return "meta_ads";
   if (s.includes("google")) return "google_ads";
-  if (s.includes("meta") || s.includes("facebook") || s.includes("instagram")) return "meta_ads";
   if (s.includes("whatsapp")) return "whatsapp";
   if (s.includes("landing")) return "landing_page";
   if (s.includes("form")) return "form";
   if (s.includes("campaign")) return "campaign";
   if (s.includes("website") || s.includes("web")) return "website";
   if (s.includes("linkedin")) return "linkedin";
-  if (s.includes("api")) return "api";
   if (s.includes("referral")) return "referral";
+  if (s.includes("n8n") || s.includes("webhook")) return "n8n";
+  if (s.includes("api")) return "api";
   if (s.includes("third")) return "third_party";
-  return "manual";
+  return value ? String(value).trim() : "manual";
 }
 
 function normalizeTemperature(value) {
@@ -301,35 +320,6 @@ async function createLead(input, options = {}) {
   // =========================================================================
   // NEW LEAD CREATION FLOW (No Duplicate Found)
   // =========================================================================
-  const normalized = normalizeLeadInput(input);
-  const lead = await repo.insertLead(tenantId, normalized);
-
-  // Auto-create service in catalog if a service is specified for this lead
-  const serviceName = input.services || input.service || input.serviceName || input.service_name || normalized.requirements;
-  if (serviceName) {
-    dataService.ensureServiceExists(tenantId, serviceName).catch((e) => console.error("[createLead] ensureServiceExists error:", e));
-  }
-
-  const priority = lead.temperature === "hot" ? 100 : lead.temperature === "warm" ? 50 : 10;
-  const queueItem = await repo.insertQueueItem(tenantId, lead.id, priority);
-
-  await writeTimeline({
-    tenantId,
-    leadId: lead.id,
-    type: "lead_created",
-    summary: `Lead created from ${lead.source}`,
-    payload: { source: lead.source, queueId: queueItem.id },
-    actor: options.actor,
-  });
-
-  emitTenant(tenantId, "lead.created", lead);
-
-  let assignedEmployeeId = null;
-
-  // Check assignment configuration for n8n auto-assign toggle
-  const assignmentConfig = await getOrCreateAssignmentConfig(tenantId);
-  const n8nAutoAssignEnabled = assignmentConfig?.n8nAutoAssignEnabled !== false;
-
   // 1. Resolve Unique IDs if passed in payload
   const rawServiceId = input.serviceId || input.service_id;
   const rawSopId = input.sopId || input.sop_id;
@@ -358,6 +348,49 @@ async function createLead(input, options = {}) {
       invalidSopId = true;
     }
   }
+
+  if (rawEmpId) {
+    resolvedEmployee = await repo.findEmployeeById(tenantId, rawEmpId);
+    if (!resolvedEmployee) {
+      console.warn(`[createLead] Invalid employeeId received: ${rawEmpId}. Strict mode: ignoring name fallback.`);
+      invalidEmployeeId = true;
+    }
+  }
+
+  const enrichedInput = {
+    ...input,
+    ...(resolvedService?.name ? { service: resolvedService.name, serviceName: resolvedService.name } : {}),
+    ...(resolvedSop?.title ? { sop: resolvedSop.title, sopName: resolvedSop.title } : {}),
+  };
+
+  const normalized = normalizeLeadInput(enrichedInput);
+  const lead = await repo.insertLead(tenantId, normalized);
+
+  // Auto-create service in catalog if a service is specified for this lead
+  const serviceName = resolvedService?.name || enrichedInput.services || enrichedInput.service || enrichedInput.serviceName || enrichedInput.service_name || normalized.requirements;
+  if (serviceName) {
+    dataService.ensureServiceExists(tenantId, serviceName).catch((e) => console.error("[createLead] ensureServiceExists error:", e));
+  }
+
+  const priority = lead.temperature === "hot" ? 100 : lead.temperature === "warm" ? 50 : 10;
+  const queueItem = await repo.insertQueueItem(tenantId, lead.id, priority);
+
+  await writeTimeline({
+    tenantId,
+    leadId: lead.id,
+    type: "lead_created",
+    summary: `Lead created from ${lead.source}`,
+    payload: { source: lead.source, queueId: queueItem.id },
+    actor: options.actor,
+  });
+
+  emitTenant(tenantId, "lead.created", lead);
+
+  let assignedEmployeeId = null;
+
+  // Check assignment configuration for n8n auto-assign toggle
+  const assignmentConfig = await getOrCreateAssignmentConfig(tenantId);
+  const n8nAutoAssignEnabled = assignmentConfig?.n8nAutoAssignEnabled !== false;
 
   if (rawEmpId) {
     resolvedEmployee = await repo.findEmployeeById(tenantId, rawEmpId);

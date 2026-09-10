@@ -1133,18 +1133,12 @@ router.post("/webhooks/n8n", asyncRoute(async (req, res) => {
     });
   }
 
-  const channel =
-    body.source
-    || body.channel
-    || body.platform
-    || body.utm_source
-    || body.lead_source
-    || null;
+  const rawSource = body.source && body.source !== "n8n" ? body.source : (body.utm_source || body.channel || body.source || "n8n");
 
   const result = await createLead(
     {
       ...body,
-      source: "n8n",
+      source: rawSource,
       channel,
       sourceMeta: {
         integration: "n8n",

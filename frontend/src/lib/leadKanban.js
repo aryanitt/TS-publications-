@@ -578,10 +578,16 @@ export function groupKanbanSyncedWithCallyzer(
   const scopedVisible = visibleLeads ?? filterPipelineLeadsForPeriod(allLeads, periodCalls, periodKey, meetings, kanbanIndex, options);
   const visibleIds = new Set(scopedVisible.map((l) => String(l.id)));
 
+  const isFilterActive = Boolean(options.searchFiltered || options.visibleLeads);
+
   const showLead = (lead) => {
     if (!lead) return false;
-    if (lead._fromCall || lead._fromMeeting) return true;
-    return visibleIds.has(String(lead.id));
+    if (visibleIds.has(String(lead.id))) return true;
+    if (lead._linkedLeadId && visibleIds.has(String(lead._linkedLeadId))) return true;
+    if (!isFilterActive) {
+      if (lead._fromCall || lead._fromMeeting) return true;
+    }
+    return false;
   };
 
   const pushLead = (col, lead) => {
@@ -635,7 +641,9 @@ export function groupKanbanSyncedWithCallyzer(
     const col = callKanbanColumn(call);
     if (!col) continue;
     if (resolveLeadForCallFromIndex(call, leadIndex, allLeads)) continue;
-    pushLead(col, leadFromOrphanCall(call, col));
+    const orphanLead = leadFromOrphanCall(call, col);
+    if (!showLead(orphanLead)) continue;
+    pushLead(col, orphanLead);
   }
 
 

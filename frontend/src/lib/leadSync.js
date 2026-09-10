@@ -164,15 +164,35 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   const stage = normalizeToCanonicalStage(rawStage, lead.status || status);
   const revenue = Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0);
 
+  const meta = typeof lead.sourceMeta === "string" ? (() => { try { return JSON.parse(lead.sourceMeta); } catch { return {}; } })() : (lead.sourceMeta || lead.source_meta || {});
+  const utmSource = lead.utm_source || lead.utmSource || meta.utm_source || meta.utmSource || "";
+  const utmMedium = lead.utm_medium || lead.utmMedium || meta.utm_medium || meta.utmMedium || "";
+  const utmCampaign = lead.utm_campaign || lead.utmCampaign || meta.utm_campaign || meta.utmCampaign || "";
+  const utmTerm = lead.utm_term || lead.utmTerm || meta.utm_term || meta.utmTerm || "";
+  const utmContent = lead.utm_content || lead.utmContent || meta.utm_content || meta.utmContent || "";
+  const sop = lead.sop || lead.sopName || meta.sop || meta.sopName || "";
+  const sopId = lead.sopId || lead.sop_id || meta.sopId || meta.sop_id || "";
+  const serviceId = lead.serviceId || lead.service_id || meta.serviceId || meta.service_id || "";
+  const service = lead.service || lead.serviceName || meta.services || meta.service || lead.requirements || lead.insights || "—";
+
   return {
     id,
     name,
     company: lead.companyName || lead.company_name || "—",
     status,
     stage,
-    source: lead.source || "Website",
+    source: lead.source || meta.source || utmSource || "Website",
     budget: revenue > 0 ? formatEmpPipelineValue(revenue) : "—",
-    service: lead.requirements || lead.insights || lead.sourceMeta?.service || "—",
+    service,
+    serviceId,
+    sop,
+    sopId,
+    utm_source: utmSource,
+    utm_medium: utmMedium,
+    utm_campaign: utmCampaign,
+    utm_term: utmTerm,
+    utm_content: utmContent,
+    sourceMeta: meta,
     last: formatRelativeTime(lead.lastActivityAt || lead.updatedAt || lead.createdAt),
     av,
     color: avatarColors[Number(id) % avatarColors.length],
@@ -228,6 +248,18 @@ export function apiLeadToAdmin(lead) {
     lead.assignee ||
     (typeof assignedTo === "string" ? assignedTo : "") ||
     "—";
+
+  const meta = typeof lead.sourceMeta === "string" ? (() => { try { return JSON.parse(lead.sourceMeta); } catch { return {}; } })() : (lead.sourceMeta || lead.source_meta || {});
+  const utmSource = lead.utm_source || lead.utmSource || meta.utm_source || meta.utmSource || "";
+  const utmMedium = lead.utm_medium || lead.utmMedium || meta.utm_medium || meta.utmMedium || "";
+  const utmCampaign = lead.utm_campaign || lead.utmCampaign || meta.utm_campaign || meta.utmCampaign || "";
+  const utmTerm = lead.utm_term || lead.utmTerm || meta.utm_term || meta.utmTerm || "";
+  const utmContent = lead.utm_content || lead.utmContent || meta.utm_content || meta.utmContent || "";
+  const sop = lead.sop || lead.sopName || meta.sop || meta.sopName || "";
+  const sopId = lead.sopId || lead.sop_id || meta.sopId || meta.sop_id || "";
+  const serviceId = lead.serviceId || lead.service_id || meta.serviceId || meta.service_id || "";
+  const service = lead.requirements || lead.service || meta.services || meta.service || lead.insights || "";
+
   return {
     id: lead.id,
     lead_name: lead.leadName || lead.lead_name,
@@ -236,7 +268,7 @@ export function apiLeadToAdmin(lead) {
     email: lead.email,
     city: lead.city,
     country: lead.country,
-    source: lead.source,
+    source: lead.source || meta.source || utmSource,
     form_name: lead.formName || lead.form_name,
     pipeline_stage: normalizeToCanonicalStage(
       lead.pipelineStage || lead.pipeline_stage,
@@ -249,7 +281,16 @@ export function apiLeadToAdmin(lead) {
     created_at: lead.createdAt || lead.created_at,
     next_followup_date: lead.nextFollowUpAt || lead.next_follow_up_at,
     requirements: lead.requirements,
-    service: lead.requirements || lead.service || lead.insights || "",
+    service,
+    serviceId,
+    sop,
+    sopId,
+    utm_source: utmSource,
+    utm_medium: utmMedium,
+    utm_campaign: utmCampaign,
+    utm_term: utmTerm,
+    utm_content: utmContent,
+    sourceMeta: meta,
     assignedTo,
     assignee_name: employeeName,
     employeeName,
@@ -257,7 +298,7 @@ export function apiLeadToAdmin(lead) {
     owner: employeeName,
     assignee: employeeName,
     assignment_status: lead.assignmentStatus || lead.assignment_status,
-    is_bulk_uploaded: lead.sourceMeta?.integration === "bulk_upload" || lead.source_meta?.integration === "bulk_upload" || false,
+    is_bulk_uploaded: meta.integration === "bulk_upload" || lead.source_meta?.integration === "bulk_upload" || false,
   };
 }
 
@@ -525,15 +566,24 @@ export function normalizeLeadForDetailPanel(lead) {
 
 export function buildDetailDraft(lead) {
   if (!lead) return {};
+  const meta = typeof lead.sourceMeta === "string" ? (() => { try { return JSON.parse(lead.sourceMeta); } catch { return {}; } })() : (lead.sourceMeta || lead.source_meta || {});
   return {
     phone: lead.phone || "",
     email: lead.email || "",
     stage: lead.stage || lead.pipelineStage || "Lead",
-    source: lead.source || "",
+    source: lead.source || meta.source || meta.utm_source || "",
     city: lead.city || "",
-    service: lead.service || "",
-    company: lead.company || "",
+    service: lead.service || meta.services || meta.service || "",
+    serviceId: lead.serviceId || meta.serviceId || "",
+    sop: lead.sop || meta.sop || meta.sopName || lead.sopId || meta.sopId || "",
+    sopId: lead.sopId || meta.sopId || "",
+    company: lead.company || lead.company_name || "",
     expectedRevenue: String(lead.expectedRevenue || parseEmpBudget(lead.budget) || ""),
+    utm_source: lead.utm_source || meta.utm_source || "",
+    utm_medium: lead.utm_medium || meta.utm_medium || "",
+    utm_campaign: lead.utm_campaign || meta.utm_campaign || "",
+    utm_term: lead.utm_term || meta.utm_term || "",
+    utm_content: lead.utm_content || meta.utm_content || "",
   };
 }
 

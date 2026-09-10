@@ -36,13 +36,11 @@ function buildPeriodDateFilter({
     };
   }
 
+  const weekStart = `DATE_SUB(${today}, INTERVAL WEEKDAY(${today}) DAY)`;
+
   if (p === "week" || p === "this_week") {
-    const weekStart = `DATE_SUB(${today}, INTERVAL WEEKDAY(${today}) DAY)`;
-    const rangeStart = clipWeekToMonth
-      ? `GREATEST(${weekStart}, DATE_FORMAT(${today}, '%Y-%m-01'))`
-      : weekStart;
     return {
-      clause: `${colDate} >= ${rangeStart} AND ${colDate} <= ${today}`,
+      clause: `${colDate} >= ${weekStart} AND ${colDate} <= ${today}`,
       params: [],
       label: "This week",
       period: "week",
@@ -58,8 +56,10 @@ function buildPeriodDateFilter({
     };
   }
 
+  const monthStart = `DATE_FORMAT(${today}, '%Y-%m-01')`;
+  const hierMonthStart = `LEAST(${weekStart}, ${monthStart})`;
   return {
-    clause: `DATE_FORMAT(${column}, '%Y-%m') = DATE_FORMAT(${today}, '%Y-%m')`,
+    clause: `(${colDate} >= ${hierMonthStart} AND (${colDate} <= ${today} OR DATE_FORMAT(${column}, '%Y-%m') = DATE_FORMAT(${today}, '%Y-%m')))`,
     params: [],
     label: "This month",
     period: "month",

@@ -3,6 +3,7 @@ import {
   Phone, MessageCircle, Mail, Sparkles, Clock,
   Users, RefreshCw, Shuffle, ChevronDown, ChevronUp, Zap,
   CheckCircle, Circle, ShieldCheck, Play, Pause, Volume2, ArrowLeft, Calendar, RotateCcw,
+  Megaphone, Target,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -482,6 +483,12 @@ export default function LeadDetailPanel({
         service: draft.service,
         requirements: draft.service,
         expectedRevenue: Number(draft.expectedRevenue) || 0,
+        utm_source: draft.utm_source,
+        utm_medium: draft.utm_medium,
+        utm_campaign: draft.utm_campaign,
+        utm_term: draft.utm_term,
+        utm_content: draft.utm_content,
+        sop: draft.sop,
       });
       toast.success("Lead details saved");
     } catch (err) {
@@ -858,8 +865,45 @@ export default function LeadDetailPanel({
           allowCustom
           readOnly={readOnly}
         />
+        <DetailField
+          label="SOP"
+          value={draft.sop || draft.sopId || "—"}
+          onChange={patchDraft("sop")}
+          readOnly={readOnly}
+        />
         <DetailField label="City" value={draft.city} onChange={patchDraft("city")} readOnly={readOnly} />
         <DetailField label="Company" value={draft.company} onChange={patchDraft("company")} readOnly={readOnly} />
+      </div>
+
+      {/* ── Marketing Attribution & UTMs ── */}
+      <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4 space-y-3 shadow-sm">
+        <div className="flex items-center justify-between border-b border-rose-100/70 pb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-600 grid place-items-center shrink-0">
+              <Megaphone className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider">
+                Marketing Attribution & UTMs
+              </h4>
+              <p className="text-[9px] text-slate-400 font-medium">Tracking metadata from n8n & ad channels</p>
+            </div>
+          </div>
+          {(draft.utm_source || liveLead.utm_source) && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
+              {draft.utm_source || liveLead.utm_source}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <DetailField label="UTM Source" value={draft.utm_source} onChange={patchDraft("utm_source")} readOnly={readOnly} />
+          <DetailField label="UTM Medium" value={draft.utm_medium} onChange={patchDraft("utm_medium")} readOnly={readOnly} />
+          <DetailField label="UTM Campaign" value={draft.utm_campaign} onChange={patchDraft("utm_campaign")} readOnly={readOnly} />
+          <DetailField label="UTM Content" value={draft.utm_content} onChange={patchDraft("utm_content")} readOnly={readOnly} />
+          <DetailField label="UTM Term" value={draft.utm_term} onChange={patchDraft("utm_term")} readOnly={readOnly} />
+          <DetailField label="SOP Code / ID" value={draft.sopId || liveLead.sopId || draft.sop || "—"} readOnly />
+        </div>
       </div>
 
       {isDirty && !readOnly && (

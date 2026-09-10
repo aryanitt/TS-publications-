@@ -239,13 +239,47 @@ export default function Pipeline() {
   const filtered = useMemo(() => {
     let list = leads || [];
     const q = search.trim().toLowerCase();
+    const qDigits = q.replace(/\D/g, "");
+
     if (q) {
-      list = list.filter(
-        (l) =>
-          (l?.name || "").toLowerCase().includes(q) ||
-          (l?.company || "").toLowerCase().includes(q),
-      );
+      list = list.filter((l) => {
+        const name = String(l?.name || l?.lead_name || l?.leadName || "").toLowerCase();
+        const company = String(l?.company || l?.company_name || l?.companyName || "").toLowerCase();
+        const phone = String(l?.phone || l?.phone_number || l?.mobile || l?.clientPhone || "").toLowerCase();
+        const phoneDigits = phone.replace(/\D/g, "");
+        const email = String(l?.email || "").toLowerCase();
+        const service = String(l?.service || l?.requirements || "").toLowerCase();
+        const source = String(l?.source || "").toLowerCase();
+
+        // 1. Text match on name, company, email, service, source
+        if (
+          name.includes(q) ||
+          company.includes(q) ||
+          email.includes(q) ||
+          service.includes(q) ||
+          source.includes(q)
+        ) {
+          return true;
+        }
+
+        // 2. Direct string phone match
+        if (phone && phone.includes(q)) return true;
+
+        // 3. Digit match on phone (e.g. typing 9810... matches +919810... or 9810...)
+        if (qDigits && phoneDigits) {
+          if (
+            phoneDigits.includes(qDigits) ||
+            qDigits.includes(phoneDigits.slice(-10)) ||
+            phoneDigits.slice(-10).includes(qDigits)
+          ) {
+            return true;
+          }
+        }
+
+        return false;
+      });
     }
+
     if (selectedService && selectedService !== "All Services") {
       list = list.filter((l) => l.service === selectedService || l.requirements === selectedService);
     }
@@ -477,9 +511,19 @@ export default function Pipeline() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter by name or company..."
-              className="w-full h-10 pl-9 pr-3 rounded-xl border border-rose-100 bg-white text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+              placeholder="Filter by name, phone, or company..."
+              className="w-full h-10 pl-9 pr-8 rounded-xl border border-rose-100 bg-white text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-xs font-bold transition"
+                title="Clear search"
+              >
+                ×
+              </button>
+            )}
           </div>
 
           <div className="relative w-full sm:w-44 shrink-0">

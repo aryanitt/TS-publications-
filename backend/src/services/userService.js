@@ -130,27 +130,73 @@ async function deactivateUserForEmployee(employeeId) {
   );
 }
 
-async function resetEmployeePassword(employeeId) {
-  const userRes = await pool.query(
+async function resetEmployeePassword(employeeId, customOptions = {}) {
+  let userRes = await pool.query(
     `SELECT * FROM users WHERE employee_id = $1 AND role = 'employee' LIMIT 1`,
     [employeeId],
   );
-  const user = userRes.rows[0];
+  let user = userRes.rows[0];
+
   if (!user) {
-    const err = new Error("No login account found for this employee");
-    err.statusCode = 404;
+    const empRes = await pool.query(`SELECT * FROM employees WHERE id = $1 LIMIT 1`, [employeeId]);
+    const emp = empRes.rows[0];
+    if (emp && emp.email) {
+      const byEmail = await pool.query(`SELECT * FROM users WHERE LOWER(email) = $1 LIMIT 1`, [emp.email.toLowerCase()]);
+      user = byEmail.rows[0];
+      if (user) {
+        await pool.query(`UPDATE users SET employee_id = $1 WHERE id = $2`, [employeeId, user.id]);
+        user.employee_id = employeeId;
+      } else {
+        return await createUserForEmployee(emp, customOptions);
+      }
+    } else if (emp) {
+      const fallbackEmp = { ...emp, email: emp.email || `emp_${emp.id}@tspublication.in` };
+      return await createUserForEmployee(fallbackEmp, customOptions);
+    } else {
+      const err = new Error("Employee not found");
+      err.statusCode = 404;
+      throw err;
+    }
+  }
+
+  const newPassword = customOptions.password || customOptions.newPassword || generateTempPassword();
+  if (String(newPassword).length < 4) {
+    const err = new Error("Password must be at least 4 characters");
+    err.statusCode = 400;
     throw err;
   }
-  const tempPassword = generateTempPassword();
-  const passwordHash = await hashPassword(tempPassword);
+  const passwordHash = await hashPassword(newPassword);
+
+  let newLoginId = user.login_id;
+  if (customOptions.loginId && String(customOptions.loginId).trim() !== "") {
+    const requestedLogin = String(customOptions.loginId).trim();
+    const checkTaken = await pool.query(
+      `SELECT id FROM users WHERE LOWER(login_id) = $1 AND id != $2 LIMIT 1`,
+      [requestedLogin.toLowerCase(), user.id]
+    );
+    if (checkTaken.rows.length > 0) {
+      const err = new Error(`Login ID "${requestedLogin}" is already taken by another account`);
+      err.statusCode = 409;
+      throw err;
+    }
+    newLoginId = requestedLogin;
+  }
+
+  const mustChange = customOptions.mustChangePassword ? 1 : 0;
+
   await pool.query(
-    `UPDATE users SET password_hash = $1, must_change_password = 1, status = 'active', updated_at = NOW() WHERE id = $2`,
-    [passwordHash, user.id],
+    `UPDATE users 
+     SET password_hash = $1, login_id = $2, must_change_password = $3, status = 'active', updated_at = NOW() 
+     WHERE id = $4`,
+    [passwordHash, newLoginId, mustChange, user.id],
   );
+
   return {
-    loginId: user.login_id,
+    loginId: newLoginId,
     email: user.email,
-    tempPassword,
+    newPassword,
+    tempPassword: newPassword,
+    userId: user.id,
   };
 }
 

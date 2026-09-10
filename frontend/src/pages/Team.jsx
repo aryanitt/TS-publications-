@@ -13,6 +13,7 @@ import { useEmployeeKraMetrics } from "../lib/useEmployeeKraMetrics.js";
 import { KRA_PERIODS, kraPeriodLabel } from "../lib/kraPeriod.js";
 import { getPipelineQualifiedCount } from "../lib/leadSync.js";
 import useIsMobile from "../lib/useIsMobile.js";
+import ResetCredentialsModal from "../components/team/ResetCredentialsModal.jsx";
 
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
@@ -218,6 +219,7 @@ import {
   User,
   Mail,
   Phone,
+  Key,
   Building2,
   Hash,
   Calendar,
@@ -2129,6 +2131,7 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
   const [leadDrawerOpen, setLeadDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("All Leads");
   const [search, setSearch] = useState("");
+  const [resetPassModalOpen, setResetPassModalOpen] = useState(false);
   const [compact, setCompact] = useState(() =>
     typeof window !== "undefined" && window.innerWidth < 1024,
   );
@@ -2441,7 +2444,33 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
         </div>
 
         {/* Buttons */}
-        <div style={{ display: "flex", gap: 6, width: compact ? "100%" : undefined, marginLeft: compact ? 0 : "auto" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", width: compact ? "100%" : undefined, marginLeft: compact ? 0 : "auto" }}>
+          <button
+            type="button"
+            onClick={() => setResetPassModalOpen(true)}
+            style={{
+              padding: compact ? "6px 10px" : "8px 12px",
+              borderRadius: 8,
+              fontSize: compact ? 10 : 11.5,
+              fontWeight: 700,
+              cursor: "pointer",
+              border: "1px solid #fecdd3",
+              color: "#be123c",
+              background: "#fff1f2",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4,
+              flex: compact ? 1 : undefined,
+              transition: "all .15s",
+            }}
+            title="Generate new Login ID & Password"
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#ffe4e6"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff1f2"; }}
+          >
+            <Key style={{ width: 11, height: 11 }} />
+            Reset ID/Pass
+          </button>
           <button
             onClick={onEdit}
             style={{
@@ -3255,6 +3284,12 @@ function EmpDetail({ emp, onEdit, onDelete, inDrawer = false }) {
           </div>
         </div>
       </div>
+
+      <ResetCredentialsModal
+        isOpen={resetPassModalOpen}
+        onClose={() => setResetPassModalOpen(false)}
+        employee={activeEmp}
+      />
     </div>
   );
 }

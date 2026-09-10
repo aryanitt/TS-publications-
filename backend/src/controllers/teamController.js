@@ -667,13 +667,21 @@ const resetEmployeeCredentials = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid employee ID" });
     }
 
-    const credentials = await resetEmployeePassword(parseInt(id, 10));
+    const { password, newPassword, loginId, mustChangePassword } = req.body || {};
+
+    const credentials = await resetEmployeePassword(parseInt(id, 10), {
+      password: password || newPassword,
+      loginId,
+      mustChangePassword,
+    });
+
     return res.json({
       success: true,
+      message: `Credentials updated successfully for ${credentials.loginId}`,
       credentials: {
         loginId: credentials.loginId,
         email: credentials.email,
-        password: credentials.tempPassword,
+        password: credentials.newPassword || credentials.tempPassword,
       },
     });
   } catch (error) {
