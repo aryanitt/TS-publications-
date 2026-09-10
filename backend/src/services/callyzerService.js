@@ -2,6 +2,7 @@ const { logger } = require("../config/logger");
 const pool = require("../../config/db");
 const { CALL_CONVERSATION_MIN_SEC } = require("../utils/callMetrics");
 const { formatUtcInstantAsAppSql, parseCallyzerCallInstant } = require("../utils/appTimezone");
+const privateContactsRepo = require("../repositories/privateContactsRepo");
 
 const BASE_URL = (process.env.CALLYZER_API_BASE_URL || "https://api1.callyzer.co/api/v2.1").replace(/\/$/, "");
 const MIN_INTERVAL_MS = 2100;
@@ -594,11 +595,20 @@ async function getCallsForEmployee(tenantId, employee, { dbCalls = [], leads = [
   }
 
   try {
-    const logs = await fetchCallHistory({ empNumbers, days, maxPages });
+    const [logs, privatePhonesList] = await Promise.all([
+      fetchCallHistory({ empNumbers, days, maxPages }),
+      privateContactsRepo.getPrivatePhoneNumbers(tenantId, employee.id).catch(() => []),
+    ]);
+    const privatePhones = new Set(privatePhonesList || []);
     
-    // Filter to ensure we only include call logs belonging to this employee
+    // Filter to ensure we only include call logs belonging to this employee and NOT in private contacts
     const empNumbersDigits = empNumbers.map(n => digitsOnly(n).slice(-10));
     const filteredLogs = logs.filter((log) => {
+      const clientLast10 = digitsOnly(log.client_number || "").slice(-10);
+      if (clientLast10 && privatePhones.has(clientLast10)) {
+        return false; // Skip private contact calls
+      }
+
       const logEmpNum = digitsOnly(log.emp_number || "");
       const logEmpCode = String(log.emp_code || "").trim();
       
@@ -618,8 +628,13 @@ async function getCallsForEmployee(tenantId, employee, { dbCalls = [], leads = [
       return false;
     });
 
+    const sanitizedDbCalls = (dbCalls || []).filter((c) => {
+      const p = digitsOnly(c.clientPhone || "").slice(-10);
+      return !p || !privatePhones.has(p);
+    });
+
     const dbCallyzerIds = new Set(
-      dbCalls.map((c) => c.callyzerCallId).filter(Boolean),
+      sanitizedDbCalls.map((c) => c.callyzerCallId).filter(Boolean),
     );
 
     const phoneIndex = buildLeadPhoneIndex(leads);
@@ -718,7 +733,7 @@ async function getCallsForEmployee(tenantId, employee, { dbCalls = [], leads = [
     const { ensureAllCallsProcessedWithAi } = require("./aiService");
     ensureAllCallsProcessedWithAi(tenantId).catch(() => {});
 
-    const merged = [...dbCalls, ...callyzerCalls].map((c) => attachLeadToCall(c, leads, phoneIndex));
+    const merged = [...sanitizedDbCalls, ...callyzerCalls].map((c) => attachLeadToCall(c, leads, phoneIndex));
     merged.sort((a, b) => {
       const ta = new Date(a.startedAt || a.createdAt || 0).getTime();
       const tb = new Date(b.startedAt || b.createdAt || 0).getTime();

@@ -89,8 +89,17 @@ async function queryTeamCallStats(poolConn, tenantId, dateFilter) {
   const params = [tenantId, ...dateFilter.params];
   const result = await poolConn.query(
     `SELECT ${CALL_STATS_AGG_SQL}
-     FROM employee_calls
-     WHERE tenant_id = $1 AND ${dateFilter.clause}`,
+     FROM employee_calls ec
+     LEFT JOIN leads l ON ec.lead_id = l.id
+     WHERE ec.tenant_id = $1
+       AND NOT EXISTS (
+         SELECT 1 FROM employee_private_contacts epc
+         WHERE epc.employee_id = ec.employee_id
+           AND epc.tenant_id = ec.tenant_id
+           AND l.phone IS NOT NULL
+           AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(l.phone, ' ', ''), '+', ''), '-', ''), '(', ''), 10) = epc.phone_normalized
+       )
+       AND ${dateFilter.clause}`,
     params,
   );
   return mapCallStatsRow(result.rows[0] || {});

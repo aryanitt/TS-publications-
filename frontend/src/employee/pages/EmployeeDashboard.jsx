@@ -2,11 +2,12 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Plus, Users, Flame, CheckCircle2, ClipboardList, TrendingUp,
-  Phone, Calendar, ArrowRight, Zap, Target, ChevronRight, MessageCircle, Pencil,
+  Phone, Calendar, ArrowRight, Zap, Target, ChevronRight, MessageCircle, Pencil, Shield,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Badge, StatCard, GlassCard } from "../../components/Primitives.jsx";
+import PrivateContactsModal from "../components/PrivateContactsModal.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
   buildPipelineChartFromLeads,
@@ -89,6 +90,7 @@ export default function EmployeeDashboard() {
   const period = PERIOD_TO_CALLYZER[periodKey] || "Today";
   const [pipeFilter, setPipeFilter] = useState("all");
   const [agendaDone, setAgendaDone] = useState({});
+  const [privateModalOpen, setPrivateModalOpen] = useState(false);
 
   const { stats: callyzerStats, loading: callyzerLoading, syncing: callyzerSyncing, configured: callyzerConfigured, message: callyzerMessage, lastUpdated: callyzerLastUpdated, refresh: refreshCallyzerStats } =
     useCallyzerStats(employee?.id, period, Boolean(employee?.id));
@@ -294,6 +296,14 @@ export default function EmployeeDashboard() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setPrivateModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-rose-50 hover:bg-rose-100 text-[#be123c] border border-rose-200 text-xs sm:text-sm font-bold transition shadow-sm shrink-0"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Private Contacts</span>
+            </button>
             <button
               type="button"
               onClick={() => navigate("/employee/leads?action=add")}
@@ -630,6 +640,13 @@ export default function EmployeeDashboard() {
           </div>
         </div>
       </div>
+
+      <PrivateContactsModal
+        isOpen={privateModalOpen}
+        onClose={() => setPrivateModalOpen(false)}
+        employeeId={employee?.id}
+        employeeName={employee?.name}
+      />
     </div>
   );
 }

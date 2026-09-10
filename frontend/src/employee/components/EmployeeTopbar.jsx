@@ -2,9 +2,10 @@ import { useState, useEffect, useRef, startTransition } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, Bell, Menu, Plus, ChevronDown, X,
-  CheckSquare, MessageSquare, Phone, Calendar, User, LogOut,
+  CheckSquare, MessageSquare, Phone, Calendar, User, LogOut, Shield,
 } from "lucide-react";
 import EmployeeDoodleAvatar from "./EmployeeDoodleAvatar.jsx";
+import PrivateContactsModal from "./PrivateContactsModal.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
@@ -15,6 +16,7 @@ const QUICK_ACTIONS = [
   { label: "Schedule Follow-up",  icon: MessageSquare, to: "/employee/follow-ups", search: "?action=add" },
   { label: "Log Call",            icon: Phone,         to: "/employee/calls" },
   { label: "Book Meeting",        icon: Calendar,      to: "/employee/meetings",   search: "?action=add" },
+  { label: "Private Contacts",    icon: Shield,        isPrivateModal: true },
 ];
 
 const PAGE_META = {
@@ -58,6 +60,7 @@ export default function EmployeeTopbar({ onMenu }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [privateModalOpen, setPrivateModalOpen] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const quickRef = useRef(null);
   const userRef = useRef(null);
@@ -78,6 +81,10 @@ export default function EmployeeTopbar({ onMenu }) {
 
   const handleQuickAction = (action) => {
     setQuickOpen(false);
+    if (action.isPrivateModal) {
+      setPrivateModalOpen(true);
+      return;
+    }
     navigate(`${action.to}${action.search ?? ""}`);
   };
 
@@ -96,14 +103,15 @@ export default function EmployeeTopbar({ onMenu }) {
 
   const handleUserMenu = (item) => {
     setUserMenuOpen(false);
-    if (item === "My Profile") navigate("/employee/profile");
+    if (item === "Private Contacts") setPrivateModalOpen(true);
+    else if (item === "My Profile") navigate("/employee/profile");
     else if (item === "Sign out") {
       logout();
       navigate("/login", { replace: true });
     }
   };
 
-  const userMenuItems = ["My Profile", "Sign out"];
+  const userMenuItems = ["My Profile", "Private Contacts", "Sign out"];
 
   return (
     <>
@@ -330,6 +338,13 @@ export default function EmployeeTopbar({ onMenu }) {
           </div>
         </>
       )}
+
+      <PrivateContactsModal
+        isOpen={privateModalOpen}
+        onClose={() => setPrivateModalOpen(false)}
+        employeeId={employee?.id}
+        employeeName={employee?.name}
+      />
     </>
   );
 }

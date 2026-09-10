@@ -4,6 +4,8 @@ const path = require("path");
 const multer = require("multer");
 const xlsx = require("xlsx");
 const repo = require("../repositories/operationalRepo");
+const privateContactsRepo = require("../repositories/privateContactsRepo");
+const privateContactsController = require("../controllers/privateContactsController");
 const { listAllSops } = require("../controllers/sopController");
 const {
   validate,
@@ -573,6 +575,14 @@ router.get("/employees/:id/cash-collections", requireEmployeeSelf("id"), asyncRo
   const total = await repo.sumCashByEmployee(tenant(req), req.params.id);
   return ok(res, items, { total });
 }));
+
+router.get("/employee/:employeeId/private-contacts", requireEmployeeSelf("employeeId"), privateContactsController.getPrivateContacts);
+router.post("/employee/:employeeId/private-contacts", requireEmployeeSelf("employeeId"), privateContactsController.createPrivateContact);
+router.delete("/employee/:employeeId/private-contacts/:id", requireEmployeeSelf("employeeId"), privateContactsController.removePrivateContact);
+
+router.get("/employees/:employeeId/private-contacts", requireEmployeeSelf("employeeId"), privateContactsController.getPrivateContacts);
+router.post("/employees/:employeeId/private-contacts", requireEmployeeSelf("employeeId"), privateContactsController.createPrivateContact);
+router.delete("/employees/:employeeId/private-contacts/:id", requireEmployeeSelf("employeeId"), privateContactsController.removePrivateContact);
 
 router.get("/sops", asyncRoute(async (req, res) => {
   const sops = await listAllSops();
@@ -1178,6 +1188,14 @@ router.post("/webhooks/callyzer", asyncRoute(async (req, res) => {
     const logs = Array.isArray(block.call_logs) ? block.call_logs : [];
     for (const log of logs) {
       if (!log?.id) continue;
+
+      // Privacy Check: Exclude calls to/from employee's private contacts
+      const clientPhoneDigits = String(log.client_number || "").replace(/\D/g, "").slice(-10);
+      if (clientPhoneDigits && await privateContactsRepo.isPhonePrivateForEmployee(tenantId, employee.id, clientPhoneDigits)) {
+        skipped += 1;
+        continue; // Strictly discard private calls
+      }
+
       let lead = callyzer.findLeadForClient(assignedLeads, log.client_country_code, log.client_number);
       if (!lead) {
         lead = await repo.findLeadByPhone(tenantId, log.client_number, { assignedTo: employee.id });

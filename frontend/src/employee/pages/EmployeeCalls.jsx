@@ -4,11 +4,12 @@ import toast from "react-hot-toast";
 import {
   AlertCircle, CalendarClock, CheckCircle2, Clock, Mail, MessageCircle,
   Pause, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Play, RotateCcw,
-  Search, Star, TrendingUp, User, Zap, Sparkles, UserPlus, Pencil, Check, X, Loader2, ChevronDown,
+  Search, Star, TrendingUp, User, Zap, Sparkles, UserPlus, Pencil, Check, X, Loader2, ChevronDown, Shield,
 } from "lucide-react";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
 import { apiPatch, apiPost } from "../../lib/api.js";
 import SaveContactModal, { saveContactNameToDatabase } from "../../components/SaveContactModal.jsx";
+import PrivateContactsModal from "../components/PrivateContactsModal.jsx";
 import {
   computeCallStatsFromCalls,
   LEAD_STATUS_LABELS,
@@ -260,6 +261,7 @@ export default function EmployeeCalls() {
   const callsLoaded = !callsLoading || periodCalls.length > 0;
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [privateModalOpen, setPrivateModalOpen] = useState(false);
 
   const stats = useMemo(() => {
     const fromCalls = computeCallStatsFromCalls(periodCalls, period);
@@ -404,6 +406,14 @@ export default function EmployeeCalls() {
               className="w-full h-10 pl-9 pr-3 rounded-xl bg-white border border-rose-100 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition"
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setPrivateModalOpen(true)}
+            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-white hover:bg-rose-50 border border-rose-200 text-[#DC143C] font-semibold text-xs shadow-sm hover:shadow transition shrink-0"
+          >
+            <Shield className="w-4 h-4" />
+            <span>Private Contacts</span>
+          </button>
         </div>
         <p className="text-[10px] font-semibold text-slate-400 mt-2 sm:hidden">
           {PERIOD_LABEL[period]} · Showing {visibleCalls.length} of {calls.length} calls
@@ -512,6 +522,13 @@ export default function EmployeeCalls() {
         </div>
       </GlassCard>
       )}
+
+      <PrivateContactsModal
+        isOpen={privateModalOpen}
+        onClose={() => setPrivateModalOpen(false)}
+        employeeId={employee?.id}
+        employeeName={employee?.name}
+      />
     </div>
   );
 }

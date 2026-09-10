@@ -1131,7 +1131,15 @@ async function listCalls(tenantId, employeeId, options = {}) {
     `SELECT ec.*, l.lead_name AS client_name, l.phone AS client_phone, l.company_name AS client_company
      FROM employee_calls ec
      LEFT JOIN leads l ON ec.lead_id = l.id
-     WHERE ec.tenant_id = $1 AND ec.employee_id = $2${periodSql}
+     WHERE ec.tenant_id = $1 AND ec.employee_id = $2
+       AND NOT EXISTS (
+         SELECT 1 FROM employee_private_contacts epc
+         WHERE epc.employee_id = ec.employee_id
+           AND epc.tenant_id = ec.tenant_id
+           AND l.phone IS NOT NULL
+           AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(l.phone, ' ', ''), '+', ''), '-', ''), '(', ''), 10) = epc.phone_normalized
+       )
+       ${periodSql}
      ORDER BY COALESCE(ec.started_at, ec.created_at) DESC
      LIMIT ${limit}`,
     params,
@@ -1459,7 +1467,15 @@ async function listTenantCalls(tenantId, options = {}) {
     `SELECT ec.*, l.lead_name AS client_name, l.phone AS client_phone, l.company_name AS client_company
      FROM employee_calls ec
      LEFT JOIN leads l ON ec.lead_id = l.id
-     WHERE ec.tenant_id = $1${periodSql}
+     WHERE ec.tenant_id = $1
+       AND NOT EXISTS (
+         SELECT 1 FROM employee_private_contacts epc
+         WHERE epc.employee_id = ec.employee_id
+           AND epc.tenant_id = ec.tenant_id
+           AND l.phone IS NOT NULL
+           AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(l.phone, ' ', ''), '+', ''), '-', ''), '(', ''), 10) = epc.phone_normalized
+       )
+       ${periodSql}
      ORDER BY COALESCE(ec.started_at, ec.created_at) DESC
      LIMIT ${limit}`,
     params,

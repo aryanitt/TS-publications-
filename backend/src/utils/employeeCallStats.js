@@ -77,7 +77,7 @@ async function queryCallStats(poolConn, { tenantId, employeeId = null, period = 
   const filter = buildPeriodDateFilter({
     period: month ? "month" : period,
     month,
-    column: "COALESCE(started_at, created_at)",
+    column: "COALESCE(ec.started_at, ec.created_at)",
     paramOffset: employeeId != null ? 3 : 2,
   });
 
@@ -85,14 +85,23 @@ async function queryCallStats(poolConn, { tenantId, employeeId = null, period = 
   let employeeSql = "";
   if (employeeId != null) {
     params.push(employeeId);
-    employeeSql = " AND employee_id = $2";
+    employeeSql = " AND ec.employee_id = $2";
   }
   params.push(...filter.params);
 
   const queryText = `
     SELECT ${CALL_STATS_AGG_SQL}
-    FROM employee_calls
-    WHERE tenant_id = $1${employeeSql} AND ${filter.clause}
+    FROM employee_calls ec
+    LEFT JOIN leads l ON ec.lead_id = l.id
+    WHERE ec.tenant_id = $1${employeeSql}
+      AND NOT EXISTS (
+        SELECT 1 FROM employee_private_contacts epc
+        WHERE epc.employee_id = ec.employee_id
+          AND epc.tenant_id = ec.tenant_id
+          AND l.phone IS NOT NULL
+          AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(l.phone, ' ', ''), '+', ''), '-', ''), '(', ''), 10) = epc.phone_normalized
+      )
+      AND ${filter.clause}
   `;
 
   const result = await poolConn.query(queryText, params);

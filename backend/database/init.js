@@ -469,6 +469,23 @@ async function initDatabase() {
     `);
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS employee_private_contacts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id VARCHAR(50) DEFAULT 'default',
+        employee_id INT NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        phone_normalized VARCHAR(20) NOT NULL,
+        relation VARCHAR(100) DEFAULT 'Personal',
+        notes TEXT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+        INDEX idx_emp_private_phone (tenant_id, employee_id, phone_normalized)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS forms (
         id VARCHAR(100) PRIMARY KEY,
         tenant_id VARCHAR(50) DEFAULT 'default',

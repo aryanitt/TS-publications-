@@ -515,3 +515,16 @@ export function readStaleCachedJson(path) {
   if (fresh != null) return fresh;
   return readStaleCache(key);
 }
+
+export async function fetchPrivateContacts(employeeId) {
+  return apiGet(`/api/v1/employee/${employeeId}/private-contacts`);
+}
+
+export async function addPrivateContact(employeeId, data) {
+  return apiPost(`/api/v1/employee/${employeeId}/private-contacts`, data);
+}
+
+export async function deletePrivateContact(employeeId, contactId) {
+  return apiDelete(`/api/v1/employee/${employeeId}/private-contacts/${contactId}`);
+}
+
