@@ -160,7 +160,14 @@ function scopeEmployeeLeadList(req) {
 
 router.post("/leads", validate(createLeadSchema), asyncRoute(async (req, res) => {
   const result = await createLead(req.body, { tenantId: tenant(req), actor: actor(req) });
-  return ok(res, result);
+  const lead = result?.lead || result;
+  return ok(res, {
+    ...(lead && typeof lead === "object" ? lead : {}),
+    id: lead?.id,
+    lead: result?.lead || lead,
+    queueItem: result?.queueItem,
+    isExisting: result?.isExisting,
+  });
 }));
 
 router.post("/leads/bulk-upload", upload.single("file"), asyncRoute(async (req, res) => {
@@ -1144,6 +1151,7 @@ router.post("/webhooks/n8n", asyncRoute(async (req, res) => {
   }
 
   const rawSource = body.source && body.source !== "n8n" ? body.source : (body.utm_source || body.channel || body.source || "n8n");
+  const channel = body.channel || body.utm_source || rawSource;
 
   const result = await createLead(
     {

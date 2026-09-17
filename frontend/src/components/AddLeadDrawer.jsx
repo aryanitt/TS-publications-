@@ -199,7 +199,7 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
             phone: payload.phone,
             email: payload.email || "",
             city: payload.city,
-            source: "manual",
+            source: payload.source || "manual",
             formName: payload.service,
             form_name: payload.service,
             temperature: payload.temperature,
@@ -209,18 +209,29 @@ export function AddLead({ onClose, showToast, pipelineStages, defaultStage = "Le
             expectedRevenue: payload.expected_revenue || 0,
             requirements: payload.service,
             notes: payload.campaign_notes || payload.notes || "",
+            nextFollowUpAt: payload.next_followup_date || null,
+            next_follow_up_at: payload.next_followup_date || null,
             sourceMeta: {
               integration: "admin",
               channel: payload.source,
               service: payload.service,
+              campaign_name: payload.campaign_name,
+              campaign_term: payload.campaign_term,
+              lead_type: payload.lead_type,
+              country: payload.country,
+              mom: payload.mom,
+              call_summary: payload.call_summary,
+              meeting_notes: payload.meeting_notes,
             },
           };
           const res = await apiPost("/api/v1/leads", v1Payload, { headers: getAdminCrmHeaders() });
-          const saved = unwrapApiData(res) || res?.data || res;
-          if (!saved?.id) throw new Error("Lead was not saved — no id returned");
+          const resData = unwrapApiData(res) || res?.data || res;
+          const saved = resData?.lead || resData;
+          const leadId = saved?.id || saved?.lead_id || saved?.leadId || resData?.id || res?.data?.id || res?.id;
+          if (!leadId) throw new Error(res?.message || "Lead was not saved — no id returned");
           invalidateCache("/api/v1");
           showToast("Lead created successfully!");
-          onClose(apiLeadToAdmin(saved));
+          onClose(apiLeadToAdmin({ ...saved, id: leadId }));
         } catch (error) {
           console.error("Create lead error:", error);
           showToast(error.message || "Failed to create lead", "error");

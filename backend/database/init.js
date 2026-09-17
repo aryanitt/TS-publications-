@@ -41,6 +41,24 @@ async function initDatabase() {
       // Ignore if column already exists
     }
 
+    try {
+      await pool.query("ALTER TABLE sops ADD COLUMN attachment_name VARCHAR(255) NULL");
+    } catch (e) {
+      // Ignore if column already exists
+    }
+
+    try {
+      await pool.query("ALTER TABLE sops ADD COLUMN full_content LONGTEXT NULL");
+    } catch (e) {
+      // Ignore if column already exists
+    }
+
+    try {
+      await pool.query("ALTER TABLE sops ADD COLUMN questions_answers JSON DEFAULT ('[]')");
+    } catch (e) {
+      // Ignore if column already exists
+    }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sop_comments (
         id INT AUTO_INCREMENT PRIMARY KEY,

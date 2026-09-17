@@ -84,6 +84,7 @@ app.use(authenticate);
 
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/sop", sopRoutes);
+app.use("/api/v1/sops", sopRoutes);
 app.use("/api/sales", salesRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/incentives", incentivesRoutes);

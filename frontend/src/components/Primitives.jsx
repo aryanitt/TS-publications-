@@ -32,6 +32,7 @@ export function StatCard({
   hover = true,
   compact = false,
   className = "",
+  corner = null,
 }) {
   const toneMap = {
     primary: "bg-rose-50 text-rose-600 border border-rose-100",
@@ -74,11 +75,14 @@ export function StatCard({
             {value}
           </h4>
         </div>
-        {Icon && (
-          <div className={`${compact ? "w-7 h-7 sm:w-8 sm:h-8" : "w-8 h-8 sm:w-9 sm:h-9"} rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColorClass}`}>
-            <Icon className={compact ? "w-3.5 h-3.5 sm:w-4 sm:h-4" : "w-[15px] h-[15px] sm:w-[17px] sm:h-[17px]"} />
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {corner}
+          {Icon && (
+            <div className={`${compact ? "w-7 h-7 sm:w-8 sm:h-8" : "w-8 h-8 sm:w-9 sm:h-9"} rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColorClass}`}>
+              <Icon className={compact ? "w-3.5 h-3.5 sm:w-4 sm:h-4" : "w-[15px] h-[15px] sm:w-[17px] sm:h-[17px]"} />
+            </div>
+          )}
+        </div>
       </div>
 
       {change && (

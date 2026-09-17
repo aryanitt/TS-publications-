@@ -314,7 +314,14 @@ async function createLead(input, options = {}) {
 
     emitTenant(tenantId, "lead.updated", updatedLead);
     const finalLead = await repo.findLeadById(tenantId, updatedLead.id, { populate: true });
-    return { lead: finalLead || updatedLead, queueItem: null, isExisting: true };
+    const resolvedLead = finalLead || updatedLead;
+    return {
+      ...(resolvedLead && typeof resolvedLead === "object" ? resolvedLead : {}),
+      id: resolvedLead?.id,
+      lead: resolvedLead,
+      queueItem: null,
+      isExisting: true,
+    };
   }
 
   // =========================================================================
@@ -526,7 +533,13 @@ async function createLead(input, options = {}) {
   }
 
   const finalLead = await repo.findLeadById(tenantId, lead.id, { populate: true });
-  return { lead: finalLead || lead, queueItem };
+  const resolvedLead = finalLead || lead;
+  return {
+    ...(resolvedLead && typeof resolvedLead === "object" ? resolvedLead : {}),
+    id: resolvedLead?.id,
+    lead: resolvedLead,
+    queueItem,
+  };
 }
 
 async function getOrCreateAssignmentConfig(tenantId) {

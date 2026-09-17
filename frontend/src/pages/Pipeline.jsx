@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useDeferredValue, memo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Search, Plus, Kanban, Flame, TrendingUp, Thermometer, Snowflake, ThumbsDown } from "lucide-react";
+import { Search, Plus, Kanban, Flame, TrendingUp, Thermometer, Snowflake, ThumbsDown, Phone } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, Badge, StatCard } from "../components/Primitives.jsx";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import PipelineLeadDrawer from "../components/pipeline/PipelineLeadDrawer.jsx";
+import { formatTelUrl } from "../lib/phoneUtils.js";
 import {
   PIPELINE_STAGES,
   PRIORITY_BADGE,
@@ -46,14 +47,15 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
   const canDrag = isDraggablePipelineLead(lead);
 
-  const phone = lead.phone || lead.phone_number || "";
-  const displayName = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
-    ? lead.name
-    : (phone || lead.company || "No Number");
+  const rawPhone = lead.phone || lead.phone_number || "";
+  const cleanDigits = String(rawPhone).replace(/\D/g, "");
+  const formattedPhone = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : (rawPhone || "No Number");
 
-  const displaySub = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
-    ? (lead.company || phone || "—")
-    : (lead.company && lead.company !== "—" && lead.company !== phone ? lead.company : "—");
+  const rawName = String(lead.name || "").trim();
+  const hasValidName = rawName && !/^unknown$/i.test(rawName) && rawName !== "Lead";
+  const displayName = hasValidName ? rawName : formattedPhone;
+
+  const displayService = lead.service || lead.requirements || lead.serviceName || lead.service_name || "—";
 
   return (
     <div
@@ -66,7 +68,7 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
         startLeadCardDrag(e, lead._dbId ?? lead.id, onDragStart);
       }}
       onDragEnd={onDragEnd}
-      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
+      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(78vw,215px)] sm:w-full sm:shrink snap-start ${
         canDrag ? "cursor-grab active:cursor-grabbing select-none" : ""
       } ${isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"}`}
     >
@@ -82,37 +84,58 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
         }}
         className="w-full text-left p-3"
       >
-        <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-start justify-between gap-1.5 mb-1.5">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{displayName}</p>
-            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displaySub}</p>
+            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition tabular-nums" title={displayName}>
+              {displayName}
+            </p>
+            <p className="text-[10px] text-slate-500 truncate mt-0.5" title={displayService}>
+              {displayService}
+            </p>
           </div>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <Badge tone={priorityTone}>{lead.priority}</Badge>
-            {canDrag && onMoveStage && (
-              <select
-                value={currentStage || lead.pipelineStage || lead.stage || ""}
-                onChange={(e) => {
+          <div className="flex items-center gap-1 shrink-0">
+            {rawPhone ? (
+              <button
+                type="button"
+                title={`Call ${displayName}`}
+                onClick={(e) => {
                   e.stopPropagation();
-                  onMoveStage(lead._dbId ?? lead.id, e.target.value);
+                  const url = formatTelUrl(rawPhone);
+                  if (url) window.location.href = url;
                 }}
-                onClick={(e) => e.stopPropagation()}
-                className="block sm:hidden bg-rose-50/50 hover:bg-rose-50 text-[9px] font-black text-rose-700 border border-rose-200/80 rounded px-1.5 py-0.5 outline-none appearance-none pr-4"
-                style={{
-                  background: 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23be123c\' stroke-width=\'3.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 3px center/8px',
-                  paddingRight: '12px'
-                }}
+                className="sm:hidden inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shrink-0 transition active:scale-95 shadow-sm"
               >
-                <option value="" disabled style={{ color: '#64748b', backgroundColor: '#ffffff' }}>Move...</option>
-                {PIPELINE_STAGES.map((s) => (
-                  <option key={s.id} value={s.id} style={{ color: '#1e293b', backgroundColor: '#ffffff' }}>
-                    {s.id === "conversation_2min" ? "Convo" : s.label}
-                  </option>
-                ))}
-              </select>
-            )}
+                <Phone className="w-3 h-3 fill-rose-600 text-rose-600" />
+              </button>
+            ) : null}
+            <Badge tone={priorityTone}>{lead.priority}</Badge>
           </div>
         </div>
+
+        {canDrag && onMoveStage && (
+          <div className="block sm:hidden mb-2">
+            <select
+              value={currentStage || lead.pipelineStage || lead.stage || ""}
+              onChange={(e) => {
+                e.stopPropagation();
+                onMoveStage(lead._dbId ?? lead.id, e.target.value);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full bg-rose-50/50 hover:bg-rose-50 text-[9px] font-black text-rose-700 border border-rose-200/80 rounded px-1.5 py-0.5 outline-none appearance-none pr-4"
+              style={{
+                background: 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23be123c\' stroke-width=\'3.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 3px center/8px',
+                paddingRight: '12px'
+              }}
+            >
+              <option value="" disabled style={{ color: '#64748b', backgroundColor: '#ffffff' }}>Move stage...</option>
+              {PIPELINE_STAGES.map((s) => (
+                <option key={s.id} value={s.id} style={{ color: '#1e293b', backgroundColor: '#ffffff' }}>
+                  {s.id === "conversation_2min" ? "Convo" : s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex items-center justify-between pt-2 border-t border-rose-50">
           <span className="text-xs font-black text-rose-700 tabular-nums">{formatPipelineValue(lead.value)}</span>
           <span className="text-[9px] font-medium text-slate-400">{lastLabel}</span>
@@ -465,16 +488,25 @@ export default function Pipeline() {
             iconColor="text-rose-600"
             change={leadsLoading && !leads.length ? "Loading" : ""}
             sub={leadsLoading && !leads.length ? "fetching leads" : ""}
+            corner={
+              summary.hot > 0 ? (
+                <span className="sm:hidden inline-flex items-center gap-0.5 text-[9px] font-black text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full shadow-sm">
+                  🔥 {summary.hot}
+                </span>
+              ) : null
+            }
           />
-          <StatCard
-            label="Hot Leads"
-            value={String(summary.hot)}
-            icon={Flame}
-            iconBg="bg-red-50"
-            iconColor="text-red-600"
-            change="High intent"
-            sub=""
-          />
+          <div className="hidden sm:block">
+            <StatCard
+              label="Hot Leads"
+              value={String(summary.hot)}
+              icon={Flame}
+              iconBg="bg-red-50"
+              iconColor="text-red-600"
+              change="High intent"
+              sub=""
+            />
+          </div>
           <StatCard
             label="Warm Leads"
             value={String(summary.warm)}

@@ -4,54 +4,57 @@
 
 /**
  * Formats a phone number for dialing (e.g. for tel: links).
- * Ensures +91 is added for 10-digit Indian numbers, and + is added for 12-digit numbers starting with 91.
+ * Strips redundant country code prefixes (+91, 91, leading 0) so the dialer receives
+ * only the clean, real 10-digit phone number. Never adds extra 91 before 91.
  *
  * Examples:
- * - "8208813895" -> "+918208813895"
- * - "918208813895" -> "+918208813895"
- * - "+918208813895" -> "+918208813895"
- * - "08208813895" -> "+918208813895"
+ * - "8208813895" -> "8208813895"
+ * - "918208813895" -> "8208813895"
+ * - "+918208813895" -> "8208813895"
+ * - "+91918208813895" -> "8208813895"
+ * - "08208813895" -> "8208813895"
  */
 export function formatDialerPhone(phone) {
   if (!phone) return "";
   const raw = String(phone).trim();
   if (!raw) return "";
 
-  const digits = raw.replace(/\D/g, "");
+  let digits = raw.replace(/\D/g, "");
   if (!digits) return "";
 
-  // 10-digit Indian number: prefix +91
+  // Strip repeated leading 91 or 0 prefixes down to genuine 10 digits
+  while (digits.length > 10 && (digits.startsWith("91") || digits.startsWith("0"))) {
+    if (digits.startsWith("91") && digits.length >= 12) {
+      digits = digits.slice(2);
+    } else if (digits.startsWith("0")) {
+      digits = digits.slice(1);
+    } else {
+      break;
+    }
+  }
+
+  // If standard 10-digit number, return clean 10 digits directly
   if (digits.length === 10) {
-    return `+91${digits}`;
+    return digits;
   }
 
-  // 11-digit number starting with 0 (e.g. 08208813895): replace 0 with +91
-  if (digits.length === 11 && digits.startsWith("0")) {
-    return `+91${digits.slice(1)}`;
-  }
-
-  // 12-digit number starting with 91 (e.g. 918208813895): prefix +
+  // If 11 or 12 digits remaining, check if starting with 91 or 0
   if (digits.length === 12 && digits.startsWith("91")) {
-    return `+${digits}`;
+    return digits.slice(2);
+  }
+  if (digits.length === 11 && digits.startsWith("0")) {
+    return digits.slice(1);
   }
 
-  // If raw string already starts with +, keep + and append clean digits
-  if (raw.startsWith("+")) {
-    return `+${digits}`;
-  }
-
-  // International/other lengths: add + if digits > 10
-  if (digits.length > 10) {
-    return `+${digits}`;
-  }
-
-  return `+91${digits}`;
+  // Fallback: return clean digits directly without prepending 91
+  return digits;
 }
 
 /**
- * Returns a tel: URL formatted with country code for phone dialers.
+ * Returns a tel: URL formatted with clean real number for phone dialers.
  */
 export function formatTelUrl(phone) {
   const formatted = formatDialerPhone(phone);
   return formatted ? `tel:${formatted}` : "";
 }
+

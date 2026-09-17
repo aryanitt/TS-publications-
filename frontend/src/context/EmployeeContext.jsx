@@ -988,16 +988,21 @@ export function EmployeeProvider({ children }) {
           requirements: form.service || form.interested_service,
         }, { headers: getCrmHeaders() });
 
-        await apiPost("/api/v1/assignment/assign", {
-          leadId: res.data?.id ?? res.id,
-          employeeId: await resolveApiEmployeeId(employee.id, employee),
-          method: "manual",
-        }, { headers: getCrmHeaders() });
+        const createdLead = res?.data?.lead || res?.data || res?.lead || res;
+        const createdLeadId = createdLead?.id ?? createdLead?.lead_id ?? res?.data?.id ?? res?.id;
+
+        if (createdLeadId) {
+          await apiPost("/api/v1/assignment/assign", {
+            leadId: createdLeadId,
+            employeeId: await resolveApiEmployeeId(employee.id, employee),
+            method: "manual",
+          }, { headers: getCrmHeaders() });
+        }
 
         invalidateCache("/api/v1");
         await refreshLeads(employee.id);
         toast.success(`${localLead.name} added to your pipeline`);
-        return apiLeadToEmployee(res.data || res, AVATAR_COLORS);
+        return apiLeadToEmployee(createdLead, AVATAR_COLORS);
       } catch (err) {
         toast.error(err.message || "Could not save lead to server");
       }

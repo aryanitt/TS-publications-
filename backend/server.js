@@ -34,34 +34,14 @@ if (isPassenger) {
 
 const app = express();
 
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: "ts-publications-crm-api",
-    status: global.__appReady ? "ready" : "booting",
-    database: global.__dbReady ? "connected" : "pending",
-    timestamp: new Date().toISOString(),
-  });
-});
+// 1. Mount main app immediately so Passenger and all runtime loaders have all routes (/api/*, /, /health) active instantly!
+console.error("[startup] mounting app routes...");
+const main = require("./src/app");
+app.use(main);
+global.__appReady = true;
+console.error("[startup] app mounted successfully");
 
-function mountFullApp() {
-  try {
-    console.error("[startup] loading routes...");
-    const main = require("./src/app");
-    app.use(main);
-    global.__appReady = true;
-    console.error("[startup] app mounted");
-
-    const { initSocket } = require("./src/realtime/socket");
-    initSocket(server, (origin, callback) => {
-      callback(null, main.isAllowedOrigin ? main.isAllowedOrigin(origin) : true);
-    });
-    console.error("[startup] socket.io attached");
-  } catch (error) {
-    console.error("[startup] app mount failed:", error);
-  }
-}
-
+// 2. Start background tasks (DB connection, schedulers)
 function startBackgroundTasks() {
   try {
     const { initDatabase } = require("./database/init");
@@ -93,18 +73,30 @@ function startBackgroundTasks() {
   }
 }
 
-function onListening() {
-  console.error("[startup] listening", isPassenger ? "on Passenger" : `on port ${PORT}`);
-  mountFullApp();
-  setImmediate(startBackgroundTasks);
-}
+// Start database connection & schedulers immediately
+startBackgroundTasks();
 
 const server = http.createServer(app);
+
+// Initialize Socket.io attached to server
+try {
+  const { initSocket } = require("./src/realtime/socket");
+  initSocket(server, (origin, callback) => {
+    callback(null, main.isAllowedOrigin ? main.isAllowedOrigin(origin) : true);
+  });
+  console.error("[startup] socket.io attached");
+} catch (error) {
+  console.error("[startup] socket.io init error:", error);
+}
 
 server.on("error", (error) => {
   console.error("[startup] server error:", error.code || error.message, error);
   process.exit(1);
 });
+
+function onListening() {
+  console.error("[startup] listening", isPassenger ? "on Passenger" : `on port ${PORT}`);
+}
 
 console.error("[startup] calling listen...");
 

@@ -97,7 +97,6 @@ function DetailField({ label, value, onChange, readOnly = false, type = "text", 
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder="Type to add new…"
-            autoFocus
             className={inputClass}
             style={{ paddingRight: 28 }}
           />

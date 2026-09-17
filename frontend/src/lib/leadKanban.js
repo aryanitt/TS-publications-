@@ -393,6 +393,7 @@ export function leadFromMeeting(meeting) {
     id: meeting.leadId || `meeting-${meeting.id}`,
     name: meeting.lead || meeting.title || "Meeting lead",
     company: meeting.company || "—",
+    service: meeting.service || meeting.requirements || meeting.title || "—",
     stage: "Meeting Booked",
     status: "warm",
     budget: "—",

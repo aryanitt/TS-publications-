@@ -44,7 +44,7 @@ function mapCallStatsRow(row = {}) {
   };
 }
 
-function callStatsAggSql(prefix = "") {
+function callStatsAggSql(prefix = "ec") {
   const p = prefix ? `${prefix}.` : "";
   return `
   COUNT(*) AS total_calls,
@@ -71,7 +71,7 @@ function callStatsAggSql(prefix = "") {
 `;
 }
 
-const CALL_STATS_AGG_SQL = callStatsAggSql();
+const CALL_STATS_AGG_SQL = callStatsAggSql("ec");
 
 async function queryCallStats(poolConn, { tenantId, employeeId = null, period = "month", month = null }) {
   const filter = buildPeriodDateFilter({

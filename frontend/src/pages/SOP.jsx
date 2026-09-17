@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { apiGet, apiPost, apiPut, apiDelete, invalidateCache } from "../lib/api.js";
+import { apiGet, apiPost, apiPut, apiDelete, invalidateCache, apiUrl, getApiBase } from "../lib/api.js";
+import { getCrmHeaders, getAuthHeaders } from "../lib/crmContext.js";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import {
@@ -8,7 +9,7 @@ import {
   Edit2, Trash2, Copy, Archive, Download, MoreVertical, GripVertical,
   Paperclip, MessageSquare, Activity, Eye, UserCheck, GitBranch, AlertTriangle,
   ChevronDown, ChevronUp, ChevronRight, Star, BookOpen, Send, Filter, SortAsc, Check,
-  RotateCcw, Save, RefreshCw, Phone, PhoneCall, Sparkles, Pencil,
+  RotateCcw, Save, RefreshCw, Phone, PhoneCall, Sparkles, Pencil, ExternalLink,
 } from "lucide-react";
 
 
@@ -531,7 +532,15 @@ function AnalyticsStrip({ sop }) {
 }
 
 /* ─── SOP Detail Drawer (enhanced) ─── */
-function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchive, onAddComment, onUpdateComment, onDeleteComment  }) {
+function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchive, onAddComment, onUpdateComment, onDeleteComment }) {
+  const [copiedScriptIdx, setCopiedScriptIdx] = useState(null);
+
+  const copyScript = (text, idx) => {
+    if (!text) return;
+    navigator.clipboard?.writeText(text);
+    setCopiedScriptIdx(idx);
+    setTimeout(() => setCopiedScriptIdx(null), 2000);
+  };
 
   return (
     <Drawer
@@ -552,7 +561,7 @@ function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchiv
             </button>
             <button
               onClick={() => onDuplicate(sop)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-rose-700 text-rose-700 hover:text-rose-700 hover:bg-rose-700 hover:text-white  transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-rose-700 text-rose-700 hover:text-rose-700 hover:bg-rose-700 hover:text-white transition-all"
             >
               <Copy className="w-3 h-3" />
               <span className="hidden sm:inline">Duplicate</span>
@@ -572,34 +581,78 @@ function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchiv
         <div className="space-y-5">
           {/* Status badges */}
           <div className="flex flex-wrap items-center gap-2">
+            {(sop.sop_code || sop.sopCode || sop.id) && (
+              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200">
+                {sop.sop_code || sop.sopCode || (typeof sop.id === "number" ? `SOP-${String(sop.id).padStart(3, "0")}` : sop.id)}
+              </span>
+            )}
             <Badge tone={statusTone(sop.status)}>{sop.status}</Badge>
             <Badge tone={priorityTone(sop.priority)}>{sop.priority}</Badge>
             <Badge tone="muted">{sop.category}</Badge>
             <Badge tone="info">{sop.version}</Badge>
+            {(sop.services || [sop.service]).filter(Boolean).map(s => (
+              <span key={s} className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                {s}
+              </span>
+            ))}
             {sop.status !== "Archived" && (
               <button
                 onClick={() => onArchive(sop)}
-                className="inline-flex items-center gap-1 text-[10px] text-rose-500 hover:text-amber-400 border border-rose-600 hover:border-amber-500/30 px-2 py-0.5 rounded-md transition-all"
+                className="inline-flex items-center gap-1 text-[10px] text-rose-500 hover:text-amber-400 border border-rose-600 hover:border-amber-500/30 px-2 py-0.5 rounded-md transition-all ml-auto"
               >
                 <Archive className="w-3 h-3" /> Archive
               </button>
             )}
           </div>
 
+          {/* Attached Document Banner */}
+          {(sop.attachment_url || sop.attachment_name || (Array.isArray(sop.attachments) && sop.attachments.length > 0)) && (
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-rose-50 via-pink-50 to-amber-50 border border-rose-200 shadow-sm">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-white border border-rose-200 grid place-items-center shrink-0 shadow-sm">
+                  <FileText className="w-4 h-4 text-rose-600" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-slate-900 truncate">
+                    {sop.attachment_name || (Array.isArray(sop.attachments) && sop.attachments[0]) || "Uploaded SOP Document"}
+                  </div>
+                  <div className="text-[10px] text-rose-700 font-medium flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Original Source Document
+                  </div>
+                </div>
+              </div>
+              {(sop.attachment_url || (Array.isArray(sop.attachments) && sop.attachments[0])) && (
+                <a
+                  href={(() => {
+                    const raw = sop.attachment_url || sop.attachments[0];
+                    if (raw.startsWith("http")) return raw;
+                    const base = getApiBase();
+                    return `${base}${raw.startsWith("/") ? "" : "/"}${raw}`;
+                  })()}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 flex items-center gap-1.5 transition shadow-sm shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" /> View / Download
+                </a>
+              )}
+            </div>
+          )}
+
           {/* Creator + meta */}
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50/60  border border-rose-500">
-            <div className="w-10 h-10 rounded-full gradient-primary grid place-items-center shrink-0 text-sm font-bold text-primary-foreground">
-              {sop.creator.split(" ").map(n => n[0]).join("").slice(0, 2)}
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50/60 border border-rose-200">
+            <div className="w-10 h-10 rounded-full gradient-primary grid place-items-center shrink-0 text-sm font-bold text-primary-foreground shadow-sm">
+              {(sop.creator || "Admin").split(" ").map(n => n[0]).join("").slice(0, 2)}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-rose-700">{sop.creator}</div>
-              <div className="text-[11px] text-gray-700">{sop.department} · Created {sop.created}</div>
+              <div className="text-sm font-bold text-rose-900">{sop.creator || "Admin"}</div>
+              <div className="text-[11px] text-slate-600 font-medium">{sop.department || "Operations"} · Created {sop.created || "Recently"}</div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-[10px] text-gray-700">Est. Time</div>
-              <div className="text-xs font-medium mt-0.5 flex items-center gap-1 justify-end text-rose-700">
-                <Clock className="w-3 h-3 text-primary" />
-                {sop.estimatedTime}
+              <div className="text-[10px] text-slate-500 font-medium">Estimated Time</div>
+              <div className="text-xs font-bold mt-0.5 flex items-center gap-1 justify-end text-rose-700">
+                <Clock className="w-3 h-3 text-rose-600" />
+                {sop.estimatedTime || "15 min"}
               </div>
             </div>
           </div>
@@ -607,17 +660,23 @@ function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchiv
           {/* Analytics strip */}
           <AnalyticsStrip sop={sop} />
 
-          {/* Overview content only */}
+          {/* Overview content */}
           <div className="space-y-4 pt-1">
+            {/* Description */}
             <div>
-              <div className="text-xs uppercase tracking-wider text-rose-700 mb-2">Description</div>
-              <p className="text-sm text-gray-700">{sop.description}</p>
+              <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 mb-1.5 flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5 text-rose-600" /> Scope & Description
+              </div>
+              <p className="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-xl border border-rose-100 shadow-sm whitespace-pre-wrap">
+                {sop.description}
+              </p>
             </div>
 
+            {/* Frameworks */}
             {sop.frameworks?.length > 0 && (
               <div>
-                <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-                  <BookOpen className="w-3 h-3" /> Frameworks (Knowledge)
+                <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 mb-1.5 flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5 text-rose-600" /> Frameworks & Methodologies
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {sop.frameworks.map(f => <Badge key={f} tone="info">{f}</Badge>)}
@@ -625,19 +684,29 @@ function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchiv
               </div>
             )}
 
+            {/* Scripts */}
             {sop.scripts?.length > 0 ? (
               <div className="space-y-3">
-                <div className="text-xs uppercase tracking-wider text-rose-700 flex items-center gap-1">
-                  <MessageSquare className="w-3 h-3" /> Scripts
+                <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 flex items-center gap-1">
+                  <MessageSquare className="w-3.5 h-3.5 text-rose-600" /> Spoken Dialogue Scripts ({sop.scripts.length})
                 </div>
                 {sop.scripts.map((scr, idx) => (
-                  <div key={idx} className="space-y-1">
-                    {scr.heading && (
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide px-1">
-                        {scr.heading}
+                  <div key={idx} className="space-y-1.5 bg-white p-3.5 rounded-xl border border-rose-100 shadow-sm relative group">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold text-rose-900 uppercase tracking-wide flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-600" />
+                        {scr.heading || `Script Stage ${idx + 1}`}
                       </div>
-                    )}
-                    <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
+                      <button
+                        type="button"
+                        onClick={() => copyScript(scr.content, idx)}
+                        className="text-[10px] font-bold text-slate-500 hover:text-rose-700 bg-rose-50/70 hover:bg-rose-100 px-2 py-1 rounded-md transition flex items-center gap-1"
+                      >
+                        {copiedScriptIdx === idx ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                        {copiedScriptIdx === idx ? "Copied" : "Copy Script"}
+                      </button>
+                    </div>
+                    <pre className="text-xs text-slate-800 bg-rose-50/40 border border-rose-100/80 rounded-lg p-3 whitespace-pre-wrap font-mono leading-relaxed">
                       {scr.content}
                     </pre>
                   </div>
@@ -646,50 +715,106 @@ function SOPDetailDrawer({ sop, onClose, onEdit, onDelete, onDuplicate, onArchiv
             ) : (
               sop.script && (
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-                    <MessageSquare className="w-3 h-3" /> Script
+                  <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 mb-1.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5 text-rose-600" /> Spoken Dialogue Script</span>
+                    <button
+                      type="button"
+                      onClick={() => copyScript(sop.script, 999)}
+                      className="text-[10px] font-bold text-slate-500 hover:text-rose-700 bg-rose-50/70 hover:bg-rose-100 px-2 py-1 rounded-md transition flex items-center gap-1"
+                    >
+                      {copiedScriptIdx === 999 ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                      {copiedScriptIdx === 999 ? "Copied" : "Copy"}
+                    </button>
                   </div>
-                  <pre className="text-xs text-gray-700 bg-rose-50 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
+                  <pre className="text-xs text-slate-800 bg-rose-50/40 border border-rose-100 rounded-xl p-3 whitespace-pre-wrap font-mono leading-relaxed">
                     {sop.script}
                   </pre>
                 </div>
               )
             )}
 
-            {sop.questions?.length > 0 && (
+            {/* Questions & Answers / Objections */}
+            {sop.questions_answers?.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 flex items-center gap-1">
+                  <MessageSquare className="w-3.5 h-3.5 text-rose-600" /> Question & Answer Guidelines / Objections ({sop.questions_answers.length})
+                </div>
+                <div className="space-y-2">
+                  {sop.questions_answers.map((qa, i) => (
+                    <div key={i} className="p-3 rounded-xl bg-white border border-rose-100 shadow-sm space-y-1.5">
+                      <div className="text-xs font-bold text-slate-900 flex items-start gap-1.5">
+                        <span className="text-rose-700 font-extrabold shrink-0">Q{i + 1}:</span>
+                        <span>{qa.question}</span>
+                      </div>
+                      {qa.answer && (
+                        <div className="text-xs text-slate-700 pl-4 border-l-2 border-rose-400 ml-1 py-1 mt-1 leading-relaxed bg-rose-50/40 rounded p-2">
+                          <span className="font-bold text-rose-900 mr-1">Guideline / Response:</span>
+                          {qa.answer}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Questions list */}
+            {sop.questions?.length > 0 && (!sop.questions_answers || sop.questions_answers.length === 0) && (
               <div>
-                <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-                  <MessageSquare className="w-3 h-3" /> Questions
+                <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 mb-2 flex items-center gap-1">
+                  <MessageSquare className="w-3.5 h-3.5 text-rose-600" /> Discovery & Qualification Questions ({sop.questions.length})
                 </div>
                 <ol className="space-y-1.5">
                   {sop.questions.map((q, i) => (
-                    <li key={i} className="flex gap-2 text-sm text-gray-700">
-                      <span className="text-rose-700 font-semibold shrink-0">{i + 1}.</span>
-                      {q}
+                    <li key={i} className="flex gap-2 text-xs text-slate-800 bg-white p-2.5 rounded-lg border border-rose-100 shadow-sm">
+                      <span className="text-rose-700 font-bold shrink-0">{i + 1}.</span>
+                      <span className="font-medium">{q}</span>
                     </li>
                   ))}
                 </ol>
               </div>
             )}
 
+            {/* Instruction Steps */}
             <div>
-              <div className="text-xs uppercase tracking-wider text-rose-700 mb-3">Steps</div>
+              <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 mb-2 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-rose-600" /> Actionable Execution Steps ({sop.steps?.length || 0})
+              </div>
               <ol className="space-y-2">
-                {sop.steps.map((st, i) => (
-                  <li key={i} className="flex gap-3 p-3 rounded-xl bg-rose-50 border border-rose-100">
-                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-rose-600 to-rose-800 grid place-items-center text-[11px] font-semibold shrink-0 text-white">{i + 1}</div>
-                    <div className="text-sm text-gray-700">{st}</div>
+                {(sop.steps || []).map((st, i) => (
+                  <li key={i} className="flex gap-3 p-3 rounded-xl bg-white border border-rose-100 shadow-sm items-start">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-rose-600 to-rose-800 grid place-items-center text-[11px] font-bold shrink-0 text-white shadow-sm mt-0.5">
+                      {i + 1}
+                    </div>
+                    <div className="text-xs text-slate-800 leading-relaxed font-medium">{st}</div>
                   </li>
                 ))}
               </ol>
             </div>
 
-            <div>
-              <div className="text-xs uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1">
-                <Tag className="w-3 h-3" /> Tags
+            {/* Full Extracted PDF Content */}
+            {sop.full_content && (
+              <div className="space-y-2">
+                <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5 text-rose-600" /> Full Extracted Source Document
+                </div>
+                <div className="p-4 rounded-xl bg-slate-900 text-slate-100 text-xs whitespace-pre-wrap font-mono leading-relaxed max-h-80 overflow-y-auto border border-slate-800 shadow-inner">
+                  {sop.full_content}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">{sop.tags.map(t => <Badge key={t} tone="primary">{t}</Badge>)}</div>
-            </div>
+            )}
+
+            {/* Tags */}
+            {sop.tags?.length > 0 && (
+              <div>
+                <div className="text-xs font-extrabold uppercase tracking-wider text-rose-800 mb-2 flex items-center gap-1">
+                  <Tag className="w-3.5 h-3.5 text-rose-600" /> Keywords & Tags
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {sop.tags.map(t => <Badge key={t} tone="primary">{t}</Badge>)}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -739,21 +864,33 @@ function makeBlankForm() {
     title: "", description: "", category: "Sales Call", status: "Draft",
     priority: "Medium", tags: [], steps: Array.from({ length: 3 }, () => makeStep()),
     department: "", estimatedTime: "", attachments: [],
-    script: "", scripts: [{ heading: "", content: "" }], questions: [""], frameworks: [""],
+    script: "", scripts: [{ heading: "Standard Call Script", content: "" }],
+    questions: [""], questions_answers: [], frameworks: [""],
     services: ["All Services"],
+    full_content: "", attachment_url: null, attachment_name: null,
   };
 }
 function sopToForm(s) {
   return {
-    title: s.title, description: s.description, category: s.category, status: s.status,
-    priority: s.priority, tags: [...s.tags], steps: s.steps.map(t => makeStep(t)),
-    department: s.department || "", estimatedTime: s.estimatedTime || "",
+    title: s.title || "",
+    description: s.description || "",
+    category: s.category || "Sales Call",
+    status: s.status || "Draft",
+    priority: s.priority || "Medium",
+    tags: [...(s.tags || [])],
+    steps: (s.steps || []).map(t => makeStep(t)),
+    department: s.department || "",
+    estimatedTime: s.estimatedTime || "",
     attachments: [...(s.attachments || [])],
     script: s.script || "",
-    scripts: s.scripts?.length ? s.scripts : [{ heading: "", content: "" }],
+    scripts: s.scripts?.length ? s.scripts : [{ heading: "Standard Call Script", content: s.script || "" }],
     questions: s.questions?.length ? s.questions : [""],
+    questions_answers: Array.isArray(s.questions_answers) ? s.questions_answers : [],
     frameworks: s.frameworks?.length ? s.frameworks : [""],
     services: s.services?.length ? s.services : [s.service || "All Services"],
+    full_content: s.full_content || "",
+    attachment_url: s.attachment_url || null,
+    attachment_name: s.attachment_name || null,
   };
 }
 function formToSop(base, form, isEdit) {
@@ -770,10 +907,14 @@ function formToSop(base, form, isEdit) {
     department: form.department,
     estimatedTime: form.estimatedTime,
     attachments: form.attachments,
+    attachment_url: form.attachment_url || null,
+    attachment_name: form.attachment_name || null,
+    full_content: form.full_content || "",
     script: form.script || null,
-    scripts: form.scripts ? form.scripts.filter(scr => scr.heading.trim() || scr.content.trim()) : [],
-    questions: form.questions.filter(Boolean),
-    frameworks: form.frameworks.filter(Boolean),
+    scripts: form.scripts ? form.scripts.filter(scr => scr.heading?.trim() || scr.content?.trim()) : [],
+    questions: form.questions?.filter(Boolean) || [],
+    questions_answers: form.questions_answers || [],
+    frameworks: form.frameworks?.filter(Boolean) || [],
     service: services[0],
     services,
     updated: new Date().toISOString().split("T")[0],
@@ -796,6 +937,8 @@ function normalizeApiSop(sop) {
   if (!sop) return null;
   return {
     ...sop,
+    id:                sop.id,
+    sop_code:          sop.sop_code || sop.sopCode || (typeof sop.id === "number" ? `SOP-${String(sop.id).padStart(3, "0")}` : sop.id),
     title:             sop.title || "Untitled SOP",
     description:       sop.description || "",
     category:          sop.category || "Sales Call",
@@ -807,12 +950,16 @@ function normalizeApiSop(sop) {
     service:           sop.service || "All Services",
     services:          sop.services?.length ? sop.services : [sop.service || "All Services"],
     estimatedTime:     sop.estimated_time || sop.estimatedTime || "",
-    steps:             (sop.instruction_steps || sop.steps || []).map(s => (typeof s === "string" ? s : s?.title || "")),
+    steps:             (sop.instruction_steps || sop.steps || []).map(s => (typeof s === "string" ? s : s?.title || s?.text || "")),
     questions:         sop.questions || [],
+    questions_answers: Array.isArray(sop.questions_answers) ? sop.questions_answers : [],
     frameworks:        sop.frameworks || [],
     tags:              Array.isArray(sop.tags) ? sop.tags : [],
     script:            sop.script || "",
     scripts:           sop.scripts || [],
+    full_content:      sop.full_content || "",
+    attachment_url:    sop.attachment_url || (sop.attachments?.[0] || null),
+    attachment_name:   sop.attachment_name || null,
     comments:          Array.isArray(sop.comments) ? sop.comments.map(c => ({
       id:     c.id,
       author: c.author || "Unknown",
@@ -1089,114 +1236,160 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
     };
   };
 
-  const handleAiAutofill = () => {
+  const handleAiAutofill = async () => {
     if (!form.title.trim()) {
       alert("Please enter an SOP Title first!");
       return;
     }
     
     setAiLoading(true);
-    setAiStatusText("Analyzing SOP title...");
-    
-    const statuses = [
-      "Analyzing SOP title...",
-      "Generating description and category alignment...",
-      "Drafting call scripts and objection-handling strategies...",
-      "Formulating qualification questions and frameworks...",
-      "Sequencing instructions and step-by-step procedures...",
-      "Populating tag elements and estimated execution time...",
-      "AI Generation Completed!"
-    ];
+    setAiStatusText("AI Smart Architect analyzing title...");
 
-    let step = 0;
-    const interval = setInterval(() => {
-      if (step < statuses.length - 1) {
-        step++;
-        setAiStatusText(statuses[step]);
-      } else {
-        clearInterval(interval);
-        const generated = generateSOPData(form.title);
+    try {
+      const res = await fetch(apiUrl("/api/sop/generate-ai"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getCrmHeaders(),
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          category: form.category || "Sales Call",
+          service: form.services?.[0] || "All Services",
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.sop) {
+        const generated = data.sop;
         setForm(f => ({
           ...f,
-          description: generated.description,
-          category: generated.category,
-          priority: generated.priority,
-          department: generated.department,
-          estimatedTime: generated.estimatedTime,
-          script: generated.script,
-          scripts: [{ heading: "Standard Call Script", content: generated.script }],
-          questions: generated.questions,
-          frameworks: generated.frameworks,
-          tags: generated.tags,
-          steps: generated.steps.map(text => makeStep(text)),
+          title: generated.title || f.title,
+          description: generated.description || f.description,
+          category: generated.category || f.category,
+          priority: generated.priority || f.priority,
+          department: generated.department || f.department,
+          estimatedTime: generated.estimated_time || generated.estimatedTime || f.estimatedTime,
+          script: generated.script || f.script,
+          scripts: Array.isArray(generated.scripts) && generated.scripts.length > 0 ? generated.scripts : f.scripts,
+          questions: Array.isArray(generated.questions) && generated.questions.length > 0 ? generated.questions : f.questions,
+          questions_answers: Array.isArray(generated.questions_answers) ? generated.questions_answers : f.questions_answers,
+          frameworks: Array.isArray(generated.frameworks) && generated.frameworks.length > 0 ? generated.frameworks : f.frameworks,
+          tags: Array.isArray(generated.tags) && generated.tags.length > 0 ? generated.tags : f.tags,
+          steps: Array.isArray(generated.instruction_steps) && generated.instruction_steps.length > 0
+            ? generated.instruction_steps.map(st => makeStep(typeof st === "string" ? st : st.title || st.text))
+            : f.steps,
+          services: Array.isArray(generated.services) && generated.services.length > 0 ? generated.services : f.services,
         }));
         setAiLoading(false);
         setErrors({});
+      } else {
+        throw new Error(data.message || "Failed to generate SOP from title");
       }
-    }, 300);
+    } catch (err) {
+      console.warn("AI generation endpoint failed, using local generator:", err);
+      const generated = generateSOPData(form.title);
+      setForm(f => ({
+        ...f,
+        description: generated.description,
+        category: generated.category,
+        priority: generated.priority,
+        department: generated.department,
+        estimatedTime: generated.estimatedTime,
+        script: generated.script,
+        scripts: [{ heading: "Standard Call Script", content: generated.script }],
+        questions: generated.questions,
+        frameworks: generated.frameworks,
+        tags: generated.tags,
+        steps: generated.steps.map(text => makeStep(text)),
+      }));
+      setAiLoading(false);
+      setErrors({});
+    }
   };
 
-  const handlePdfUpload = (e) => {
-    const file = e.target.files[0];
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-
-    let fileName = file.name.replace(/\.[^/.]+$/, "");
-    fileName = fileName.replace(/[_-]/g, " ").trim();
-    let extractedTitle = fileName
-      .split(" ")
-      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
-
-    extractedTitle = extractedTitle
-      .replace(/Sop/gi, "")
-      .replace(/Doc/gi, "")
-      .replace(/Manual/gi, "")
-      .replace(/Guide/gi, "")
-      .trim();
-
-    if (!extractedTitle) extractedTitle = "Standard Operating Procedure Document";
+    // reset input so selecting the same file triggers again
+    e.target.value = "";
 
     setAiLoading(true);
-    setAiStatusText("Reading uploaded PDF document...");
+    setAiStatusText("Uploading PDF document to server...");
 
-    const statuses = [
-      "Uploading PDF document...",
-      "Parsing document hierarchy and layout...",
-      "Extracting text headers and content bodies...",
-      "Analyzing compliance objectives and workflows...",
-      "Mapping procedures to instruction steps...",
-      "Identifying checklist questions and training scripts...",
-      "Extracting keywords for tags...",
-      "SOP fully generated from PDF!"
-    ];
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-    let step = 0;
-    const interval = setInterval(() => {
-      if (step < statuses.length - 1) {
-        step++;
-        setAiStatusText(statuses[step]);
-      } else {
-        clearInterval(interval);
-        const generated = generateSOPData(extractedTitle);
+      setAiStatusText("Extracting PDF text & analyzing with AI...");
+
+      const res = await fetch(apiUrl("/api/sop/parse-document"), {
+        method: "POST",
+        headers: {
+          ...getCrmHeaders(),
+          ...getAuthHeaders(),
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success && data.sop) {
+        const parsed = data.sop;
         setForm(f => ({
           ...f,
-          title: generated.title,
-          description: generated.description,
-          category: generated.category,
-          priority: generated.priority,
-          department: generated.department,
-          estimatedTime: generated.estimatedTime,
-          script: generated.script,
-          scripts: [{ heading: "Standard Call Script", content: generated.script }],
-          questions: generated.questions,
-          frameworks: generated.frameworks,
-          tags: generated.tags,
-          steps: generated.steps.map(text => makeStep(text)),
+          title: parsed.title || f.title,
+          description: parsed.description || f.description,
+          category: parsed.category || f.category,
+          priority: parsed.priority || f.priority,
+          department: parsed.department || f.department,
+          estimatedTime: parsed.estimated_time || parsed.estimatedTime || f.estimatedTime,
+          script: parsed.script || f.script,
+          scripts: Array.isArray(parsed.scripts) && parsed.scripts.length > 0 ? parsed.scripts : [{ heading: "Standard Call Script", content: parsed.script || "" }],
+          questions: Array.isArray(parsed.questions) && parsed.questions.length > 0 ? parsed.questions : f.questions,
+          questions_answers: Array.isArray(parsed.questions_answers) ? parsed.questions_answers : [],
+          frameworks: Array.isArray(parsed.frameworks) && parsed.frameworks.length > 0 ? parsed.frameworks : f.frameworks,
+          tags: Array.isArray(parsed.tags) && parsed.tags.length > 0 ? parsed.tags : f.tags,
+          steps: Array.isArray(parsed.instruction_steps) && parsed.instruction_steps.length > 0
+            ? parsed.instruction_steps.map(st => makeStep(typeof st === "string" ? st : st.title || st.text))
+            : f.steps,
+          services: Array.isArray(parsed.services) && parsed.services.length > 0 ? parsed.services : f.services,
+          full_content: parsed.full_content || "",
+          attachment_url: parsed.attachment_url || null,
+          attachment_name: parsed.attachment_name || file.name,
+          attachments: [parsed.attachment_name || file.name],
         }));
         setAiLoading(false);
         setErrors({});
+      } else {
+        throw new Error(data.message || "Failed to extract SOP from PDF");
       }
-    }, 300);
+    } catch (err) {
+      console.error("PDF upload error:", err);
+      // Fallback
+      let fileName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
+      let extractedTitle = fileName.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+      const generated = generateSOPData(extractedTitle);
+      setForm(f => ({
+        ...f,
+        title: generated.title || extractedTitle,
+        description: generated.description,
+        category: generated.category,
+        priority: generated.priority,
+        department: generated.department,
+        estimatedTime: generated.estimatedTime,
+        script: generated.script,
+        scripts: [{ heading: "Standard Call Script", content: generated.script }],
+        questions: generated.questions,
+        frameworks: generated.frameworks,
+        tags: generated.tags,
+        steps: generated.steps.map(text => makeStep(text)),
+        attachment_name: file.name,
+        attachments: [file.name],
+      }));
+      setAiLoading(false);
+      setErrors({});
+    }
   };
 
   return (
@@ -1274,116 +1467,200 @@ function SOPForm({ initialData, onSave, onClose, isEdit = false }) {
         />
         {errors.description && <div className="text-[10px] text-red-400 mt-1">{errors.description}</div>}
       </Field>
-      {(form.category === "Sales Call" || form.category === "During Meeting") && (
-  <>
-    <Field label="Scripts">
-      <div className="space-y-3">
-        {(form.scripts || []).map((scr, i) => (
-          <div key={i} className="p-3 border border-rose-100 rounded-xl bg-white space-y-2 relative">
-            <div className="flex items-center justify-between">
-              <input
-                value={scr.heading}
+      {/* Spoken Dialogue Scripts */}
+      <Field label="Spoken Dialogue Scripts">
+        <div className="space-y-3">
+          {(form.scripts || []).map((scr, i) => (
+            <div key={i} className="p-3 border border-rose-100 rounded-xl bg-white space-y-2 relative shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  value={scr.heading}
+                  onChange={e => {
+                    const updated = [...form.scripts];
+                    updated[i] = { ...updated[i], heading: e.target.value };
+                    set("scripts", updated);
+                  }}
+                  className="sop-input flex-1 font-bold text-xs bg-transparent border-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-slate-400"
+                  placeholder={`Script Heading ${i + 1} (e.g. Opening Hook / Pitch)`}
+                />
+                <button
+                  type="button"
+                  onClick={() => set("scripts", form.scripts.filter((_, x) => x !== i))}
+                  className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <textarea
+                value={scr.content}
                 onChange={e => {
                   const updated = [...form.scripts];
-                  updated[i] = { ...updated[i], heading: e.target.value };
+                  updated[i] = { ...updated[i], content: e.target.value };
                   set("scripts", updated);
                 }}
-                className="sop-input flex-1 font-bold text-xs bg-transparent border-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-slate-400"
-                placeholder={`Script Heading ${i + 1} (e.g. Opening Script)`}
+                rows={3}
+                className="sop-input w-full resize-none font-mono text-xs"
+                placeholder="Write the dialogue script here…"
+              />
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => set("scripts", [...(form.scripts || []), { heading: "", content: "" }])}
+            className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline font-semibold"
+          >
+            <Plus className="w-3 h-3" /> Add script stage
+          </button>
+        </div>
+      </Field>
+
+      {/* Questions & Answers / Objections */}
+      <Field label="Question & Answer Guidelines / Objections">
+        <div className="space-y-3">
+          {(form.questions_answers || []).map((qa, i) => (
+            <div key={i} className="p-3 border border-rose-100 rounded-xl bg-white space-y-2 relative shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  value={qa.question || ""}
+                  onChange={e => {
+                    const updated = [...form.questions_answers];
+                    updated[i] = { ...updated[i], question: e.target.value };
+                    set("questions_answers", updated);
+                  }}
+                  className="sop-input flex-1 font-bold text-xs"
+                  placeholder={`Question ${i + 1} (e.g. What is the pricing?)`}
+                />
+                <button
+                  type="button"
+                  onClick={() => set("questions_answers", form.questions_answers.filter((_, x) => x !== i))}
+                  className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <textarea
+                value={qa.answer || ""}
+                onChange={e => {
+                  const updated = [...form.questions_answers];
+                  updated[i] = { ...updated[i], answer: e.target.value };
+                  set("questions_answers", updated);
+                }}
+                rows={2}
+                className="sop-input w-full resize-none text-xs"
+                placeholder="Guideline response / objection handling answer…"
+              />
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => set("questions_answers", [...(form.questions_answers || []), { question: "", answer: "" }])}
+            className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline font-semibold"
+          >
+            <Plus className="w-3 h-3" /> Add Q&A guideline
+          </button>
+        </div>
+      </Field>
+
+      {/* Discovery Questions */}
+      <Field label="Discovery / Qualification Questions">
+        <div className="space-y-2">
+          {form.questions.map((q, i) => (
+            <div key={i} className="flex gap-2">
+              <input
+                value={q}
+                onChange={e => {
+                  const updated = [...form.questions];
+                  updated[i] = e.target.value;
+                  set("questions", updated);
+                }}
+                className="sop-input flex-1"
+                placeholder={`Discovery Question ${i + 1}`}
               />
               <button
                 type="button"
-                onClick={() => set("scripts", form.scripts.filter((_, x) => x !== i))}
+                onClick={() => set("questions", form.questions.filter((_, x) => x !== i))}
                 className="text-gray-400 hover:text-red-500 transition-colors p-1"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <textarea
-              value={scr.content}
-              onChange={e => {
-                const updated = [...form.scripts];
-                updated[i] = { ...updated[i], content: e.target.value };
-                set("scripts", updated);
-              }}
-              rows={3}
-              className="sop-input w-full resize-none font-mono text-xs"
-              placeholder="Write the dialogue script here…"
-            />
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => set("scripts", [...(form.scripts || []), { heading: "", content: "" }])}
-          className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline"
-        >
-          <Plus className="w-3 h-3" /> Add script
-        </button>
-      </div>
-    </Field>
+          ))}
+          <button
+            type="button"
+            onClick={() => set("questions", [...form.questions, ""])}
+            className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline font-semibold"
+          >
+            <Plus className="w-3 h-3" /> Add question
+          </button>
+        </div>
+      </Field>
 
-    <Field label="Questions">
-      <div className="space-y-2">
-        {form.questions.map((q, i) => (
-          <div key={i} className="flex gap-2">
-            <input
-              value={q}
-              onChange={e => {
-                const updated = [...form.questions];
-                updated[i] = e.target.value;
-                set("questions", updated);
-              }}
-              className="sop-input flex-1"
-              placeholder={`Question ${i + 1}`}
-            />
-            <button
-              onClick={() => set("questions", form.questions.filter((_, x) => x !== i))}
-              className="text-gray-400 hover:text-red-500 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+      <Field label="Frameworks (Knowledge)">
+        <div className="space-y-2">
+          {form.frameworks.map((f, i) => (
+            <div key={i} className="flex gap-2">
+              <input
+                value={f}
+                onChange={e => {
+                  const updated = [...form.frameworks];
+                  updated[i] = e.target.value;
+                  set("frameworks", updated);
+                }}
+                className="sop-input flex-1"
+                placeholder={`Framework ${i + 1} e.g. BANT, MEDDIC`}
+              />
+              <button
+                type="button"
+                onClick={() => set("frameworks", form.frameworks.filter((_, x) => x !== i))}
+                className="text-gray-400 hover:text-red-500 transition-colors p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => set("frameworks", [...form.frameworks, ""])}
+            className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline font-semibold"
+          >
+            <Plus className="w-3 h-3" /> Add framework
+          </button>
+        </div>
+      </Field>
+
+      {/* Attached Source Document Banner if present */}
+      {(form.attachment_name || form.attachment_url) && (
+        <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="w-4 h-4 text-rose-600 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-800 truncate">{form.attachment_name || "Attached PDF"}</div>
+              <div className="text-[10px] text-rose-600">Attached source file</div>
+            </div>
           </div>
-        ))}
-        <button
-          onClick={() => set("questions", [...form.questions, ""])}
-          className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline"
-        >
-          <Plus className="w-3 h-3" /> Add question
-        </button>
-      </div>
-    </Field>
-  </>
-)}
-<Field label="Frameworks (Knowledge)">
-  <div className="space-y-2">
-    {form.frameworks.map((f, i) => (
-      <div key={i} className="flex gap-2">
-        <input
-          value={f}
-          onChange={e => {
-            const updated = [...form.frameworks];
-            updated[i] = e.target.value;
-            set("frameworks", updated);
-          }}
-          className="sop-input flex-1"
-          placeholder={`Framework ${i + 1} e.g. BANT, MEDDIC`}
-        />
-        <button
-          onClick={() => set("frameworks", form.frameworks.filter((_, x) => x !== i))}
-          className="text-gray-400 hover:text-red-500 transition-colors"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    ))}
-    <button
-      onClick={() => set("frameworks", [...form.frameworks, ""])}
-      className="text-xs text-rose-600 inline-flex items-center gap-1 hover:underline"
-    >
-      <Plus className="w-3 h-3" /> Add framework
-    </button>
-  </div>
-</Field>
+          <button
+            type="button"
+            onClick={() => setForm(f => ({ ...f, attachment_name: null, attachment_url: null, attachments: [] }))}
+            className="text-xs text-slate-400 hover:text-red-500 p-1"
+            title="Remove attachment"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Full Extracted Markdown Text (Optional) */}
+      {form.full_content && (
+        <Field label="Full Extracted Document Content">
+          <textarea
+            value={form.full_content}
+            onChange={e => set("full_content", e.target.value)}
+            rows={4}
+            className="sop-input w-full resize-none font-mono text-xs"
+            placeholder="Full procedure and script text extracted from document…"
+          />
+        </Field>
+      )}
       {/* Grid fields */}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Category">
@@ -1572,51 +1849,66 @@ function AdminSopCard({
   const stepCount = sop.steps?.length || 0;
 
   return (
-    <article className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white overflow-hidden hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition-all group min-w-0 relative">
+    <article
+      onClick={() => onOpen(sop)}
+      className="h-[156px] sm:h-[162px] flex flex-col justify-between rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white overflow-hidden hover:border-rose-300 hover:shadow-[0_8px_24px_rgba(225,29,72,0.08)] transition-all group min-w-0 cursor-pointer relative"
+    >
+      <div className="flex items-start gap-2.5 sm:gap-3 p-3 sm:p-3.5 pb-1 min-w-0 flex-1">
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-50 border border-slate-200/90 group-hover:bg-rose-50 group-hover:border-rose-200 group-hover:text-rose-600 grid place-items-center shrink-0 text-slate-600 transition-colors mt-0.5 shadow-sm">
+          <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+        </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4">
-        <button
-          type="button"
-          className="flex flex-1 items-center gap-2 sm:gap-3 min-w-0 text-left"
-          onClick={() => onOpen(sop)}
-        >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200 grid place-items-center shrink-0">
-            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-          </div>
-          <div className="flex-1 min-w-0 pr-6 sm:pr-0">
-            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-              <p className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-slate-700">
-                {sop.title}
-              </p>
-              {(sop.sop_code || sop.sopCode || sop.id) && (
-                <span className="shrink-0 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-rose-100/80 text-rose-800 border border-rose-200" title="Unique SOP ID">
-                  {sop.sop_code || sop.sopCode || (typeof sop.id === "number" ? `SOP-${String(sop.id).padStart(3, "0")}` : sop.id)}
-                </span>
-              )}
-              <span className="shrink-0 sm:hidden text-[7px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-sky-50 text-sky-700 border-sky-100">
-                {sop.category}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-rose-700 transition-colors">
+              {sop.title}
+            </p>
+            {(sop.sop_code || sop.sopCode || sop.id) && (
+              <span className="shrink-0 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-rose-100/90 text-rose-800 border border-rose-200" title="Unique SOP ID">
+                {sop.sop_code || sop.sopCode || (typeof sop.id === "number" ? `SOP-${String(sop.id).padStart(3, "0")}` : sop.id)}
               </span>
-            </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 line-clamp-2 hidden sm:block">
-              {sop.description}
-            </p>
-            <p className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5">
-              {stepCount} steps · {sop.estimatedTime || "—"}
-            </p>
+            )}
+            <span className="shrink-0 sm:hidden text-[7px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-sky-50 text-sky-700 border-sky-100">
+              {sop.category}
+            </span>
           </div>
-          <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0 group-hover:text-slate-600 transition" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onEdit(sop)}
-          className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0 border border-transparent hover:border-rose-100 transition"
-          aria-label="Quick edit"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
+
+          <p
+            className="text-[11px] text-slate-500 mt-1 leading-snug h-[30px] sm:h-[32px] overflow-hidden"
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {sop.description || "Standard operating procedure detailing key interaction protocols, execution steps, and compliance requirements."}
+          </p>
+
+          <p className="text-[9px] sm:text-[10px] text-slate-400 font-medium mt-1">
+            {stepCount} steps · {sop.estimatedTime || "15 min"}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0 pt-0.5">
+          <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition shrink-0" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(sop);
+            }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 transition shrink-0"
+            aria-label="Quick edit"
+            title="Edit SOP"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
-      <div className="flex px-2.5 sm:px-4 pb-2.5 sm:pb-3 justify-between items-center border-t border-slate-50 pt-2 gap-2">
+      <div className="flex px-3 sm:px-4 py-2 justify-between items-center border-t border-slate-100 bg-slate-50/50 shrink-0 gap-2">
         <div className="flex flex-wrap items-center gap-1 min-w-0">
           <Badge tone={statusTone(sop.status)}>{sop.status}</Badge>
           <Badge tone="muted" className="hidden sm:inline-flex">{sop.category}</Badge>
@@ -1849,14 +2141,18 @@ export default function SOP() {
       priority:          formData.priority,
       department:        formData.department,
       estimated_time:    formData.estimatedTime,
-      script:            formData.script || null,
+      script:            formData.script || (formData.scripts?.[0]?.content) || null,
+      scripts:           formData.scripts ? formData.scripts.filter(s => s.heading?.trim() || s.content?.trim()) : [],
       questions:         formData.questions?.filter(Boolean) || [],
+      questions_answers: formData.questions_answers || [],
       frameworks:        formData.frameworks?.filter(Boolean) || [],
       tags:              formData.tags || [],
       instruction_steps: formData.steps
                            .map((s, i) => ({ step: i + 1, title: s.text }))
                            .filter(s => s.title),
-      attachment_url:    null,
+      attachment_url:    formData.attachment_url || null,
+      attachment_name:   formData.attachment_name || null,
+      full_content:      formData.full_content || "",
       services:          formData.services?.length ? formData.services : ["All Services"],
       service:           (formData.services?.length ? formData.services[0] : formData.service) || "All Services",
     };

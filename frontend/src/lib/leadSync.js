@@ -153,11 +153,13 @@ function normalizeEmployeeLeadStatus(lead) {
   return normalizeTemperature(lead.temperature || lead.status);
 }
 
-export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
+export function apiLeadToEmployee(rawLead, avatarColors = AVATAR_COLORS) {
+  if (!rawLead || typeof rawLead !== "object") return {};
+  const lead = rawLead?.lead || rawLead;
   const rawName = lead.leadName || lead.lead_name || lead.name;
   const phoneNum = lead.phone || lead.phone_number || "";
   const name = (rawName && rawName.trim().toLowerCase() !== "unknown") ? rawName : (phoneNum || "Lead");
-  const id = lead.id;
+  const id = lead.id ?? lead.lead_id ?? lead.leadId ?? rawLead?.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const rawStage = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Lead";
   const status = normalizeEmployeeLeadStatus(lead);
@@ -235,7 +237,10 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   };
 }
 
-export function apiLeadToAdmin(lead) {
+export function apiLeadToAdmin(rawLead) {
+  if (!rawLead || typeof rawLead !== "object") return {};
+  const lead = rawLead?.lead || rawLead;
+  const id = lead.id ?? lead.lead_id ?? lead.leadId ?? rawLead?.id;
   const assignedTo = lead.assignedTo;
   const employeeName =
     (typeof assignedTo === "object" && assignedTo?.name) ||
@@ -261,8 +266,8 @@ export function apiLeadToAdmin(lead) {
   const service = lead.requirements || lead.service || meta.services || meta.service || lead.insights || "";
 
   return {
-    id: lead.id,
-    lead_name: lead.leadName || lead.lead_name,
+    id,
+    lead_name: lead.leadName || lead.lead_name || lead.name,
     company_name: lead.companyName || lead.company_name,
     phone: lead.phone,
     email: lead.email,
